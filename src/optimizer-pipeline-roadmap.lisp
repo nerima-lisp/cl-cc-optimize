@@ -182,7 +182,13 @@ Accepted STATUS keywords: :implemented, :partial, :planned, :unknown."
     ;; This system too, now that it is one. Roadmap evidence naming
     ;; packages/optimize/src/... is read from cl-cc, where that directory no
     ;; longer exists -- the sources are here.
-    ("packages/optimize/" . :cl-cc-optimize))
+    ("packages/optimize/" . :cl-cc-optimize)
+    ;; The native backend is one repository holding three systems, each with
+    ;; its own .asd, so each prefix resolves against its own system rather than
+    ;; against a single cl-cc-codegen-native root.
+    ("packages/regalloc/" . :cl-cc-regalloc)
+    ("packages/codegen/"  . :cl-cc-codegen)
+    ("packages/emit/"     . :cl-cc-emit))
   "Roadmap evidence prefixes for packages that now live in their own repository.
 
 Evidence strings still name the logical module -- packages/type/src/inference.lisp
