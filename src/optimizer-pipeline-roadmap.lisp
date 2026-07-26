@@ -178,7 +178,11 @@ Accepted STATUS keywords: :implemented, :partial, :planned, :unknown."
     ("packages/ir/"      . :cl-cc-ir)
     ("packages/mir/"     . :cl-cc-mir)
     ("packages/target/"  . :cl-cc-target)
-    ("packages/bytecode/" . :cl-cc-bytecode))
+    ("packages/bytecode/" . :cl-cc-bytecode)
+    ;; This system too, now that it is one. Roadmap evidence naming
+    ;; packages/optimize/src/... is read from cl-cc, where that directory no
+    ;; longer exists -- the sources are here.
+    ("packages/optimize/" . :cl-cc-optimize))
   "Roadmap evidence prefixes for packages that now live in their own repository.
 
 Evidence strings still name the logical module -- packages/type/src/inference.lisp
