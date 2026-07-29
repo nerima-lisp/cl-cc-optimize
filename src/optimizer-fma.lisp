@@ -41,15 +41,19 @@
 
 (defun %opt-fma-replacement (mul add instructions)
   "Return a VM-FMA replacing MUL and ADD when the FR-099 guards hold."
-  (let ((acc (%opt-fma-add-accumulator mul add)))
+  (let ((acc (%opt-fma-add-accumulator mul add))
+        (mul-precision (vm-float-precision mul))
+        (add-precision (vm-float-precision add)))
     (when (and acc
+               (eq mul-precision add-precision)
                (%opt-fma-pure-p mul)
                (%opt-fma-pure-p add)
                (= 1 (%opt-register-read-count (vm-dst mul) instructions)))
       (make-vm-fma :dst (vm-dst add)
                    :a (vm-lhs mul)
                    :b (vm-rhs mul)
-                   :c acc))))
+                   :c acc
+                   :precision mul-precision))))
 
 (defun %opt-fuse-fma-in-block (block instructions)
   "Recognize FR-099 FMA patterns inside one basic block."

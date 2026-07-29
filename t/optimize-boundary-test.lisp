@@ -96,6 +96,7 @@
       (expect result :to-equal instructions)
       (expect (every #'eq result instructions) :to-be-truthy))))
 
+(progn
 (describe-sequential
   "translation validation symbolic executor"
   (it
@@ -138,3 +139,41 @@
         (list (cl-cc/vm:make-vm-print :reg :r1) (cl-cc/vm:make-vm-halt :reg :r0)))
       :to-be
       nil)))
+(describe-sequential
+  "FMA float precision"
+  (it
+    "preserves the default f64 precision"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-float-mul :dst :product :lhs :a :rhs :b)
+                   (cl-cc/vm:make-vm-float-add :dst :result :lhs :product :rhs :c)))
+           (optimized (cl-cc/optimize::opt-pass-fma-recognition instructions))
+           (fma (first optimized)))
+      (expect (length optimized) :to-equal 1)
+      (expect (typep fma (quote cl-cc/vm:vm-fma)) :to-be-truthy)
+      (expect (cl-cc/vm:vm-float-precision fma) :to-equal :f64)))
+  (it
+    "propagates matching f32 precision"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-float-mul
+                     :dst :product :lhs :a :rhs :b :precision :f32)
+                   (cl-cc/vm:make-vm-float-add
+                     :dst :result :lhs :product :rhs :c :precision :f32)))
+           (optimized (cl-cc/optimize::opt-pass-fma-recognition instructions))
+           (fma (first optimized)))
+      (expect (length optimized) :to-equal 1)
+      (expect (typep fma (quote cl-cc/vm:vm-fma)) :to-be-truthy)
+      (expect (cl-cc/vm:vm-float-precision fma) :to-equal :f32)))
+  (it
+    "refuses to fuse mismatched precisions"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-float-mul
+                     :dst :product :lhs :a :rhs :b :precision :f32)
+                   (cl-cc/vm:make-vm-float-add
+                     :dst :result :lhs :product :rhs :c :precision :f64)))
+           (optimized (cl-cc/optimize::opt-pass-fma-recognition instructions)))
+      (expect (length optimized) :to-equal 2)
+      (expect (some (lambda (instruction)
+                      (typep instruction (quote cl-cc/vm:vm-fma)))
+                    optimized)
+              :to-be
+              nil)))))
