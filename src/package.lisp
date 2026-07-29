@@ -166,7 +166,7 @@
     #:opt-pass-elide-proven-overflow-checks
     #:opt-may-alias-by-type-p  #:opt-may-alias-p  #:opt-must-alias-p
     #:opt-compute-heap-type-facts
-    #:opt-tbaa-must-not-alias-p
+    #:opt-tbaa-must-not-alias-p #:opt-memory-tbaa-metadata #:opt-build-memory-tbaa-metadata
     #:opt-may-alias-with-tbaa-p
     #:opt-prune-dominated-safepoints
     #:opt-hoist-safepoints-to-back-edges
@@ -414,7 +414,7 @@
      #:opt-shape-transition-put
      #:opt-shape-transition-get
      #:opt-adaptive-compilation-threshold
-     #:opt-tier-transition
+     #:opt-tier-transition #:opt-tier-runtime-state #:make-opt-tier-runtime-state #:opt-tier-runtime-state-tier #:opt-tier-runtime-state-call-count #:opt-tier-runtime-state-backedge-count #:opt-tier-runtime-state-pgo-handoff-p #:opt-tier-record-runtime-event #:opt-make-pure-function-runtime-memoizer
      #:make-opt-async-state-machine
     #:opt-build-async-state-machine
     #:opt-choose-coroutine-lowering-strategy

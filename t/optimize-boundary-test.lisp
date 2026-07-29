@@ -49,9 +49,9 @@
     (dolist (name '("OPTIMIZE-INSTRUCTIONS" "OPT-PASS-FOLD" "OPT-PASS-DEVIRTUALIZE"))
       (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external)))
   (it
-    "exports the known-function property database"
-    (dolist (name '("KNOWN-FUNCTION-PROPERTIES" "KNOWN-FUNCTION-PROPERTY-P"))
-      (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external))))
+  "exports the optimization runtime and TBAA surface"
+  (dolist (name (quote ("KNOWN-FUNCTION-PROPERTIES" "KNOWN-FUNCTION-PROPERTY-P" "OPT-MEMORY-TBAA-METADATA" "OPT-BUILD-MEMORY-TBAA-METADATA" "OPT-TIER-RUNTIME-STATE" "MAKE-OPT-TIER-RUNTIME-STATE" "OPT-TIER-RECORD-RUNTIME-EVENT" "OPT-MAKE-PURE-FUNCTION-RUNTIME-MEMOIZER")))
+    (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external))))
 
 (describe-sequential "optimization is behaviour-preserving on a trivial program"
   (it "folds a constant binop and keeps the result register"

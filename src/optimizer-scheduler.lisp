@@ -1,38 +1,78 @@
 (in-package :cl-cc/optimize)
+
 ;;; -----------------------------------------------------------------------------
 ;;; Optimizer Local and Pre-RA Scheduling
 ;;; -----------------------------------------------------------------------------
-
 ;;; FR-069: Dependency-Aware Peephole Scheduling
 ;;;
 ;;; Schedule movable instruction runs inside each basic block.  A run ends at any
 ;;; instruction with side effects or control flow, so calls/stores/signals and
 ;;; labels/terminators keep their original relative position.
-
-(defparameter *opt-vm-instruction-latency-alist*
-  '((vm-move . 1) (vm-const . 1)
-    (vm-add . 1) (vm-integer-add . 1) (vm-add-checked . 1) (vm-float-add . 1)
-    (vm-sub . 1) (vm-integer-sub . 1) (vm-sub-checked . 1) (vm-float-sub . 1)
-    (vm-neg . 1) (vm-abs . 1) (vm-inc . 1) (vm-dec . 1)
-    (vm-logand . 1) (vm-logior . 1) (vm-logxor . 1) (vm-logeqv . 1)
-    (vm-lognot . 1) (vm-ash . 1) (vm-rotate . 1) (vm-bswap . 1)
-    (vm-lt . 1) (vm-gt . 1) (vm-le . 1) (vm-ge . 1) (vm-eq . 1) (vm-num-eq . 1)
-    (vm-min . 1) (vm-max . 1) (vm-not . 1)
-    (vm-cons-p . 1) (vm-null-p . 1) (vm-symbol-p . 1) (vm-number-p . 1)
-    (vm-integer-p . 1) (vm-function-p . 1)
-    (vm-mul . 4) (vm-integer-mul . 4) (vm-mul-checked . 4) (vm-float-mul . 4)
+(defparameter *opt-vm-instruction-latency-alist* '((vm-move . 1)
+    (vm-const . 1)
+    (vm-add . 1)
+    (vm-integer-add . 1)
+    (vm-add-checked . 1)
+    (vm-float-add . 1)
+    (vm-sub . 1)
+    (vm-integer-sub . 1)
+    (vm-sub-checked . 1)
+    (vm-float-sub . 1)
+    (vm-neg . 1)
+    (vm-abs . 1)
+    (vm-inc . 1)
+    (vm-dec . 1)
+    (vm-logand . 1)
+    (vm-logior . 1)
+    (vm-logxor . 1)
+    (vm-logeqv . 1)
+    (vm-lognot . 1)
+    (vm-ash . 1)
+    (vm-rotate . 1)
+    (vm-bswap . 1)
+    (vm-lt . 1)
+    (vm-gt . 1)
+    (vm-le . 1)
+    (vm-ge . 1)
+    (vm-eq . 1)
+    (vm-num-eq . 1)
+    (vm-min . 1)
+    (vm-max . 1)
+    (vm-not . 1)
+    (vm-cons-p . 1)
+    (vm-null-p . 1)
+    (vm-symbol-p . 1)
+    (vm-number-p . 1)
+    (vm-integer-p . 1)
+    (vm-function-p . 1)
+    (vm-mul . 4)
+    (vm-integer-mul . 4)
+    (vm-mul-checked . 4)
+    (vm-float-mul . 4)
     (vm-fma . 4)
-    (vm-div . 40) (vm-cl-div . 40) (vm-float-div . 40)
-    (vm-mod . 30) (vm-rem . 30)
-    (vm-truncate . 40) (vm-floor-inst . 40) (vm-ceiling-inst . 40)
-    (vm-round-inst . 40) (vm-ffloor . 40) (vm-fceiling . 40)
-    (vm-ftruncate . 40) (vm-fround . 40)
-    (vm-car . 4) (vm-cdr . 4) (vm-slot-read . 5) (vm-closure-ref-idx . 4)
-    (vm-get-global . 5) (vm-func-ref . 4) (vm-values-to-list . 4))
+    (vm-div . 40)
+    (vm-cl-div . 40)
+    (vm-float-div . 40)
+    (vm-mod . 30)
+    (vm-rem . 30)
+    (vm-truncate . 40)
+    (vm-floor-inst . 40)
+    (vm-ceiling-inst . 40)
+    (vm-round-inst . 40)
+    (vm-ffloor . 40)
+    (vm-fceiling . 40)
+    (vm-ftruncate . 40)
+    (vm-fround . 40)
+    (vm-car . 4)
+    (vm-cdr . 4)
+    (vm-slot-read . 5)
+    (vm-closure-ref-idx . 4)
+    (vm-get-global . 5)
+    (vm-func-ref . 4)
+    (vm-values-to-list . 4))
   "Raw alist of VM instruction type → estimated latency in cycles.")
 
-(defparameter *opt-vm-instruction-latencies*
-  (%alist->eq-hash-table *opt-vm-instruction-latency-alist*)
+(defparameter *opt-vm-instruction-latencies* (%alist->eq-hash-table *opt-vm-instruction-latency-alist*)
   "Estimated VM instruction latencies in cycles for local list scheduling.
 Derived from *opt-vm-instruction-latency-alist*.")
 
@@ -42,11 +82,31 @@ Derived from *opt-vm-instruction-latency-alist*.")
 
 (defun %opt-scheduler-barrier-p (inst)
   "T when INST must keep its position in local scheduling."
-  (or (member (type-of inst)
-              '(vm-call vm-apply vm-generic-call vm-slot-write vm-set-global
-                vm-signal vm-signal-error vm-error-instruction vm-cerror vm-warn)
-              :test #'eq)
-      (not (member (vm-inst-effect-kind inst) '(:pure :read-only) :test #'eq))))
+  (or
+    (member
+      (type-of inst)
+      (quote
+        (vm-call
+          vm-apply
+          vm-generic-call
+          vm-signal
+          vm-signal-error
+          vm-error-instruction
+          vm-cerror
+          vm-warn))
+      :test
+      (function eq))
+    (and
+      (not
+        (member
+          (vm-inst-effect-kind inst)
+          (quote (:pure :read-only))
+          :test
+          (function eq)))
+      (not
+        (and
+          (opt-memory-write-inst-p inst)
+          (not (opt-memory-unknown-write-inst-p inst)))))))
 
 (defun %opt-inst-write-regs (inst)
   "Return registers written by INST."
@@ -57,26 +117,38 @@ Derived from *opt-vm-instruction-latency-alist*.")
   "T when register lists A and B intersect by EQ."
   (and a b (intersection a b :test #'eq)))
 
-(defun %opt-scheduler-depends-p (earlier later)
-  "T when EARLIER must precede LATER due to RAW, WAR, or WAW hazards."
-  (let ((earlier-reads  (opt-inst-read-regs earlier))
+(defun %opt-scheduler-depends-p (earlier later metadata)
+  "T when EARLIER must precede LATER due to register or TBAA memory hazards."
+  (let ((earlier-reads (opt-inst-read-regs earlier))
         (earlier-writes (%opt-inst-write-regs earlier))
-        (later-reads    (opt-inst-read-regs later))
-        (later-writes   (%opt-inst-write-regs later)))
-    (or (%opt-reg-intersect-p earlier-writes later-reads)   ; RAW
-        (%opt-reg-intersect-p earlier-reads later-writes)   ; WAR
-        (%opt-reg-intersect-p earlier-writes later-writes)))) ; WAW
+        (later-reads (opt-inst-read-regs later))
+        (later-writes (%opt-inst-write-regs later))
+        (alias-roots (gethash :alias-roots metadata))
+        (type-facts (gethash :type-facts metadata)))
+    (or
+      (%opt-reg-intersect-p earlier-writes later-reads)
+      (%opt-reg-intersect-p earlier-reads later-writes)
+      (%opt-reg-intersect-p earlier-writes later-writes)
+      (and
+        (opt-memory-read-inst-p earlier)
+        (opt-memory-write-inst-p later)
+        (opt-memory-accesses-may-alias-p earlier later alias-roots type-facts))
+      (and
+        (opt-memory-write-inst-p earlier)
+        (opt-memory-read-inst-p later)
+        (opt-memory-accesses-may-alias-p later earlier alias-roots type-facts))
+      (and (opt-memory-write-inst-p earlier) (opt-memory-write-inst-p later))))) ; WAW
 
 (defun %opt-build-scheduler-graph (insts)
   "Build dependency predecessor/successor vectors for INSTS."
   (let* ((n (length insts))
          (preds (make-array n :initial-element nil))
-         (succs (make-array n :initial-element nil)))
-    (loop for i from 0 below n do
-      (loop for j from (1+ i) below n
-            when (%opt-scheduler-depends-p (nth i insts) (nth j insts))
-              do (pushnew i (aref preds j))
-                 (pushnew j (aref succs i))))
+         (succs (make-array n :initial-element nil))
+         (metadata (opt-build-memory-tbaa-metadata insts)))
+    (loop for i from 0 below n
+          do (loop for j from (1+ i) below n
+            when (%opt-scheduler-depends-p (nth i insts) (nth j insts) metadata)
+              do (pushnew i (aref preds j)) (pushnew j (aref succs i))))
     (values preds succs)))
 
 (defun %opt-compute-scheduler-priorities (insts succs)
@@ -84,25 +156,28 @@ Derived from *opt-vm-instruction-latency-alist*.")
   (let* ((n (length insts))
          (memo (make-array n :initial-element nil)))
     (labels ((priority (i)
-               (or (aref memo i)
-                   (setf (aref memo i)
-                         (+ (%opt-inst-latency (nth i insts))
-                            (loop for succ in (aref succs i)
-                                  maximize (priority succ) into best
-                                  finally (return (or best 0))))))))
-      (loop for i from 0 below n do (priority i))
+               (or
+            (aref memo i)
+            (setf (aref memo i) (+
+                (%opt-inst-latency (nth i insts))
+                (loop for succ in (aref succs i)
+                      maximize (priority succ) into best
+                      finally (return (or best 0))))))))
+      (loop for i from 0 below n
+            do (priority i))
       memo)))
 
 (defun %opt-best-ready-node (ready priorities)
   "Select the highest-priority node from READY, preserving original order on ties."
-  (reduce (lambda (best candidate)
-            (let ((best-priority (aref priorities best))
-                  (candidate-priority (aref priorities candidate)))
-              (if (or (> candidate-priority best-priority)
-                      (and (= candidate-priority best-priority) (< candidate best)))
-                  candidate
-                  best)))
-          ready))
+  (reduce
+    (lambda (best candidate)
+      (let ((best-priority (aref priorities best))
+            (candidate-priority (aref priorities candidate)))
+        (if (or
+            (> candidate-priority best-priority)
+            (and (= candidate-priority best-priority) (< candidate best))) candidate
+          best)))
+    ready))
 
 (defun %opt-add-regs (regs live)
   "Return LIVE with REGS added using EQ identity."
@@ -119,8 +194,9 @@ Derived from *opt-vm-instruction-latency-alist*.")
 
 (defun %opt-live-before-instruction (inst live-after)
   "Return registers live immediately before INST given LIVE-AFTER."
-  (%opt-add-regs (opt-inst-read-regs inst)
-                 (%opt-remove-regs (%opt-inst-write-regs inst) live-after)))
+  (%opt-add-regs
+    (opt-inst-read-regs inst)
+    (%opt-remove-regs (%opt-inst-write-regs inst) live-after)))
 
 (defun %opt-live-before-instructions (instructions live-after)
   "Return registers live before INSTRUCTIONS given LIVE-AFTER."
@@ -139,9 +215,8 @@ Derived from *opt-vm-instruction-latency-alist*.")
   (dolist (reg regs counts)
     (when reg
       (let ((next (1- (gethash reg counts 0))))
-        (if (plusp next)
-            (setf (gethash reg counts) next)
-            (remhash reg counts))))))
+        (if (plusp next) (setf (gethash reg counts) next)
+          (remhash reg counts))))))
 
 (defun %opt-build-read-counts (insts live-out)
   "Return a read-count table for unscheduled INSTS plus LIVE-OUT pseudo-uses."
@@ -172,20 +247,21 @@ needed by unscheduled instructions or live-out become live."
 
 Prefer instructions that reduce register pressure, then longer critical paths,
 then original order for deterministic output."
-  (reduce (lambda (best candidate)
-            (let ((best-delta (%opt-pre-ra-pressure-delta (nth best insts) counts))
-                  (candidate-delta (%opt-pre-ra-pressure-delta (nth candidate insts) counts))
-                  (best-priority (aref priorities best))
-                  (candidate-priority (aref priorities candidate)))
-              (if (or (< candidate-delta best-delta)
-                      (and (= candidate-delta best-delta)
-                           (> candidate-priority best-priority))
-                      (and (= candidate-delta best-delta)
-                           (= candidate-priority best-priority)
-                           (< candidate best)))
-                  candidate
-                  best)))
-          ready))
+  (reduce
+    (lambda (best candidate)
+      (let ((best-delta (%opt-pre-ra-pressure-delta (nth best insts) counts))
+            (candidate-delta (%opt-pre-ra-pressure-delta (nth candidate insts) counts))
+            (best-priority (aref priorities best))
+            (candidate-priority (aref priorities candidate)))
+        (if (or
+            (< candidate-delta best-delta)
+            (and (= candidate-delta best-delta) (> candidate-priority best-priority))
+            (and
+              (= candidate-delta best-delta)
+              (= candidate-priority best-priority)
+              (< candidate best))) candidate
+          best)))
+    ready))
 
 (defun %opt-run-scheduler-toposort (insts &key node-selector counts-or-nil)
   "Toposort-based list scheduler for a side-effect-free instruction run.
@@ -193,35 +269,31 @@ then original order for deterministic output."
 NODE-SELECTOR is a function (ready insts priorities [counts]) -> node-index.
 COUNTS-OR-NIL is a pre-built read-count table for pre-RA pressure tracking,
 or NIL for post-RA scheduling (where pressure is ignored)."
-  (if (< (length insts) 2)
-      insts
-      (multiple-value-bind (preds succs) (%opt-build-scheduler-graph insts)
-        (let* ((n              (length insts))
-               (priorities     (%opt-compute-scheduler-priorities insts succs))
-               (remaining-preds (make-array n))
-               (ready          nil)
-               (emitted        nil))
-          (loop for i from 0 below n do
-            (setf (aref remaining-preds i) (copy-list (aref preds i)))
-            (when (null (aref remaining-preds i))
-              (push i ready)))
-          (loop while ready do
-            (let* ((node (if counts-or-nil
-                             (funcall node-selector ready insts priorities counts-or-nil)
-                             (funcall node-selector ready priorities)))
-                   (inst (nth node insts)))
-              (setf ready (remove node ready :test #'eql))
-              (push inst emitted)
-              (when counts-or-nil
-                (%opt-decrement-reg-counts (opt-inst-read-regs inst) counts-or-nil))
-              (dolist (succ (aref succs node))
-                (setf (aref remaining-preds succ)
-                      (remove node (aref remaining-preds succ) :test #'eql))
-                (when (null (aref remaining-preds succ))
-                  (pushnew succ ready :test #'eql)))))
-          (if (= (length emitted) n)
-              (nreverse emitted)
-              insts)))))
+  (if (< (length insts) 2) insts
+    (multiple-value-bind (preds succs) (%opt-build-scheduler-graph insts)
+      (let* ((n (length insts))
+             (priorities (%opt-compute-scheduler-priorities insts succs))
+             (remaining-preds (make-array n))
+             (ready nil)
+             (emitted nil))
+        (loop for i from 0 below n
+              do (setf (aref remaining-preds i) (copy-list (aref preds i))) (when (null (aref remaining-preds i))
+            (push i ready)))
+        (loop while ready
+              do (let* ((node
+                (if counts-or-nil (funcall node-selector ready insts priorities counts-or-nil)
+                  (funcall node-selector ready priorities)))
+                 (inst (nth node insts)))
+            (setf ready (remove node ready :test #'eql))
+            (push inst emitted)
+            (when counts-or-nil
+              (%opt-decrement-reg-counts (opt-inst-read-regs inst) counts-or-nil))
+            (dolist (succ (aref succs node))
+              (setf (aref remaining-preds succ) (remove node (aref remaining-preds succ) :test #'eql))
+              (when (null (aref remaining-preds succ))
+                (pushnew succ ready :test #'eql)))))
+        (if (= (length emitted) n) (nreverse emitted)
+          insts)))))
 
 (defun %opt-schedule-run (insts)
   "List-schedule a side-effect-free instruction run."
@@ -229,9 +301,12 @@ or NIL for post-RA scheduling (where pressure is ignored)."
 
 (defun %opt-schedule-pre-ra-run (insts live-out)
   "Pressure-aware list-schedule a side-effect-free pre-RA instruction run."
-  (%opt-run-scheduler-toposort insts
-                               :node-selector #'%opt-best-pre-ra-ready-node
-                               :counts-or-nil (%opt-build-read-counts insts live-out)))
+  (%opt-run-scheduler-toposort
+    insts
+    :node-selector
+    #'%opt-best-pre-ra-ready-node
+    :counts-or-nil
+    (%opt-build-read-counts insts live-out)))
 
 (defun %opt-schedule-basic-block (instructions)
   "Schedule each movable run inside one basic block INSTRUCTIONS."
@@ -239,15 +314,14 @@ or NIL for post-RA scheduling (where pressure is ignored)."
         (run nil))
     (labels ((flush-run ()
                (when run
-                 (dolist (inst (%opt-schedule-run (nreverse run)))
-                   (push inst result))
-                 (setf run nil))))
-      (dolist (inst instructions)
-        (if (%opt-scheduler-barrier-p inst)
-            (progn
-              (flush-run)
+            (dolist (inst (%opt-schedule-run (nreverse run)))
               (push inst result))
-            (push inst run)))
+            (setf run nil))))
+      (dolist (inst instructions)
+        (if (%opt-scheduler-barrier-p inst) (progn
+            (flush-run)
+            (push inst result))
+          (push inst run)))
       (flush-run)
       (nreverse result))))
 
@@ -257,14 +331,13 @@ or NIL for post-RA scheduling (where pressure is ignored)."
         (run nil))
     (labels ((flush-run ()
                (when run
-                 (push (list :run (nreverse run)) segments)
-                 (setf run nil))))
+            (push (list :run (nreverse run)) segments)
+            (setf run nil))))
       (dolist (inst instructions)
-        (if (%opt-scheduler-barrier-p inst)
-            (progn
-              (flush-run)
-              (push (list :barrier inst) segments))
-            (push inst run)))
+        (if (%opt-scheduler-barrier-p inst) (progn
+            (flush-run)
+            (push (list :barrier inst) segments))
+          (push inst run)))
       (flush-run)
       (nreverse segments))))
 
@@ -275,23 +348,22 @@ or NIL for post-RA scheduling (where pressure is ignored)."
     (dolist (segment (reverse (%opt-scheduler-segments instructions)))
       (ecase (first segment)
         (:barrier
-         (let ((inst (second segment)))
-           (push (list inst) scheduled-segments)
-           (setf live-after (%opt-live-before-instruction inst live-after))))
+          (let ((inst (second segment)))
+            (push (list inst) scheduled-segments)
+            (setf live-after (%opt-live-before-instruction inst live-after))))
         (:run
-         (let* ((run (second segment))
-                (scheduled (%opt-schedule-pre-ra-run run live-after)))
-           (push scheduled scheduled-segments)
-           (setf live-after (%opt-live-before-instructions scheduled live-after))))))
+          (let* ((run (second segment))
+                 (scheduled (%opt-schedule-pre-ra-run run live-after)))
+            (push scheduled scheduled-segments)
+            (setf live-after (%opt-live-before-instructions scheduled live-after))))))
     (apply #'append scheduled-segments)))
 
 (defun %opt-flatten-cfg-block-order (cfg)
   "Flatten CFG in original block creation order after local block rewrites."
   (let ((result nil))
-    (loop for block across (cfg-blocks cfg) do
-      (when (bb-label block)
-        (push (bb-label block) result))
-      (dolist (inst (bb-instructions block))
+    (loop for block across (cfg-blocks cfg)
+          do (when (bb-label block)
+        (push (bb-label block) result)) (dolist (inst (bb-instructions block))
         (push inst result)))
     (nreverse result)))
 
@@ -303,10 +375,10 @@ priorities from estimated VM latencies, and emits highest-priority ready nodes.
 Scheduling is limited to side-effect-free runs inside a basic block; calls,
 stores, signals, and control-flow instructions are barriers."
   (let ((cfg (cfg-build instructions)))
-    (loop for block across (cfg-blocks cfg) do
-      (setf (bb-instructions block)
-            (%opt-schedule-basic-block (bb-instructions block))))
+    (loop for block across (cfg-blocks cfg)
+          do (setf (bb-instructions block) (%opt-schedule-basic-block (bb-instructions block))))
     (%opt-flatten-cfg-block-order cfg)))
+
 (defun schedule-pre-ra (instructions)
   "FR-067: pressure-aware list scheduling before register allocation.
 
@@ -317,7 +389,6 @@ signals, or other side-effecting barriers, so basic-block boundaries and codegen
 semantics are preserved.  FR-067 is complete and this function is the backend
 entry point used before register allocation."
   (let ((cfg (cfg-build instructions)))
-    (loop for block across (cfg-blocks cfg) do
-      (setf (bb-instructions block)
-            (%opt-schedule-pre-ra-basic-block (bb-instructions block))))
+    (loop for block across (cfg-blocks cfg)
+          do (setf (bb-instructions block) (%opt-schedule-pre-ra-basic-block (bb-instructions block))))
     (%opt-flatten-cfg-block-order cfg)))
