@@ -5,30 +5,33 @@
 ;;;; reaches cl-cc/vm only through its public contract. While it did not, no
 ;;;; separate repository could have built -- an external consumer cannot name
 ;;;; another package's internal symbols.
-
 (in-package :cl-cc-optimize/test)
 
 (defun %internal-vm-references-in (path)
   "Return the distinct CL-CC/VM internal symbol names named under PATH."
   (let ((names '()))
-    (dolist (file (directory (merge-pathnames "**/*.lisp" path))
-                  (sort (remove-duplicates names :test #'string=) #'string<))
+    (dolist (file
+        (directory (merge-pathnames "**/*.lisp" path))
+        (sort (remove-duplicates names :test #'string=) #'string<))
       (with-open-file (in file :external-format :utf-8)
         (loop for line = (read-line in nil)
               while line
               do (let ((start 0))
-                   (loop for hit = (search "cl-cc/vm::" line :start2 start
-                                                             :test #'char-equal)
-                         while hit
-                         do (let* ((from (+ hit (length "cl-cc/vm::")))
-                                   (to (or (position-if-not
-                                            (lambda (c)
-                                              (or (alphanumericp c)
-                                                  (find c "%*+-/=<>?!_")))
-                                            line :start from)
-                                           (length line))))
-                              (when (> to from) (push (subseq line from to) names))
-                              (setf start (max (1+ hit) to))))))))))
+            (loop for hit = (search "cl-cc/vm::" line :start2 start :test #'char-equal)
+                  while hit
+                  do (let* ((from (+ hit (length "cl-cc/vm::")))
+                     (to
+                    (or
+                      (position-if-not
+                        (lambda (c)
+                          (or (alphanumericp c) (find c "%*+-/=<>?!_")))
+                        line
+                        :start
+                        from)
+                      (length line))))
+                (when (> to from)
+                  (push (subseq line from to) names))
+                (setf start (max (1+ hit) to))))))))))
 
 (describe-sequential "cl-cc-optimize boundary with cl-cc/vm"
   (it "names no cl-cc/vm internal symbol"
@@ -39,12 +42,14 @@
              (asdf:system-relative-pathname :cl-cc-optimize "src/"))
             :to-be nil)))
 
-(describe-sequential "cl-cc-optimize public surface"
-  (it "exports the pass entry points a driver calls"
+(describe-sequential
+  "cl-cc-optimize public surface"
+  (it
+    "exports the pass entry points a driver calls"
     (dolist (name '("OPTIMIZE-INSTRUCTIONS" "OPT-PASS-FOLD" "OPT-PASS-DEVIRTUALIZE"))
       (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external)))
-
-  (it "exports the known-function property database"
+  (it
+    "exports the known-function property database"
     (dolist (name '("KNOWN-FUNCTION-PROPERTIES" "KNOWN-FUNCTION-PROPERTY-P"))
       (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external))))
 
@@ -64,8 +69,10 @@
       (expect (listp optimized) :to-be-truthy)
       (expect (plusp (length optimized)) :to-be-truthy))))
 
-(describe-sequential "optimizer passes return complete instruction streams"
-  (it "returns final cold-block labels and preserves the analyzed stream"
+(describe-sequential
+  "optimizer passes return complete instruction streams"
+  (it
+    "returns final cold-block labels and preserves the analyzed stream"
     (let* ((jump (cl-cc/vm:make-vm-jump-zero :reg :condition :label "cold"))
            (label (cl-cc/vm:make-vm-label :name "cold"))
            (signal (cl-cc/vm:make-vm-signal-error :error-reg :error))
@@ -79,8 +86,8 @@
       (expect (cl-cc/optimize:opt-branch-weight (first analyzed)) :to-be :unlikely)
       (expect (second analyzed) :to-be label)
       (expect (third analyzed) :to-be signal)))
-
-  (it "reassociation returns a nonempty unchanged stream when no rewrite applies"
+  (it
+    "reassociation returns a nonempty unchanged stream when no rewrite applies"
     (let* ((constant (cl-cc/vm:make-vm-const :dst :r0 :value 10))
            (halt (cl-cc/vm:make-vm-halt :reg :r0))
            (instructions (list constant halt))
@@ -88,3 +95,46 @@
       (expect result :to-be-truthy)
       (expect result :to-equal instructions)
       (expect (every #'eq result instructions) :to-be-truthy))))
+
+(describe-sequential
+  "translation validation symbolic executor"
+  (it
+    "rejects a changed unsupported opcode"
+    (expect
+      (cl-cc/optimize::translation-validation-equivalent-p
+        (list (cl-cc/vm:make-vm-signal-error :error-reg :r0))
+        (list (cl-cc/vm:make-vm-signal-error :error-reg :r1)))
+      :to-be
+      nil))
+  (it
+    "rejects identical unsupported opcodes"
+    (let ((instructions (list (cl-cc/vm:make-vm-signal-error :error-reg :r0))))
+      (expect
+        (cl-cc/optimize::translation-validation-equivalent-p instructions instructions)
+        :to-be
+        nil)))
+  (it
+    "rejects streams beyond the symbolic step bound"
+    (let ((instructions
+          (loop repeat 4097
+                collect (cl-cc/vm:make-vm-label :name "step"))))
+      (expect
+        (cl-cc/optimize::translation-validation-equivalent-p instructions instructions)
+        :to-be
+        nil)))
+  (it
+    "compares halt values"
+    (expect
+      (cl-cc/optimize::translation-validation-equivalent-p
+        (list (cl-cc/vm:make-vm-halt :reg :r0))
+        (list (cl-cc/vm:make-vm-halt :reg :r1)))
+      :to-be
+      nil))
+  (it
+    "compares print side effects"
+    (expect
+      (cl-cc/optimize::translation-validation-equivalent-p
+        (list (cl-cc/vm:make-vm-print :reg :r0) (cl-cc/vm:make-vm-halt :reg :r0))
+        (list (cl-cc/vm:make-vm-print :reg :r1) (cl-cc/vm:make-vm-halt :reg :r0)))
+      :to-be
+      nil)))
