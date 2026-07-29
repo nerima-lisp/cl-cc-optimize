@@ -63,3 +63,28 @@
                        (cl-cc/vm:vm-program-instructions program))))
       (expect (listp optimized) :to-be-truthy)
       (expect (plusp (length optimized)) :to-be-truthy))))
+
+(describe-sequential "optimizer passes return complete instruction streams"
+  (it "returns final cold-block labels and preserves the analyzed stream"
+    (let* ((jump (cl-cc/vm:make-vm-jump-zero :reg :condition :label "cold"))
+           (label (cl-cc/vm:make-vm-label :name "cold"))
+           (signal (cl-cc/vm:make-vm-signal-error :error-reg :error))
+           (instructions (list jump label signal))
+           (cold-labels (cl-cc/optimize::%opt-cold-labels instructions))
+           (analyzed (cl-cc/optimize:opt-analyze-branch-weights instructions)))
+      (expect (hash-table-p cold-labels) :to-be-truthy)
+      (expect (gethash "cold" cold-labels) :to-be-truthy)
+      (expect (hash-table-count cold-labels) :to-equal 1)
+      (expect (length analyzed) :to-equal (length instructions))
+      (expect (cl-cc/optimize:opt-branch-weight (first analyzed)) :to-be :unlikely)
+      (expect (second analyzed) :to-be label)
+      (expect (third analyzed) :to-be signal)))
+
+  (it "reassociation returns a nonempty unchanged stream when no rewrite applies"
+    (let* ((constant (cl-cc/vm:make-vm-const :dst :r0 :value 10))
+           (halt (cl-cc/vm:make-vm-halt :reg :r0))
+           (instructions (list constant halt))
+           (result (cl-cc/optimize::opt-pass-reassociate instructions)))
+      (expect result :to-be-truthy)
+      (expect result :to-equal instructions)
+      (expect (every #'eq result instructions) :to-be-truthy))))

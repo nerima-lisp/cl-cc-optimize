@@ -58,7 +58,8 @@
                  current-cold-p nil))
           ((%opt-cold-block-inst-p inst)
            (setf current-cold-p t))))
-      (flush-current))))
+      (flush-current)
+      cold-labels)))
 
 (defun %opt-branch-weight-for-jump-zero (inst index vec label-positions cold-labels)
   "Return static branch metadata for INST at INDEX.
