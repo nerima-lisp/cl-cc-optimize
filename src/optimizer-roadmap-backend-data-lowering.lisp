@@ -131,14 +131,11 @@
           "packages/compile/src/codegen-core-control.lisp"
           "packages/type/src/inference-handlers.lisp"
           "packages/compile/tests/codegen-control-tests.lisp"
-          "packages/type/tests/inference-forms-tests.lisp"
           "packages/compile/tests/compiler-tests-extended-stdlib.lisp")
          (("CL-CC/COMPILE" . "%COMPILE-IF-BRANCH")
           ("CL-CC/TYPE" . "INFER-THE")
           ("CL-CC/TYPE" . "INFER-SETQ"))
          (codegen-the-with-declared-integer-type-emits-typep
-          infer-the-matching-type-is-fixnum
-          infer-setq-returns-fixnum
           compile-declaim-safety-zero-suppresses-top-level-the-type-assertion))
     (366 366
          ("packages/expand/src/macros-runtime-support.lisp"

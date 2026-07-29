@@ -105,7 +105,7 @@
         (loop for b across (cfg-blocks cfg)
               when (and (bb-post-idom b) (not (eq b exit)))
               do (push b (bb-post-children (bb-post-idom b))))
-        exit)))
+        exit))))
 
 (defun cfg-post-dominates-p (a b)
   "T if block A post-dominates block B (A is an ancestor of B in the post-dominator tree)."
@@ -115,8 +115,7 @@
            (cfg-post-dominates-p a (bb-post-idom b)))))
 
 ;;; ─── Critical Edge Splitting ─────────────────────────────────────────────
-
-(defun cfg-split-critical-edges (cfg)
+ (defun cfg-split-critical-edges (cfg)
   "Split critical edges by inserting empty landing-pad blocks.
 
    A critical edge is an edge from a block with multiple successors to a block
@@ -138,7 +137,7 @@
                                             (make-vm-jump-zero :reg (vm-reg term)
                                                                :label (vm-name (bb-label pad))))))
                 (t
-                 (%cfg-split-edge cfg pred succ target-label)))))))))))
+                 (%cfg-split-edge cfg pred succ target-label))))))))))
 
 ;;; ─── Dominance Frontiers ─────────────────────────────────────────────────
 

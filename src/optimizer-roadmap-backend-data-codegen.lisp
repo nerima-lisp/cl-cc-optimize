@@ -72,7 +72,7 @@
           aarch64-leaf-and-nonleaf-without-spills-share-fpe-layout
           aarch64-default-fpe-uses-sp-relative-spill-frame
           aarch64-debug-opt-out-keeps-fp-lr-pair-and-fp-spills
-          |ARGS-TESTS/CLI-ARGS-BOOL-FLAGS [debug]|
+          |CLI-ARGS-BOOL-FLAGS DEBUG|
           cli-do-compile-debug-binds-backend-frame-pointer-switches))
     (389 389
          ("packages/codegen/src/x86-64-regs.lisp"

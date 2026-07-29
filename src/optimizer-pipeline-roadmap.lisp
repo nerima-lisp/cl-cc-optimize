@@ -230,23 +230,35 @@ rather than being weakened to a pattern match.")
                            "packages/optimize/src/optimizer-speculative-passes.lisp")))))))
 
 (defun %opt-roadmap-test-anchor-registered-p (anchor)
-  "Return T when ANCHOR names a loaded cl-cc/test test.
-Queries cl-cc/test's *KNOWN-TEST-NAMES* registry (DEFTEST NAME symbol ->
-description), which replaced the old *TEST-REGISTRY*/PERSIST-LOOKUP/
-PERSIST-EACH API this used to call."
-  (let ((test-package (find-package :cl-cc/test)))
-    (if test-package
-        (let ((test-symbol (find-symbol (symbol-name anchor) test-package))
-              (known-names-symbol (find-symbol "*KNOWN-TEST-NAMES*" test-package)))
-          (and known-names-symbol
-               (boundp known-names-symbol)
-               (let ((known-names (symbol-value known-names-symbol)))
-                 (or (and test-symbol
-                          (nth-value 1 (gethash test-symbol known-names)))
-                     (let ((case-prefix (concatenate 'string "/" (symbol-name anchor) " [")))
-                       (loop for name being the hash-keys of known-names
-                             thereis (search case-prefix (symbol-name name))))))))
-        nil)))
+  "Return T when ANCHOR exactly names a test in the loaded cl-weave plan, or
+when a plan path element starts with ANCHOR followed by a space.
+Returns NIL when cl-weave or its public test-plan inspection API is unavailable,
+so cl-weave remains an optional dependency."
+  (let ((cl-weave-package (find-package :cl-weave)))
+    (when cl-weave-package
+      (let* ((list-tests (find-symbol "LIST-TESTS" cl-weave-package))
+             (test-plan-entry-path
+               (find-symbol "TEST-PLAN-ENTRY-PATH" cl-weave-package))
+             (anchor-name (symbol-name anchor))
+             (anchor-length (length anchor-name)))
+        (when (and list-tests
+                   test-plan-entry-path
+                   (fboundp list-tests)
+                   (fboundp test-plan-entry-path))
+          (loop for entry in (funcall list-tests
+                                      :stream (make-broadcast-stream)
+                                      :name-filter nil)
+                thereis (some (lambda (path-element)
+                                (let* ((path-element-name (string path-element))
+                                       (path-length (length path-element-name)))
+                                  (and (<= anchor-length path-length)
+                                       (string-equal anchor-name path-element-name
+                                                     :end2 anchor-length)
+                                       (or (= anchor-length path-length)
+                                           (char= #\Space
+                                                  (char path-element-name
+                                                        anchor-length))))))
+                              (funcall test-plan-entry-path entry))))))))
 
 (defun %opt-roadmap-api-entry-fbound-p (entry)
   "Return T when ENTRY names a checkable API evidence target.
