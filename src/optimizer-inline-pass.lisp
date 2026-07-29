@@ -41,15 +41,31 @@
                    (setf (getf meta :order)
                          (remove victim order :test #'equal))))))))
 
+(progn
 (defun opt-make-pure-function-memo-table (&key max-size)
-  "Create a memo table for pure-function result caching.
-
-When MAX-SIZE is a positive integer, the table enforces a least-recently-used
-eviction policy at insertion time."
+  "Create a memo table for pure-function result caching."
   (let ((table (make-hash-table :test #'equal)))
     (setf (gethash table *opt-pure-memo-metadata*)
           (list :max-size max-size :order nil))
     table))
+
+(defun opt-make-pure-function-runtime-memoizer (function &key max-size)
+  "Return a runtime memoizing wrapper for explicitly pure FUNCTION.
+All returned values, including NIL and zero values, are preserved."
+  (check-type function function)
+  (let ((memo (opt-make-pure-function-memo-table :max-size max-size))
+        (pure-labels (make-hash-table :test #'eq))
+        (label (gensym "PURE-RUNTIME-")))
+    (setf (gethash label pure-labels) t)
+    (lambda (&rest args)
+      (multiple-value-bind (cached found-p)
+          (opt-pure-function-memo-get memo pure-labels label args)
+        (if found-p
+            (values-list cached)
+            (let ((values (multiple-value-list (apply function args))))
+              (opt-pure-function-memo-put memo pure-labels label args values)
+              (values-list values)))))))
+)
 
 (defun opt-pure-function-memo-get (memo-table pure-labels label args)
   "Return cached result for pure LABEL/ARGS, or NIL with a miss flag."

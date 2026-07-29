@@ -13,6 +13,7 @@ speculative recompilation."
       (setf threshold (* threshold (1+ failures))))
     threshold))
 
+(progn
 (defun opt-tier-transition (current-tier hotness
                             &key (baseline-threshold 100)
                                  (optimized-threshold 1000))
@@ -23,6 +24,41 @@ speculative recompilation."
     (:baseline
      (if (>= hotness optimized-threshold) :optimized :baseline))
     (:optimized :optimized)))
+
+(defstruct (opt-tier-runtime-state
+             (:constructor make-opt-tier-runtime-state
+                 (&key (tier :interpreter) (call-count 0) (backedge-count 0)
+                       (pgo-handoff-p nil))))
+  tier call-count backedge-count pgo-handoff-p)
+
+(defun opt-tier-record-runtime-event (state event
+                                      &key (count 1)
+                                           (baseline-threshold 100)
+                                           (optimized-threshold 1000))
+  "Record a call or backedge and return STATE plus a one-shot PGO handoff payload."
+  (check-type state opt-tier-runtime-state)
+  (check-type count (integer 0 *))
+  (ecase event
+    (:call (incf (opt-tier-runtime-state-call-count state) count))
+    (:backedge (incf (opt-tier-runtime-state-backedge-count state) count)))
+  (let* ((hotness (+ (opt-tier-runtime-state-call-count state)
+                     (* 10 (opt-tier-runtime-state-backedge-count state))))
+         (next-tier (opt-tier-transition
+                     (opt-tier-runtime-state-tier state) hotness
+                     :baseline-threshold baseline-threshold
+                     :optimized-threshold optimized-threshold))
+         (handoff-p (and (eq next-tier :optimized)
+                         (not (opt-tier-runtime-state-pgo-handoff-p state)))))
+    (setf (opt-tier-runtime-state-tier state) next-tier)
+    (when handoff-p
+      (setf (opt-tier-runtime-state-pgo-handoff-p state) t))
+    (values state
+            (and handoff-p
+                 (list :tier :optimized
+                       :call-count (opt-tier-runtime-state-call-count state)
+                       :backedge-count (opt-tier-runtime-state-backedge-count state)
+                       :hotness hotness)))))
+)
 
 (defun opt-build-async-state-machine (await-labels)
   "Build a linear async state machine skeleton from AWAIT-LABELS.
