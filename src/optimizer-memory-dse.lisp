@@ -91,6 +91,16 @@ metadata without requiring cross-package instruction-shape changes."
                   (%mps-pending-uses-reg-p pending reg))
         (%mps-flush-one state key)))))
 
+(defun %mps-flush-slot-writes-aliasing-read
+    (state read-inst alias-roots type-facts)
+  "Flush pending slot writes that READ-INST may observe under TBAA metadata."
+  (dolist (key (copy-list (mps-pending-order state)))
+    (let ((pending (%mps-pending-store state key)))
+      (when (and (typep pending 'vm-slot-write)
+                 (opt-memory-accesses-may-alias-p
+                  read-inst pending alias-roots type-facts))
+        (%mps-flush-one state key)))))
+
 ;;; ─── Cons slot forwarding ─────────────────────────────────────────────────
 
 (defun %opt-cons-slot-kill-dependent-on-reg (facts reg)
@@ -187,8 +197,10 @@ predecessors to agree on the same slot fact."
    - a later store to the same global/slot kills the earlier pending store
    - vm-get-global / vm-slot-read force the matching pending store to be emitted first
    - labels and non-pure instructions flush all pending stores"
-  (let ((state       (make-mem-pass-state))
-        (alias-roots (opt-compute-heap-aliases instructions)))
+  (let* ((state (make-mem-pass-state))
+         (metadata (opt-build-memory-tbaa-metadata instructions))
+         (alias-roots (gethash :alias-roots metadata))
+         (type-facts (gethash :type-facts metadata)))
     (dolist (inst instructions)
       (typecase inst
         (vm-label
@@ -205,9 +217,8 @@ predecessors to agree on the same slot fact."
         (vm-slot-read
          (let ((dst (cl-cc/vm:vm-slot-read-dst inst)))
            (when dst (%mps-flush-if-src-overwritten state dst)))
-         (%mps-flush-one state (opt-slot-alias-key (cl-cc/vm:vm-slot-read-obj-reg inst)
-                                                    (cl-cc/vm:vm-slot-read-slot-name inst)
-                                                    alias-roots))
+         (%mps-flush-slot-writes-aliasing-read
+          state inst alias-roots type-facts)
          (%mps-emit state inst))
         (vm-set-global
          (%mps-remember-store state (cl-cc/vm:vm-set-global-name inst) inst))
