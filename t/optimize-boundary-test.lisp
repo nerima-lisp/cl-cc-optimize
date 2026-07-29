@@ -176,4 +176,49 @@
                       (typep instruction (quote cl-cc/vm:vm-fma)))
                     optimized)
               :to-be
-              nil)))))
+              nil))))
+(defun %make-slp-float-array-map (precision)
+  "Build a two-lane scalar float array map for SLP boundary tests."
+  (loop for offset below 2
+        for index = (intern (format nil "SLP-INDEX-~D" offset) :keyword)
+        for lhs = (intern (format nil "SLP-LHS-~D" offset) :keyword)
+        for rhs = (intern (format nil "SLP-RHS-~D" offset) :keyword)
+        for value = (intern (format nil "SLP-VALUE-~D" offset) :keyword)
+        append
+        (list (cl-cc/vm:make-vm-const :dst index :value offset)
+              (cl-cc/vm:make-vm-aref
+               :dst lhs :array-reg :lhs-array :index-reg index)
+              (cl-cc/vm:make-vm-aref
+               :dst rhs :array-reg :rhs-array :index-reg index)
+              (cl-cc/vm:make-vm-float-add
+               :dst value :lhs lhs :rhs rhs :precision precision)
+              (cl-cc/vm:make-vm-aset
+               :array-reg :dst-array :index-reg index :val-reg value))))
+
+(describe-sequential
+  "SLP float element types"
+  (it
+    "vectorizes two explicit f64 lanes"
+    (multiple-value-bind (optimized changed)
+        (cl-cc/optimize::%opt-slp-rewrite-block
+         (%make-slp-float-array-map :f64))
+      (let ((simd ((find-if (lambda (instruction) (typep instruction 'cl-cc/vm:vm-simd-vector-op)) optimized) optimized)))
+        (expect changed :to-be-truthy)
+        (expect (length optimized) :to-equal 3)
+        (expect (typep simd 'cl-cc/vm:vm-simd-vector-op) :to-be-truthy)
+        (expect (cl-cc/vm:vm-simd-vector-op-op simd) :to-be :add)
+        (expect (cl-cc/vm:vm-simd-vector-op-lanes simd) :to-equal 2)
+        (expect (cl-cc/vm:vm-simd-vector-op-element-type simd) :to-be :f64))))
+  (it
+    "leaves unsupported f32 lanes scalar"
+    (let ((instructions (%make-slp-float-array-map :f32)))
+      (multiple-value-bind (optimized changed)
+          (cl-cc/optimize::%opt-slp-rewrite-block instructions)
+        (expect changed :to-be nil)
+        (expect optimized :to-equal instructions)
+        (expect
+         (some (lambda (instruction)
+                 (typep instruction 'cl-cc/vm:vm-simd-vector-op))
+               optimized)
+         :to-be nil)))))
+)

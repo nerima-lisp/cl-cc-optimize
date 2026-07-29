@@ -193,10 +193,21 @@ compile-time trip counts make the generated vector-limit constant explicit."
   (some (lambda (inst) (typep inst 'vm-simd-vector-op)) instructions))
 
 (defun %opt-slp-op-kind (inst)
-  "Return the SIMD op keyword for scalar SLP arithmetic INST, or NIL.
-   Delegates entirely to %opt-autovec-op-kind which covers vm-logand/logior/logxor
-   via *opt-autovec-scalar-to-simd-op*."
-  (%opt-autovec-op-kind inst))
+  "Return the SIMD op keyword and packed element type for scalar SLP INST."
+  (typecase inst
+    (vm-float-add
+     (when (eq (vm-float-precision inst) :f64)
+       (values :add :f64)))
+    (vm-float-sub
+     (when (eq (vm-float-precision inst) :f64)
+       (values :sub :f64)))
+    (vm-float-mul
+     (when (eq (vm-float-precision inst) :f64)
+       (values :mul :f64)))
+    (t
+     (let ((op (%opt-autovec-op-kind inst)))
+       (when op
+         (values op :i32))))))
 
 (defun %opt-slp-index-descriptor (reg values offsets)
   "Return a normalized descriptor for index register REG.
@@ -271,12 +282,15 @@ base index register for an affine `(+ base constant)` value found in the block."
                             :array (vm-array-reg inst)
                             :index-reg (vm-index-reg inst)
                             :index (gethash inst indexes))))
-               ((%opt-slp-op-kind inst)
-                (setf (gethash (vm-dst inst) ops)
-                      (list :inst inst
-                            :op (%opt-slp-op-kind inst)
-                            :lhs (vm-lhs inst)
-                            :rhs (vm-rhs inst))))))
+               (t
+                (multiple-value-bind (op element-type) (%opt-slp-op-kind inst)
+                  (when op
+                    (setf (gethash (vm-dst inst) ops)
+                          (list :inst inst
+                                :op op
+                                :element-type element-type
+                                :lhs (vm-lhs inst)
+                                :rhs (vm-rhs inst))))))))
     (values loads ops indexes positions reads)))
 
 (defun %opt-slp-store-lane (store loads ops indexes reads)
@@ -297,6 +311,7 @@ base index register for an affine `(+ base constant)` value found in the block."
               :lhs-load (getf lhs-load :inst)
               :rhs-load (getf rhs-load :inst)
               :op (getf producer :op)
+              :element-type (getf producer :element-type)
               :dst-array (vm-array-reg store)
               :lhs-array (getf lhs-load :array)
               :rhs-array (getf rhs-load :array)
@@ -306,6 +321,7 @@ base index register for an affine `(+ base constant)` value found in the block."
 (defun %opt-slp-lane-key (lane)
   "Return the isomorphism key for LANE, ignoring its lane offset."
   (list (getf lane :op)
+        (getf lane :element-type)
         (getf lane :dst-array)
         (getf lane :lhs-array)
         (getf lane :rhs-array)
@@ -315,9 +331,11 @@ base index register for an affine `(+ base constant)` value found in the block."
   "Return the scalar lane offset recorded in LANE."
   (cdr (getf lane :index)))
 
-(defun %opt-slp-supported-lane-count-p (lanes)
-  "Return T when LANES is supported by the existing native SIMD emitters."
-  (member lanes '(4 8) :test #'=))
+(defun %opt-slp-supported-lane-count-p (lanes element-type)
+  "Return T when LANES and ELEMENT-TYPE are supported by native SIMD emitters."
+  (ecase element-type
+    (:i32 (member lanes '(4 8) :test #'=))
+    (:f64 (= lanes 2))))
 
 (defun %opt-slp-group-contiguous-p (lanes)
   "Return T when LANES form a single contiguous superword."
@@ -354,7 +372,7 @@ base index register for an affine `(+ base constant)` value found in the block."
                             :rhs-array (getf first-lane :rhs-array)
                             :index-reg (getf first-lane :index-reg)
                             :lanes (length lanes)
-                            :element-type :i32)))
+                            :element-type (getf first-lane :element-type))))
 
 (defun %opt-slp-find-groups (insts)
   "Find independent straight-line SLP groups in INSTS."
@@ -367,10 +385,13 @@ base index register for an affine `(+ base constant)` value found in the block."
             (push lane (gethash (%opt-slp-lane-key lane) buckets)))))
       (loop for lanes being the hash-values of buckets
             do (let* ((ordered (sort (copy-list lanes) #'< :key #'%opt-slp-lane-offset))
-                      (want *opt-simd-lane-count*))
+                      (element-type (getf (first ordered) :element-type))
+                      (want (ecase element-type
+                              (:i32 *opt-simd-lane-count*)
+                              (:f64 2))))
                  (loop while (>= (length ordered) want)
                        for candidate = (subseq ordered 0 want)
-                       do (if (and (%opt-slp-supported-lane-count-p want)
+                       do (if (and (%opt-slp-supported-lane-count-p want element-type)
                                    (%opt-slp-group-contiguous-p candidate)
                                    (%opt-slp-group-span-safe-p insts candidate positions))
                               (progn
