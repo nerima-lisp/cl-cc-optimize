@@ -169,6 +169,20 @@
            pipeline-native-cache-key-differs-by-dimension
            pipeline-native-cache-key-ignores-observability-options
            pipeline-native-compile-file-cache-key-receives-option-plist))
+    (433 433
+          ("packages/vm/src/vm-numeric.lisp"
+           "packages/vm/t/vm-boundary-test.lisp")
+          (("CL-CC/VM" . "VM-POSIT-ENCODE")
+           ("CL-CC/VM" . "VM-POSIT-DECODE")
+           ("CL-CC/VM" . "VM-POSIT-ADD")
+           ("CL-CC/VM" . "VM-QUIRE-ADD-PRODUCT!")
+           ("CL-CC/VM" . "VM-QUIRE-TO-POSIT"))
+          (encodes-and-exactly-decodes-canonical-posit8-values
+           reserves-one-representation-for-nar-and-propagates-it
+           rounds-halfway-cases-to-the-representation-with-an-even-payload
+           provides-more-precision-near-one-than-near-maxpos
+           implements-rounded-arithmetic-in-a-shared-format
+           accumulates-products-exactly-and-rounds-only-at-quire-conversion))
     (387 502
           ("packages/codegen/src/x86-64-codegen-core.lisp"
            "packages/codegen/src/aarch64-codegen.lisp"
