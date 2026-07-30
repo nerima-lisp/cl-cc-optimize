@@ -29,7 +29,7 @@
       flake = false;
     };
     cl-cc-vm = {
-      url = "github:nerima-lisp/cl-cc-vm";
+      url = "github:nerima-lisp/cl-cc-vm/d88159a190283aaa39e50ec8e4b3fa2392dad0bd";
       flake = false;
     };
     cl-prolog = {
