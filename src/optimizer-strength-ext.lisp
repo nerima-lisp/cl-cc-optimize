@@ -98,8 +98,8 @@
              (t
               (when (opt-inst-dst inst)
                 (remhash (opt-inst-dst inst) env))
-              (push inst result)))))
-    (nreverse result))))
+              (push inst result))))))
+    (nreverse result)))
 
 ;;; ─── Pass: Batch Concatenation Packing ───────────────────────────────────
 

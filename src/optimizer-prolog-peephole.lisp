@@ -26,12 +26,26 @@
                       (logic-substitute template env2))
                     result-list)))))))
 
+(progn
+  (defun %peephole-pattern-candidate-p (pattern instruction)
+    "Return true when PATTERN can structurally match INSTRUCTION."
+    (or (symbolp pattern)
+        (and (consp pattern)
+             (consp instruction)
+             (eql (car pattern) (car instruction)))))
+
+  (defun %peephole-rule-candidate-p (rule current next)
+    "Return true when RULE opcode patterns can match CURRENT and NEXT."
+    (and (%peephole-pattern-candidate-p (first rule) current)
+         (%peephole-pattern-candidate-p (second rule) next))))
+
 (defun %maybe-peephole-rewrite (current next)
-  "Try all peephole rules for CURRENT/NEXT and return replacements if one matches."
+  "Try candidate peephole rules for CURRENT/NEXT and return the first replacement."
   (dolist (rule *peephole-rules*)
-    (let ((replacements (%match-peephole-rule rule current next)))
-      (when replacements
-        (return replacements)))))
+    (when (%peephole-rule-candidate-p rule current next)
+      (let ((replacements (%match-peephole-rule rule current next)))
+        (when replacements
+          (return replacements))))))
 
 (defun %peephole-walk (rest out)
   "Scan REST left-to-right in pairs, accumulating rewritten instructions into OUT."

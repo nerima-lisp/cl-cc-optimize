@@ -290,6 +290,7 @@
 
        ;; ─── optimizer-pipeline.lisp — top-level entry point ───────────────
         #:optimize-instructions
+        #:opt-pass-fold
         ;; ─── FR-152: transitive function purity ──────────────────────────
         #:*function-instruction-table*
         #:*user-function-purity-cache*
