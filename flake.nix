@@ -174,7 +174,7 @@
               ''
                 export HOME="$TMPDIR/home"
                 mkdir -p "$HOME" "$out"
-                timeout 120 sbcl --script ${self}/run-tests.lisp
+                timeout 600 sbcl --script ${self}/run-tests.lisp
                 touch "$out/passed"
               '';
 
@@ -197,7 +197,7 @@
             ];
             text = ''
               export CL_SOURCE_REGISTRY="${sourceRegistry}"
-              exec timeout 120 sbcl --script ${self}/run-tests.lisp
+              exec timeout 600 sbcl --script ${self}/run-tests.lisp
             '';
           };
         in

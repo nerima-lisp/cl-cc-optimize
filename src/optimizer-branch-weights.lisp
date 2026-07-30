@@ -2,7 +2,7 @@
 ;;;; ─── Branch Prediction Weight Analysis ─────────────────────────────────
 
 (defparameter *opt-cold-block-instruction-types*
-  '(vm-signal vm-error-instruction vm-cerror vm-warn)
+  '(vm-signal vm-signal-error vm-error-instruction vm-cerror vm-warn)
   "Instruction types that make their containing basic block cold/unlikely.")
 
 (defstruct (vm-branch-weighted-jump-zero

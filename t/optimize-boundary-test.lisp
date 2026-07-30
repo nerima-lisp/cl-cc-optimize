@@ -202,7 +202,7 @@
     (multiple-value-bind (optimized changed)
         (cl-cc/optimize::%opt-slp-rewrite-block
          (%make-slp-float-array-map :f64))
-      (let ((simd ((find-if (lambda (instruction) (typep instruction 'cl-cc/vm:vm-simd-vector-op)) optimized) optimized)))
+      (let ((simd (find-if (lambda (instruction) (typep instruction (quote cl-cc/vm:vm-simd-vector-op))) optimized)))
         (expect changed :to-be-truthy)
         (expect (length optimized) :to-equal 3)
         (expect (typep simd 'cl-cc/vm:vm-simd-vector-op) :to-be-truthy)
@@ -222,3 +222,55 @@
                optimized)
          :to-be nil)))))
 )
+
+(describe-sequential "Prolog peephole candidate selection"
+  (it "skips opcode-incompatible rules before unification"
+    (let ((rule (quote ((:add ?dst ?lhs ?rhs) ?next
+                        ((:add ?dst ?lhs ?rhs) ?next)))))
+      (expect (cl-cc/optimize::%peephole-rule-candidate-p
+               rule (quote (:const :r0 1)) (quote (:halt :r0)))
+              :to-be nil)
+      (expect (cl-cc/optimize::%peephole-rule-candidate-p
+               rule (quote (:add :r0 :r1 :r2)) (quote (:halt :r0)))
+              :to-be-truthy)))
+  (it "processes a stdlib-sized stream without changing unmatched instructions"
+    (let* ((pair (list (quote (:add :r0 :r1 :r2))
+                       (quote (:const :r3 20))))
+           (instructions (loop repeat 800 append (copy-list pair)))
+           (result (cl-cc/optimize:apply-prolog-peephole instructions)))
+      (expect result :to-equal instructions))))
+
+(describe-sequential "E-graph lowering convergence"
+  (it "selects the first definition regardless of hash insertion order"
+    (let* ((eg (cl-cc/optimize::make-e-graph))
+           (class-id (cl-cc/optimize::egraph-add
+                      eg (quote cl-cc/optimize::reg-ref) :seed))
+           (instructions
+             (list (cl-cc/vm:make-vm-move :dst :r2 :src :seed)
+                   (cl-cc/vm:make-vm-move :dst :r1 :src :r2)))
+           (forward (make-hash-table :test (function eq)))
+           (reverse (make-hash-table :test (function eq))))
+      (setf (gethash :r2 forward) class-id
+            (gethash :r1 forward) class-id
+            (gethash :r1 reverse) class-id
+            (gethash :r2 reverse) class-id)
+      (let ((forward-representatives
+              (cl-cc/optimize::%egraph-class-representatives
+               eg forward instructions))
+            (reverse-representatives
+              (cl-cc/optimize::%egraph-class-representatives
+               eg reverse instructions)))
+        (expect (gethash class-id forward-representatives) :to-be :r2)
+        (expect (gethash class-id reverse-representatives) :to-be :r2))))
+  (it "is idempotent for registers joined by an algebraic identity"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :zero :value 0)
+                   (cl-cc/vm:make-vm-add :dst :r2 :lhs :r1 :rhs :zero)))
+           (once (cl-cc/optimize:optimize-with-egraph instructions))
+           (twice (cl-cc/optimize:optimize-with-egraph once)))
+      (expect (mapcar (function cl-cc/optimize::instruction->sexp) twice)
+              :to-equal
+              (mapcar (function cl-cc/optimize::instruction->sexp) once))
+      (expect (typep (first once) (quote cl-cc/vm:vm-const)) :to-be-truthy)
+      (expect (cl-cc/vm:vm-dst (first once)) :to-be :zero)
+      (expect (cl-cc/vm:vm-const-value (first once)) :to-equal 0))))

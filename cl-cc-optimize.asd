@@ -8,6 +8,7 @@
   :source-control (:git "https://github.com/nerima-lisp/cl-cc-optimize.git")
   :version "0.1.0"
   :depends-on (:cl-cc-vm :cl-prolog :cl-cc-type :cl-cc-ast :cl-parser-kit)
+  :in-order-to ((test-op (test-op "cl-cc-optimize/test")))
   :pathname "src"
   :serial t
   :components
@@ -145,8 +146,9 @@
   :depends-on ("cl-cc-optimize" "cl-weave")
   :pathname "t"
   :serial t
-  :components ((:file "package")
-               (:file "optimize-boundary-test"))
-  :perform (asdf:test-op (op system)
-             (declare (ignore op system))
-             (uiop:symbol-call :cl-weave :run-all-tests :pass-with-no-tests nil)))
+  :components ((:file "package") (:file "optimize-boundary-test"))
+  :perform (asdf:test-op
+    (op system)
+    (declare (ignore op system))
+    (unless (uiop:symbol-call :cl-weave :run-all :reporter :spec :pass-with-no-tests nil)
+      (error "cl-cc-optimize tests failed"))))
