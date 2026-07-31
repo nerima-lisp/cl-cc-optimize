@@ -216,9 +216,7 @@ base index register for an affine `(+ base constant)` value found in the block."
 (defun %opt-slp-rewrite-block (insts)
   "Rewrite one basic block's scalar superwords into SIMD vector operations."
   (let ((groups (%opt-slp-find-groups insts)))
-    (if (null groups)
-        (values insts nil)
-        (let ((remove (make-hash-table :test #'eq))
+    (if groups (let ((remove (make-hash-table :test #'eq))
               (insert (make-hash-table :test #'eq)))
           (dolist (group groups)
             (let* ((simd (%opt-slp-simd-inst group))
@@ -240,7 +238,7 @@ base index register for an affine `(+ base constant)` value found in the block."
                                   (list (gethash inst insert)))
                                  ((gethash inst remove) nil)
                                  (t (list inst))))
-                  t)))))
+                  t)) (values insts nil))))
 
 (defun opt-pass-slp-vectorize (instructions)
   "FR-227: pack straight-line scalar array-map lanes into SIMD vector ops.

@@ -117,8 +117,7 @@ metadata without requiring cross-package instruction-shape changes."
 
 (defun %opt-cons-slot-safe-source-p (dst car-reg cdr-reg)
   "Return T when a vm-cons DST write does not destroy either slot source."
-  (and (not (eq dst car-reg))
-       (not (eq dst cdr-reg))))
+  (not (or (eq dst car-reg) (eq dst cdr-reg))))
 
 (defun %opt-cons-slot-mutation-boundary-p (inst)
   "Return T when INST may mutate heap/global state or call arbitrary code."

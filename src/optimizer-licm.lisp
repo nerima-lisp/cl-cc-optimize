@@ -101,21 +101,21 @@
                                (or loop-insts (list inst))
                                (or alias-roots (make-hash-table :test #'eq))
                                type-facts)
-    (return-from opt-inst-loop-invariant-p nil))
+    (return-from opt-inst-loop-invariant-p))
 
   ;; Check all read registers
   (let ((reads (opt-inst-read-regs inst)))
     (dolist (reg reads t)
       ;; If reg is defined inside the loop, not invariant
       (when (gethash reg loop-def-regs)
-        (return-from opt-inst-loop-invariant-p nil))
+        (return-from opt-inst-loop-invariant-p))
       ;; If all known definitions of REG are inside the loop, it is not invariant.
       (let ((sites (gethash reg def-sites)))
         (when (and sites
                    (every (lambda (block)
                             (gethash block loop-members))
                           sites))
-          (return-from opt-inst-loop-invariant-p nil))))))
+          (return-from opt-inst-loop-invariant-p))))))
 
 ;;; ─── LICM: preheader insertion helpers ───────────────────────────────────
 
@@ -183,14 +183,14 @@
 
    This pass activates the dormant bb-loop-depth field computed by cfg.lisp.
    It is FR-003 from docs/notes/optimize-passes.md."
-  (when (null instructions)
+  (unless instructions
     (return-from opt-pass-licm instructions))
   (let ((cfg (cfg-build instructions)))
     (cfg-compute-dominators cfg)
     (cfg-compute-loop-depths cfg)
-    (let ((loop-blocks (remove-if (lambda (b) (= (bb-loop-depth b) 0))
+    (let ((loop-blocks (remove-if (lambda (b) (zerop (bb-loop-depth b)))
                                   (coerce (cfg-blocks cfg) 'list))))
-      (when (null loop-blocks)
+      (unless loop-blocks
         (return-from opt-pass-licm instructions))
         (let* ((def-sites (%licm-collect-def-sites cfg))
                (alias-roots (opt-compute-heap-aliases instructions))

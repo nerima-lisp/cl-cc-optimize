@@ -22,7 +22,7 @@ stay conservative and return T."
   (let ((root-a (gethash reg-a points-to))
         (root-b (gethash reg-b points-to)))
     (cond
-      ((or (null root-a) (null root-b)) t)
+      ((not (and root-a root-b)) t)
       ((eq root-a root-b) t)
       ((opt-tbaa-must-not-alias-p root-a root-b heap-kinds) nil)
       (t t))))
@@ -37,9 +37,7 @@ stay conservative and return T."
   "Return T when REG-A and REG-B may alias under ALIAS-ROOTS.
 
 Unknown roots remain conservative and therefore return T."
-  (if (and type-facts (opt-tbaa-must-not-alias-p reg-a reg-b type-facts))
-      nil
-      (multiple-value-bind (root-a found-a) (gethash reg-a alias-roots)
+  (unless (and type-facts (opt-tbaa-must-not-alias-p reg-a reg-b type-facts)) (multiple-value-bind (root-a found-a) (gethash reg-a alias-roots)
         (multiple-value-bind (root-b found-b) (gethash reg-b alias-roots)
           (or (not found-a)
               (not found-b)

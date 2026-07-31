@@ -56,7 +56,7 @@ index registers to literal indices."
           (typecase inst
             (vm-const (setf (gethash dst source) (cons :const (vm-value inst))))
             (vm-move  (setf (gethash dst source) (cons :move (vm-src inst))))
-            (t        (setf (gethash dst source) (cons :other nil))))))
+            (t        (setf (gethash dst source) (list :other))))))
       (labels ((resolve (reg depth)
                         (when (and reg (< depth 64) (eql (gethash reg def-count) 1))
                           (let ((entry (gethash reg source)))
@@ -105,7 +105,7 @@ aggregate, never a partial rewrite."
                          (cl-cc/vm:vm-fill-pointer alloc-inst)
                          (vm-fill-pointer-reg alloc-inst)
                          (vm-displaced-to-reg alloc-inst)))
-            (return-from %sroa-collect-accesses nil))
+            (return-from %sroa-collect-accesses))
           (let ((accesses nil))
             (dolist (inst instructions)
               (when (member reg (opt-inst-read-regs inst) :test #'eq)
@@ -121,7 +121,7 @@ aggregate, never a partial rewrite."
                         ((and struct-p (typep inst 'vm-slot-write)
                               (eq (cl-cc/vm:vm-slot-write-obj-reg inst) reg))
                          (when (eq (cl-cc/vm:vm-slot-write-value-reg inst) reg)
-                           (return-from %sroa-collect-accesses nil))
+                           (return-from %sroa-collect-accesses))
                          (make-aggregate-access
                           :aggregate reg
                           :field-index (cl-cc/vm:vm-slot-write-slot-name inst)
@@ -131,7 +131,7 @@ aggregate, never a partial rewrite."
                               (eq (vm-array-reg inst) reg))
                          (let ((idx (gethash (vm-index-reg inst) const-map)))
                            (unless (integerp idx)
-                             (return-from %sroa-collect-accesses nil))
+                             (return-from %sroa-collect-accesses))
                            (make-aggregate-access
                             :aggregate reg :field-index idx :is-read-p t
                             :instruction inst)))
@@ -139,14 +139,14 @@ aggregate, never a partial rewrite."
                               (eq (vm-array-reg inst) reg))
                          (let ((idx (gethash (vm-index-reg inst) const-map)))
                            (unless (integerp idx)
-                             (return-from %sroa-collect-accesses nil))
+                             (return-from %sroa-collect-accesses))
                            (when (eq (vm-val-reg inst) reg)
-                             (return-from %sroa-collect-accesses nil))
+                             (return-from %sroa-collect-accesses))
                            (make-aggregate-access
                             :aggregate reg :field-index idx :is-read-p nil
                             :instruction inst)))
                         (t
-                         (return-from %sroa-collect-accesses nil)))))
+                         (return-from %sroa-collect-accesses)))))
                   (push access accesses))))
             (nreverse accesses))))))
 
@@ -323,9 +323,7 @@ INSTRUCTIONS is the flat instruction list of a single basic block or an
 entire function, matching every other OPT-PASS-* pass in this file's
 signature. Returns INSTRUCTIONS unchanged (same list, not a copy) when
 *SROA-ENABLED* is NIL or nothing qualifies."
-  (if (not *sroa-enabled*)
-      instructions
-      (let* ((candidates (sroa-analyze instructions))
+  (if *sroa-enabled* (let* ((candidates (sroa-analyze instructions))
              (index-of (let ((ht (make-hash-table :test #'eq)))
                          (loop for inst in instructions
                                for i from 0
@@ -344,11 +342,9 @@ signature. Returns INSTRUCTIONS unchanged (same list, not a copy) when
                 (setf changed t)
                 (let ((plan (sroa-promote alloc-inst accesses #'new-reg)))
                   (maphash (lambda (k v) (setf (gethash k replacements) v)) plan))))))
-        (if (not changed)
-            instructions
-            (loop for inst in instructions
+        (if changed (loop for inst in instructions
                   append (multiple-value-bind (value found-p) (gethash inst replacements)
                            (cond
                              ((not found-p) (list inst))
                              ((listp value) value)
-                             (t (list value)))))))))
+                             (t (list value))))) instructions)) instructions))

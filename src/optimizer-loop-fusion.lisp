@@ -131,12 +131,12 @@ when STRIDE/OFFSET are known constants."
                         (t
                          (let ((def (gethash reg def-env)))
                            (cond
-                            ((and (typep def 'vm-add))
+                            ((typep def 'vm-add)
                              (multiple-value-bind (s1 o1 ok1) (affine (vm-lhs def))
                                (multiple-value-bind (s2 o2 ok2) (affine (vm-rhs def))
                                  (when (and ok1 ok2)
                                    (values (+ s1 s2) (+ o1 o2) t)))))
-                            ((and (typep def 'vm-mul))
+                            ((typep def 'vm-mul)
                              (cond
                               ((eq (vm-lhs def) iv)
                                (when-let ((k (const (vm-rhs def))))
@@ -244,9 +244,7 @@ legality is proven by register checks plus conservative GCD/Banerjee memory test
     (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%loop-fr514-parse-canonical-loop-at vec i)))
-                 (if (null lp)
-                     (progn (emit (aref vec i)) (incf i))
-                     (let* ((next-i (1+ (opt-loop-exit-index lp)))
+                 (if lp (let* ((next-i (1+ (opt-loop-exit-index lp)))
                             (lp2 (and (< next-i n)
                                       (%loop-fr514-parse-canonical-loop-at vec next-i))))
                        (if (and lp2 (%loop-fr514-fusion-legal-p instructions vec lp lp2))
@@ -269,7 +267,7 @@ legality is proven by register checks plus conservative GCD/Banerjee memory test
                                        i (1+ (opt-loop-exit-index lp2))))))
                            (progn
                              (dolist (inst (%loop-fr514-loop-seq vec lp)) (emit inst))
-                             (setf i (1+ (opt-loop-exit-index lp)))))))))
+                             (setf i (1+ (opt-loop-exit-index lp)))))) (progn (emit (aref vec i)) (incf i)))))
       (if changed (nreverse out) instructions))))
 
 (defun %loop-fr514-independent-split-index (core)
@@ -321,9 +319,7 @@ single-purpose loops without changing loops with unknown state or memory effects
     (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%loop-fr514-parse-canonical-loop-at vec i)))
-                 (if (null lp)
-                     (progn (emit (aref vec i)) (incf i))
-                     (multiple-value-bind (core _step) (%loop-fr514-core-and-step lp)
+                 (if lp (multiple-value-bind (core _step) (%loop-fr514-core-and-step lp)
                        (declare (ignore _step))
                        (let ((split (%loop-fr514-independent-split-index core))
                              (init (%loop-fr514-constant-init vec lp)))
@@ -336,5 +332,5 @@ single-purpose loops without changing loops with unknown state or memory effects
                                      i (1+ (opt-loop-exit-index lp))))
                              (progn
                                (dolist (inst (%loop-fr514-loop-seq vec lp)) (emit inst))
-                               (setf i (1+ (opt-loop-exit-index lp))))))))))
+                               (setf i (1+ (opt-loop-exit-index lp))))))) (progn (emit (aref vec i)) (incf i)))))
       (if changed (nreverse out) instructions))))

@@ -105,7 +105,7 @@ new-result contains the rewritten instructions and vectorized-p is T.
 Otherwise new-result is unchanged, new-i is (1+ I), and vectorized-p is NIL."
   (let* ((cur (aref vec i))
          (header cur)
-         (cmp-inst (aref vec (+ i 1)))
+         (cmp-inst (aref vec (1+ i)))
          (jz-inst  (aref vec (+ i 2)))
          (header-name (vm-name header)))
     (flet ((fail ()

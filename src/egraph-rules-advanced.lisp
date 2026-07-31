@@ -84,7 +84,7 @@ refer to a definition that originally appeared later in the instruction stream."
       (dolist (entry (sort entries (function string<)
                            :key (lambda (item) (prin1-to-string (car item)))))
         (let ((canon (egraph-find eg (cdr entry))))
-          (when (null (gethash canon representatives))
+          (unless (gethash canon representatives)
             (setf (gethash canon representatives) (car entry))))))
     representatives))
 
@@ -102,7 +102,7 @@ refer to a definition that originally appeared later in the instruction stream."
 
    This pass is wired into the main optimizer pipeline via :egraph and also
    participates in the broader :prolog-rewrite stage."
-  (when (null instructions) (return-from optimize-with-egraph instructions))
+  (unless instructions (return-from optimize-with-egraph instructions))
   (let* ((eg (make-e-graph))
          (reg-map (egraph-add-instructions eg instructions)))
     (egraph-saturate eg rules

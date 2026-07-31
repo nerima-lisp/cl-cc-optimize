@@ -25,7 +25,7 @@ Returns the address or NIL if TLAB is exhausted."
         (prog1 (tlab-current tlab)
           (setf (tlab-current tlab) new-ptr))
         ;; TLAB exhausted: refill from global heap
-        nil)))
+        )))
 
 (defun tlab-refill (tlab heap &key new-chunk-address)
   "Refill TLAB with a fresh chunk so TLAB-ALLOCATE has room to bump-allocate
@@ -67,6 +67,6 @@ hand out overlapping/null memory ranges."))
 (defmacro with-tlab ((&optional (size (* 64 1024))) &body body)
   "Execute BODY with a thread-local TLAB of SIZE bytes."
   `(let ((*per-thread-tlab* (tlab-init ,size)))
-     (unwind-protect (progn ,@body)
+     (unwind-protect ,@body
        ;; Return remaining TLAB to global heap
        (setf *per-thread-tlab* nil))))

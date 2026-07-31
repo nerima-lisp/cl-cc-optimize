@@ -55,8 +55,7 @@ Rule structure itself is sourced from the Prolog rule database emitted by `defru
                            ,(if when
                                 `(lambda (bindings eg)
                                    (declare (ignorable bindings eg))
-                                   ,when)
-                                nil))
+                                   ,when)))
      (cl-prolog:query-prolog-first
       *egraph-rulebase*
       '(cl-prolog:assertz (egraph-rule ,name ,pattern ,replacement)))
@@ -113,7 +112,7 @@ Rule structure itself is sourced from the Prolog rule database emitted by `defru
   (not (const ?a))
   (const)
   :when (let ((a (egraph-binding-const eg bindings '?a)))
-          (%egraph-store-const eg (if (or (null a) (eql a 0)) t nil))))
+          (%egraph-store-const eg (if (or (null a) (eql a 0)) t))))
 
 (defrule fold-lt (lt (const ?a) (const ?b)) (const) :when (%egraph-fold-cmp eg bindings #'<))
 (defrule fold-gt (gt (const ?a) (const ?b)) (const) :when (%egraph-fold-cmp eg bindings #'>))
@@ -220,7 +219,7 @@ Rule structure itself is sourced from the Prolog rule database emitted by `defru
          :when (let ((v (egraph-binding-const eg bindings '?v)))
                  (let ((cid (egraph-add eg 'const)))
                    (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-                     (setf (ec-data cls) (if (null v) 1 0)))
+                     (setf (ec-data cls) (if v 0 1)))
                    t)))
 
 (defrule cons-p-const

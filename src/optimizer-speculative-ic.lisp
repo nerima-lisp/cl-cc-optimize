@@ -10,7 +10,7 @@ State transitions follow uninitialized → monomorphic → polymorphic → megam
     (push (cons receiver-key target) (opt-ic-site-entries site)))
   (let ((n (length (opt-ic-site-entries site))))
     (setf (opt-ic-site-state site)
-          (cond ((= n 0) :uninitialized)
+          (cond ((zerop n) :uninitialized)
                 ((= n 1) :monomorphic)
                 ((<= n (opt-ic-site-max-polymorphic-entries site)) :polymorphic)
                 (t :megamorphic)))
@@ -154,7 +154,8 @@ fields :shape, :receiver, :target representing sequential guards."
   (let ((target (%opt-effective-speculation-log log)))
     (with-open-file (stream pathname :direction :input)
       (with-standard-io-syntax
-        (let* ((payload (read stream nil nil))
+        (let* ((*read-eval* nil)
+               (payload (read stream nil nil))
                (threshold (or (getf payload :threshold) 1))
                (failures (getf payload :failures)))
           (setf (opt-spec-log-threshold target) threshold)

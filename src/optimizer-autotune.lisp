@@ -19,7 +19,12 @@ A hung probe is treated as failure (NIL), which leaves auto-tuning disabled
 rather than stalling optimization.")
 
 (defun %autotune-run-program-line (program args)
-  "Return a trimmed single-line command result, or NIL on failure."
+  "Return a trimmed single-line command result, or NIL on failure.
+
+Uses SB-EXT directly (RUN-PROGRAM/WITH-TIMEOUT/TIMEOUT/PROCESS-EXIT-CODE)
+rather than a #+sbcl reader conditional: this system builds and runs only
+under SBCL (see flake.nix's pkgs.sbcl.buildASDFSystem / sbcl --script), so
+there is no other implementation for a conditional to guard against."
   (handler-case
       (sb-ext:with-timeout *autotune-probe-timeout-seconds*
         (let ((out (make-string-output-stream)))
@@ -106,9 +111,7 @@ L3=8MiB -> 512.  Larger caches keep the same conservative upper bounds."
 The pass derives L1/L2/L3 tile sizes, runs the existing loop-tiling pass under
 those defaults when available, and retunes SIMD vector markers to the L1 tile.
 With *AUTOTUNE-SIMD-ENABLED* NIL this is a no-op."
-  (if (not *autotune-simd-enabled*)
-      instructions
-      (multiple-value-bind (l1-tile l2-tile l3-tile) (autotune-simd-tile-sizes)
+  (if *autotune-simd-enabled* (multiple-value-bind (l1-tile l2-tile l3-tile) (autotune-simd-tile-sizes)
         (declare (ignore l3-tile))
         (let* ((tiled (if (fboundp 'opt-pass-loop-tile)
                           (let ((*opt-loop-tile-default-l1-elements* l1-tile)
@@ -123,4 +126,4 @@ With *AUTOTUNE-SIMD-ENABLED* NIL this is a no-op."
                                     (%autotune-clone-simd-op inst l1-tile))
                                   inst))
                             tiled)))
-          (if changed out tiled)))))
+          (if changed out tiled))) instructions))

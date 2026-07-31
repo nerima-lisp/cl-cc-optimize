@@ -53,7 +53,7 @@
   (let* ((pred (car pair))
          (env  (cdr pair))
          (src  (gethash key env)))
-    (when (or (null src) (not (eq src dst)))
+    (unless (and src (eq src dst))
       (push (if src
                 (make-vm-move :dst dst :src src)
                 (%opt-pre-reconstruct-inst inst))

@@ -153,15 +153,13 @@ returns the merged exit-state interval table for convenience callers."
 
 (defun %opt-apply-eq-constraint (state lhs rhs true-p)
   "Apply equality narrowing for the true edge; false edge has no interval fact."
-  (if (not true-p)
-      state
-      (let* ((lhs-iv (%opt-state-interval-or-top state lhs))
+  (if true-p (let* ((lhs-iv (%opt-state-interval-or-top state lhs))
              (rhs-iv (%opt-state-interval-or-top state rhs))
              (intersection (%opt-interval-intersect lhs-iv rhs-iv)))
         (when intersection
           (setf (gethash lhs state) intersection
                 (gethash rhs state) intersection)
-          state))))
+          state)) state))
 
 (defun %opt-apply-branch-predicate-fact (state cmp-inst true-p)
   "Return STATE narrowed by CMP-INST for TRUE-P, or NIL if infeasible.

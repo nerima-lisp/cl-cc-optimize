@@ -68,9 +68,9 @@ Returns OPT-CANONICAL-LOOP or NIL."
 (defun opt-build-affine-loop-summary (&key induction-vars bounds accesses)
   "Build a conservative affine-loop summary descriptor."
   (list :kind :affine-loop-summary
-        :induction-vars (copy-list (or induction-vars nil))
-        :bounds (copy-list (or bounds nil))
-        :accesses (copy-list (or accesses nil))))
+        :induction-vars (copy-list induction-vars)
+        :bounds (copy-list bounds)
+        :accesses (copy-list accesses)))
 
 (defun %opt-access-kind (inst)
   (typecase inst
@@ -143,8 +143,8 @@ regions (not from caller-provided payload lists)."
 (defun opt-loop-interchange-plan (&key loops cache-locality-score dependence-safe-p)
   "Return an interchange plan when dependence safety is proven."
   (list :kind :loop-interchange
-        :applied-p (and dependence-safe-p (> (or cache-locality-score 0) 0))
-        :loops (copy-list (or loops nil))
+        :applied-p (and dependence-safe-p (plusp (or cache-locality-score 0)))
+        :loops (copy-list loops)
         :dependence-safe-p (not (null dependence-safe-p))
         :cache-locality-score (or cache-locality-score 0)))
 
@@ -161,9 +161,7 @@ Control instructions and IV update remain untouched."
     (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%opt-parse-canonical-loop-at vec i)))
-                 (if (null lp)
-                     (progn (emit (aref vec i)) (incf i))
-                     (multiple-value-bind (core step) (%opt-loop-core-and-step lp)
+                 (if lp (multiple-value-bind (core step) (%opt-loop-core-and-step lp)
                        (let ((rewritten core))
                          (when (and (>= (length core) 2)
                                     (opt-inst-cse-eligible-p (first core))
@@ -179,14 +177,14 @@ Control instructions and IV update remain untouched."
                          (emit step)
                          (emit (aref vec (opt-loop-back-index lp)))
                          (emit (aref vec (opt-loop-exit-index lp)))
-                         (setf i (1+ (opt-loop-exit-index lp))))))))
+                         (setf i (1+ (opt-loop-exit-index lp))))) (progn (emit (aref vec i)) (incf i)))))
       (if changed (nreverse out) instructions))))
 
 (defun opt-polyhedral-schedule-plan (&key statements constraints objective)
   "Return a conservative polyhedral schedule planning descriptor."
   (list :kind :polyhedral-schedule
-        :statements (copy-list (or statements nil))
-        :constraints (copy-list (or constraints nil))
+        :statements (copy-list statements)
+        :constraints (copy-list constraints)
         :objective (or objective :latency-min)))
 
 (defun opt-pass-polyhedral-schedule (instructions)
@@ -202,11 +200,7 @@ leaving control-flow and induction update in place."
     (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%opt-parse-canonical-loop-at vec i)))
-                 (if (null lp)
-                     (progn
-                       (emit (aref vec i))
-                       (incf i))
-                     (let* ((body (opt-loop-body lp))
+                 (if lp (let* ((body (opt-loop-body lp))
                             (step (car (last body)))
                             (body-core (butlast body))
                             (sortable (every #'opt-inst-cse-eligible-p body-core))
@@ -230,19 +224,21 @@ leaving control-flow and induction update in place."
                        (emit step)
                        (emit (aref vec (opt-loop-back-index lp)))
                        (emit (aref vec (opt-loop-exit-index lp)))
-                       (setf i (1+ (opt-loop-exit-index lp)))))))
+                       (setf i (1+ (opt-loop-exit-index lp)))) (progn
+                       (emit (aref vec i))
+                       (incf i)))))
       (if changed (nreverse out) instructions))))
 
 (defun opt-loop-fusion-fission-plan (&key loops register-pressure instruction-budget)
   "Choose loop fusion/fission strategy from simple pressure/budget heuristics."
   (let* ((pressure (or register-pressure 0))
          (budget (or instruction-budget 0))
-         (strategy (cond ((and (> pressure 32) (> budget 0)) :fission)
-                         ((and (<= pressure 32) (> budget 0)) :fusion)
+         (strategy (cond ((and (> pressure 32) (plusp budget)) :fission)
+                         ((and (<= pressure 32) (plusp budget)) :fusion)
                          (t :none))))
     (list :kind :loop-fusion-fission
           :strategy strategy
-          :loops (copy-list (or loops nil))
+          :loops (copy-list loops)
           :register-pressure pressure
           :instruction-budget budget)))
 
@@ -275,11 +271,7 @@ Fission: oversized loop body is split into two core regions in the same loop
                            (%opt-loop-constant-init vec b)))))
       (loop while (< i n)
             do (let ((lp (%opt-parse-canonical-loop-at vec i)))
-                 (if (null lp)
-                     (progn
-                       (emit (aref vec i))
-                       (incf i))
-                     (let* ((next-i (1+ (opt-loop-exit-index lp)))
+                 (if lp (let* ((next-i (1+ (opt-loop-exit-index lp)))
                             (lp2 (and (< next-i n)
                                       (%opt-parse-canonical-loop-at vec next-i))))
                        (if (and lp2
@@ -305,10 +297,7 @@ Fission: oversized loop body is split into two core regions in the same loop
                            (let ((core (pure-core lp)))
                              (if (and (pure-loop-p lp)
                                       (> (length core) 24))
-                                 (progn
-                                   ;; Conservative fission: keep semantics while creating two
-                                   ;; independently schedulable core regions in the same loop.
-                                   (let* ((half (floor (length core) 2))
+                                 (let* ((half (floor (length core) 2))
                                           (core-a (subseq core 0 half))
                                           (core-b (subseq core half))
                                           (split-label
@@ -328,9 +317,11 @@ Fission: oversized loop body is split into two core regions in the same loop
                                      (emit (aref vec (opt-loop-back-index lp)))
                                      (emit (aref vec (opt-loop-exit-index lp)))
                                      (setf changed t)
-                                     (setf i (1+ (opt-loop-exit-index lp)))))
+                                     (setf i (1+ (opt-loop-exit-index lp))))
                                  (progn
                                     (dolist (inst (loop-seq lp))
                                       (emit inst))
-                                    (setf i (1+ (opt-loop-exit-index lp)))))))))))
+                                    (setf i (1+ (opt-loop-exit-index lp)))))))) (progn
+                       (emit (aref vec i))
+                       (incf i)))))
       (if changed (nreverse out) instructions))))

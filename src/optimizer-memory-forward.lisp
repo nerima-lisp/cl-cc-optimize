@@ -148,9 +148,7 @@ CFG-aware forwarding models globals and slot accesses keyed by alias roots."
 
 (defun %available-store-clobber-inst-p (inst)
   "Return T when INST conservatively invalidates all available-store facts."
-  (and (not (typep inst '(or vm-set-global)))
-       (not (%available-store-control-inst-p inst))
-       (not (opt-inst-pure-p inst))))
+  (not (or (typep inst '(or vm-set-global)) (%available-store-control-inst-p inst) (opt-inst-pure-p inst))))
 
 (defun %available-store-transfer (block in-state alias-roots)
   "Transfer available-store facts through BLOCK."
@@ -232,7 +230,7 @@ Unknown conditions remain feasible (conservative)."
               (const-value (%available-store-const-value-before-terminator pred cond-reg))
               (zero-edge-p (and succ-label (equal succ-label target-label))))
          (if const-value
-             (if (= const-value 0)
+             (if (zerop const-value)
                  zero-edge-p
                  (not zero-edge-p))
              t)))

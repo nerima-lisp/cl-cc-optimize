@@ -317,8 +317,7 @@
   (multiple-value-bind (val found) (gethash (vm-reg inst) env)
     (if found
         (if (opt-falsep val)
-            (funcall emit (make-vm-jump :label (vm-label-name inst)))
-            nil) ; condition is always true → branch never taken → drop
+            (funcall emit (make-vm-jump :label (vm-label-name inst)))) ; condition is always true → branch never taken → drop
         (funcall emit inst))))
 
 (defun %fold-default-inst (inst env low-bit-facts producer-facts emit clear)

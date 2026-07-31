@@ -154,7 +154,7 @@
    Algorithm: build the copy dependency DAG and repeatedly emit copies whose
    destination is not read by remaining copies.  Cycles are detected when the
    DAG has no ready leaf."
-  (when (null parallel-copies) (return-from ssa-sequentialize-copies nil))
+  (unless parallel-copies (return-from ssa-sequentialize-copies))
 
   (labels ((copy-dst (copy) (car copy))
            (copy-src (copy) (cdr copy))

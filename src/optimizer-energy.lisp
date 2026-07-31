@@ -19,12 +19,16 @@
 
 (defun energy-cost-of-block (basic-block)
   "Compute total estimated energy cost of BASIC-BLOCK.
-Walks instructions in the block and sums their energy costs."
+Walks instructions in the block and sums their energy costs.
+
+BASIC-BLOCK must be a list of instructions; this file has no accessor for
+any other block representation. (Earlier code looked up a
+%BLOCK-INSTRUCTIONS function via FIND-SYMBOL and swallowed the resulting
+error with IGNORE-ERRORS -- but that symbol is never defined anywhere in
+this system, so the fallback always failed silently. Made explicit here
+rather than pretending a non-cons block is supported.)"
   (if basic-block
-      (let* ((instrs (if (consp basic-block) basic-block
-                         (ignore-errors
-                           (funcall (find-symbol "%BLOCK-INSTRUCTIONS" :cl-cc/optimize)
-                                    basic-block))))
+      (let* ((instrs (and (consp basic-block) basic-block))
              (total 0))
         (when instrs
           (dolist (inst instrs total)
@@ -52,11 +56,11 @@ Walks instructions in the block and sums their energy costs."
 
 (defun energy-optimize-block (block)
   "Apply energy-saving optimizations to BLOCK.
-Returns modified instruction list or NIL if no changes."
-  (let* ((instrs (if (consp block) block
-                     (ignore-errors
-                       (funcall (find-symbol "%BLOCK-INSTRUCTIONS" :cl-cc/optimize)
-                                block))))
+Returns modified instruction list or NIL if no changes.
+
+BLOCK must be a list of instructions; see ENERGY-COST-OF-BLOCK's docstring
+for why a non-cons block representation is not supported here."
+  (let* ((instrs (and (consp block) block))
          (changed nil)
          (result nil))
     (when instrs

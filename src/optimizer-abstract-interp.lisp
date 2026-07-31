@@ -71,7 +71,7 @@
   (list :sign (ai-sign-abstract value)
         :interval (ai-interval-abstract value)
         :congruence (ai-congruence-abstract value)
-        :nullness (if (null value) :null :non-null)))
+        :nullness (if value :non-null :null)))
 
 (defun ai-gamma (abstract)
   "Galois concretization γ: return a conservative descriptor."

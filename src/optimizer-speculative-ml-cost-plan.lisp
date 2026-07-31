@@ -5,7 +5,7 @@
 
 (defun opt-ml-inline-score-plan (&key features model-version)
   "Return a deterministic MLGO-style inline scoring descriptor."
-  (let ((feature-count (length (or features nil))))
+  (let ((feature-count (length features)))
     (list :kind :ml-inline-score
           :model-version (or model-version "mlgo-v1")
           :feature-count feature-count
@@ -13,7 +13,7 @@
 
 (defun opt-learned-codegen-cost-plan (&key opcode-features target)
   "Return learned cost descriptor used by backend codegen selection policies."
-  (let* ((feature-count (length (or opcode-features nil)))
+  (let* ((feature-count (length opcode-features))
          (arch (or target :generic))
          (base (ecase arch
                  ((:x86-64) 8)

@@ -40,9 +40,7 @@
 
 Only registers known on every incoming path are preserved. Their intervals are
 unioned conservatively as [min lo, max hi]."
-  (if (null states)
-      (make-hash-table :test #'eq)
-      (let* ((merged (%opt-copy-interval-state (first states)))
+  (if states (let* ((merged (%opt-copy-interval-state (first states)))
              (rest-states (rest states))
              (keys (loop for reg being the hash-keys of merged collect reg)))
         (dolist (reg keys merged)
@@ -59,7 +57,7 @@ unioned conservatively as [min lo, max hi]."
                       hi (max hi (opt-interval-hi other)))))
             (if keep-p
                 (setf (gethash reg merged) (opt-make-interval lo hi))
-                (remhash reg merged)))))))
+                (remhash reg merged))))) (make-hash-table :test #'eq)))
 
 (defun %opt-update-interval-binop (inst intervals fn)
   "Update INTERVALS for binary arithmetic INST using interval combinator FN.

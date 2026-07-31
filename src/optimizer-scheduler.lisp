@@ -20,15 +20,11 @@
           vm-warn))
       :test
       (function eq))
-    (and
-      (not
-        (member
+    (not (or (member
           (vm-inst-effect-kind inst)
           (quote (:pure :read-only))
           :test
-          (function eq)))
-      (not
-        (and
+          (function eq)) (and
           (opt-memory-write-inst-p inst)
           (not (opt-memory-unknown-write-inst-p inst)))))))
 
@@ -118,22 +114,22 @@ or NIL for post-RA scheduling (where pressure is ignored)."
              (emitted nil))
         (loop for i from 0 below n
               do (setf (aref remaining-preds i) (copy-list (aref preds i)))
-                 (when (null (aref remaining-preds i))
+                 (unless (aref remaining-preds i)
                    (push i ready)))
         (loop while ready
               do (let* ((node
                 (if counts-or-nil (funcall node-selector ready insts priorities counts-or-nil)
                   (funcall node-selector ready priorities)))
                  (inst (nth node insts)))
-            (setf ready (remove node ready :test #'eql))
+            (setf ready (remove node ready))
             (push inst emitted)
             (when counts-or-nil
               (%opt-decrement-reg-counts (opt-inst-read-regs inst) counts-or-nil))
             (dolist (succ (aref succs node))
               (setf (aref remaining-preds succ)
-                    (remove node (aref remaining-preds succ) :test #'eql))
-              (when (null (aref remaining-preds succ))
-                (pushnew succ ready :test #'eql)))))
+                    (remove node (aref remaining-preds succ)))
+              (unless (aref remaining-preds succ)
+                (pushnew succ ready)))))
         (if (= (length emitted) n) (nreverse emitted)
           insts)))))
 

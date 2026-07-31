@@ -60,7 +60,7 @@ Matches:
                (vm-label-p (aref vec i)))
       (let* ((header (aref vec i))
              (header-name (vm-name header))
-             (cond-inst (aref vec (+ i 1)))
+             (cond-inst (aref vec (1+ i)))
              (branch-inst (aref vec (+ i 2))))
         (when (and (%dead-loop-removable-inst-p cond-inst)
                    (typep branch-inst 'vm-jump-zero))
@@ -90,9 +90,8 @@ Matches:
          (changed nil))
     (loop while (< i n)
           do (if-let ((candidate (%dead-loop-linear-candidate-at vec i)))
-               (progn
-                 (setf changed t
-                       i (getf candidate :exit-pos)))
+               (setf changed t
+                       i (getf candidate :exit-pos))
                (progn
                  (push (aref vec i) result)
                  (incf i))))

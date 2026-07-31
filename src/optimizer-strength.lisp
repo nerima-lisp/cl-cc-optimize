@@ -218,8 +218,7 @@ Returns a list of vm instructions (may include vm-const, vm-ash, vm-add, vm-move
       ((zerop absn)
        (list (make-vm-const :dst dst :value 0)))
       ((= absn 1)
-       (append (list (make-vm-move :dst dst :src src))
-               (when negp (list (make-vm-neg :dst dst :src dst)))))
+       (cons (make-vm-move :dst dst :src src) (when negp (list (make-vm-neg :dst dst :src dst)))))
       (t
        (let ((bits  (loop for bit from 0 below (integer-length absn)
                           when (logbitp bit absn) collect bit))

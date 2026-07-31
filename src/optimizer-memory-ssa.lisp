@@ -70,7 +70,7 @@ This intentionally models only straight-line versioning (no MemoryPhi)."
               (const-value (%opt-memory-ssa-const-value-before-terminator pred cond-reg))
               (zero-edge-p (and succ-label (equal succ-label target-label))))
          (if const-value
-             (if (= const-value 0)
+             (if (zerop const-value)
                  zero-edge-p
                  (not zero-edge-p))
              t)))

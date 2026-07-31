@@ -116,7 +116,7 @@ Closures are grouped with cl-cc/ast:group-shareable-closures by code label and
 capture set.  The first closure in each safe group performs the allocation;
 later closure sites become vm-move aliases to the first closure register."
   (let ((groups (%opt-closure-groups instructions))
-        (rewrites (make-hash-table :test #'eql)))
+        (rewrites (make-hash-table)))
     (maphash (lambda (_key group)
                (declare (ignore _key))
                (%opt-record-closure-group-rewrites instructions group rewrites))
@@ -136,7 +136,7 @@ implementation; same-code-body-with-different-environments requires VM-level
 support for separate code-pointer + environment-record (FR-079 extension)."
 
   (let* ((groups (%opt-closure-groups instructions))
-         (rewrites (make-hash-table :test #'eql)))
+         (rewrites (make-hash-table)))
     (maphash (lambda (_key group)
                (declare (ignore _key))
                (when (>= (length group) 2)

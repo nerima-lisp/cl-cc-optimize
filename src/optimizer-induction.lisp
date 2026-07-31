@@ -272,7 +272,7 @@ Constants from non-loop predecessor blocks seed the per-loop SCEV scan."
                         (ivs (%opt-compute-simple-inductions-with-constants
                               (%opt-blocks-instructions loop-blocks)
                               seed)))
-                   (when (> (hash-table-count ivs) 0)
+                   (when (plusp (hash-table-count ivs))
                      (setf (gethash header result) ivs))))))
     result))
 

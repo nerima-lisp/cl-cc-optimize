@@ -23,11 +23,9 @@
 (defun %opt-superopt-input-states (registers)
   "Enumerate all input register environments over *OPT-SUPEROPT-INPUT-SPACE*."
   (labels ((rec (remaining)
-             (if (null remaining)
-                 (list nil)
-                 (loop for state in (rec (cdr remaining)) append
+             (if remaining (loop for state in (rec (cdr remaining)) append
                    (loop for value in *opt-superopt-input-space*
-                         collect (acons (car remaining) value state))))))
+                         collect (acons (car remaining) value state))) (list nil))))
     (rec registers)))
 
 (defun %opt-superopt-exec-move-sequence (sequence state)
@@ -37,7 +35,7 @@
       (let ((dst (vm-dst inst))
             (src (vm-src inst)))
         (setf (cdr (or (assoc dst env :test #'eq)
-                       (car (push (cons dst nil) env))))
+                       (car (push (list dst) env))))
               (cdr (assoc src env :test #'eq)))))))
 
 (defun %opt-superopt-states-equivalent-p (left right registers)

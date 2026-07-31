@@ -43,18 +43,14 @@
                ;; plan can be built; otherwise leave INST unchanged.
                (let* ((callee-label (gethash (vm-func-reg inst) reg-track))
                       (def (and callee-label (gethash callee-label func-defs))))
-                 (if (null def)
-                     (push inst result)
-                     (let* ((params (getf def :params))
+                 (if def (let* ((params (getf def :params))
                             (body (getf def :body))
                             (const-bindings (%opt-constant-bindings-from-call-args
                                              params (vm-args inst) const-track))
                             (plan (and const-bindings
                                        (opt-build-specialization-plan
                                         callee-label params const-bindings :cache plan-cache))))
-                       (if (null plan)
-                           (push inst result)
-                           (let* ((specialized-label (opt-specialization-plan-specialized-name plan))
+                       (if plan (let* ((specialized-label (opt-specialization-plan-specialized-name plan))
                                   (dynamic-params (opt-specialization-plan-dynamic-args plan))
                                   (dynamic-args
                                     (%opt-dynamic-call-args params (vm-args inst) dynamic-params))
@@ -65,7 +61,7 @@
                                                        specialized-label dynamic-params clone-reg))
                              (let ((resolved-reg (gethash specialized-label emitted-labels)))
                                (push (%opt-make-call-like inst resolved-reg dynamic-args)
-                                     result))))))
+                                     result))) (push inst result))) (push inst result))
                  (clear-dst-tracks (opt-inst-dst inst)))))
       (dolist (inst instructions)
         (typecase inst

@@ -63,9 +63,7 @@ Values are (scheduled-core ddg mii).  BODY may include the induction update as
 its final instruction; the scheduler excludes that update and lets callers emit
 it at the end of the kernel."
   (let ((core (butlast body)))
-    (if (not (%opt-swp-safe-core-p core))
-        (values core (cfg-build-ddg core :latency-fn #'%opt-inst-latency) 1)
-        (let* ((ddg (cfg-build-ddg core :latency-fn #'%opt-inst-latency))
+    (if (%opt-swp-safe-core-p core) (let* ((ddg (cfg-build-ddg core :latency-fn #'%opt-inst-latency))
                (mii (cfg-compute-mii ddg :issue-width issue-width))
                (scheduled
                  (sort (loop for node across ddg
@@ -80,7 +78,7 @@ it at the end of the kernel."
                              (and (= (getf a :slot) (getf b :slot))
                                   (= (getf a :latency) (getf b :latency))
                                   (< (getf a :index) (getf b :index))))))))
-          (values (mapcar (lambda (entry) (getf entry :inst)) scheduled) ddg mii)))))
+          (values (mapcar (lambda (entry) (getf entry :inst)) scheduled) ddg mii)) (values core (cfg-build-ddg core :latency-fn #'%opt-inst-latency) 1))))
 
 (defun %opt-swp-loop-sequence (vec lp)
   "Return original instruction sequence for LP from VEC."
@@ -94,10 +92,7 @@ it at the end of the kernel."
     (multiple-value-bind (scheduled-core ddg mii)
         (opt-modulo-schedule-loop-body body)
       (declare (ignore ddg mii))
-      (if (or (null scheduled-core)
-              (not (%opt-swp-safe-core-p (butlast body))))
-          (values (%opt-swp-loop-sequence vec lp) nil)
-          (let* ((base (format nil "~A~D" *opt-software-pipeline-label-prefix* counter))
+      (if (and scheduled-core (%opt-swp-safe-core-p (butlast body))) (let* ((base (format nil "~A~D" *opt-software-pipeline-label-prefix* counter))
                  (prologue-label (format nil "~A_prologue" base))
                  (kernel-label (format nil "~A_kernel" base))
                  (epilogue-label (format nil "~A_epilogue" base))
@@ -114,7 +109,7 @@ it at the end of the kernel."
                             (list (aref vec (getf lp :back-index))
                                   (make-vm-label :name epilogue-label)
                                   (aref vec (getf lp :exit-index))))
-                    t))))))
+                    t)) (values (%opt-swp-loop-sequence vec lp) nil)))))
 
 (defun opt-pass-software-pipelining (instructions)
   "FR-200: modulo-schedule canonical loop bodies.
@@ -133,16 +128,14 @@ idempotent in the convergence pipeline."
              (i 0))
         (loop while (< i n)
               do (let ((lp (%opt-swp-parse-loop-at vec i)))
-                   (if (null lp)
-                       (progn
-                         (push (aref vec i) out)
-                         (incf i))
-                       (multiple-value-bind (seq rewritten-p)
+                   (if lp (multiple-value-bind (seq rewritten-p)
                            (%opt-swp-rewrite-loop vec lp counter)
                          (dolist (inst seq)
                            (push inst out))
                          (when rewritten-p
                            (incf counter)
                            (setf changed t))
-                         (setf i (1+ (getf lp :exit-index)))))))
+                         (setf i (1+ (getf lp :exit-index)))) (progn
+                         (push (aref vec i) out)
+                         (incf i)))))
         (if changed (nreverse out) instructions))))

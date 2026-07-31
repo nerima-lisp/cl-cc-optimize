@@ -151,7 +151,7 @@ located in predecessor block P, replace B with that phi's argument for P."
                                      round-changed t
                                      changed t))))))
                      phi-map))
-        (when (> (hash-table-count replacements) 0)
+        (when (plusp (hash-table-count replacements))
           (setf phi-map    (%ssa-rewrite-phi-map phi-map replacements)
                 renamed-map (%ssa-rewrite-renamed-map renamed-map replacements)
                 changed t))
@@ -162,7 +162,7 @@ located in predecessor block P, replace B with that phi's argument for P."
                      (let ((kept (remove-if (lambda (phi)
                                               (not (gethash (phi-dst phi) uses)))
                                             phis)))
-                       (when (not (equal kept phis))
+                       (unless (equal kept phis)
                          (setf pruned t changed t))
                        (when kept
                          (setf (gethash blk pruned-map) kept))))

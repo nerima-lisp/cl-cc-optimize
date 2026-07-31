@@ -17,7 +17,7 @@
 (defun egraph-pattern-var-p (x)
   "T if X is a pattern variable: a symbol whose name starts with '?'."
   (and (symbolp x)
-       (> (length (symbol-name x)) 0)
+       (plusp (length (symbol-name x)))
        (char= (char (symbol-name x) 0) #\?)))
 
 (defun egraph-match-pattern (eg pattern class-id &optional bindings)
@@ -30,8 +30,7 @@
      ((egraph-pattern-var-p pattern)
       (if-let ((existing (assoc pattern bindings)))
         (if (= (egraph-find eg (cdr existing)) cid)
-            (list bindings)
-            nil)
+            (list bindings))
         (list (cons (cons pattern cid) bindings))))
 
      ;; Constant pattern: match if the class contains a const e-node with this value
@@ -69,11 +68,9 @@
 (defun egraph-match-pattern-args (eg arg-pats arg-ids bindings)
   "Match argument patterns ARG-PATS against e-class IDs ARG-IDS.
    Returns list of all consistent binding alists."
-  (if (null arg-pats)
-      (list bindings)
-      (let ((matches (egraph-match-pattern eg (car arg-pats) (car arg-ids) bindings)))
+  (if arg-pats (let ((matches (egraph-match-pattern eg (car arg-pats) (car arg-ids) bindings)))
         (loop for b in matches
-              nconc (egraph-match-pattern-args eg (cdr arg-pats) (cdr arg-ids) b)))))
+              nconc (egraph-match-pattern-args eg (cdr arg-pats) (cdr arg-ids) b))) (list bindings)))
 
 ;;; ─── Rule Application ────────────────────────────────────────────────────
 

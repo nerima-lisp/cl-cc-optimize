@@ -26,7 +26,7 @@
 (defun %block-merge-emit (block visited suppress-label)
   "Recursively emit BLOCK and its mergeable successors into a flat instruction list."
   (when (or (null block) (gethash block visited))
-    (return-from %block-merge-emit nil))
+    (return-from %block-merge-emit))
   (setf (gethash block visited) t)
   (let ((result nil))
     (unless suppress-label

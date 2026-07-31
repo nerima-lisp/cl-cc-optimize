@@ -25,7 +25,7 @@
   (let ((i 0)
         (name nil))
     (loop
-      do (setf name (if (= i 0)
+      do (setf name (if (zerop i)
                         base
                         (format nil "~A_~D" base i)))
          (if (gethash name used)
@@ -156,7 +156,7 @@ The transform is skipped unless all structural checks pass."
                  (if (and (vm-label-p cur)
                           (<= (+ i 4) (1- n)))
                      (let* ((header       cur)
-                            (cond-inst    (aref vec (+ i 1)))
+                            (cond-inst    (aref vec (1+ i)))
                             (jz-inst      (aref vec (+ i 2)))
                             (header-name  (vm-name header)))
                        (if (and (typep jz-inst 'vm-jump-zero)
@@ -233,7 +233,7 @@ The transform is skipped unless all structural checks pass."
                            collect (aref vec i)))
          (result nil))
     (unless (%opt-loop-peeling-safe-body-p body-insts)
-      (return-from %opt-loop-peeling-apply-candidate nil))
+      (return-from %opt-loop-peeling-apply-candidate))
     (loop for i from 0 below header-pos
           for inst = (aref vec i)
           unless (and (= i (1- header-pos))
@@ -267,7 +267,7 @@ This duplicates only one first-iteration body before the original loop header."
                         (vm-label-p cur)
                         (<= (+ i 4) (1- n)))
                    (let* ((header      cur)
-                          (cond-inst   (aref vec (+ i 1)))
+                          (cond-inst   (aref vec (1+ i)))
                           (jz-inst     (aref vec (+ i 2)))
                           (header-name (vm-name header)))
                      (if (and (typep jz-inst 'vm-jump-zero)

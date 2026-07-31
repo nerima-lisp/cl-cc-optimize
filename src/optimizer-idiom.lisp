@@ -59,8 +59,8 @@
   "Recognize a zero-based loop over characters until #\\Nul and use vm-string-length."
   (let ((end (+ pos 13)))
     (when (<= end (length instructions))
-      (let* ((init       (nth (+ pos 0) instructions))
-             (header     (nth (+ pos 1) instructions))
+      (let* ((init       (nth pos instructions))
+             (header     (nth (1+ pos) instructions))
              (char       (nth (+ pos 2) instructions))
              (nul        (nth (+ pos 3) instructions))
              (cmp        (nth (+ pos 4) instructions))
@@ -107,8 +107,8 @@
   "Recognize Kernighan bit-counting loop and emit vm-logcount."
   (let ((end (+ pos 10)))
     (when (<= end (length instructions))
-      (let* ((init-count (nth (+ pos 0) instructions))
-             (header     (nth (+ pos 1) instructions))
+      (let* ((init-count (nth pos instructions))
+             (header     (nth (1+ pos) instructions))
              (exit-test  (nth (+ pos 2) instructions))
              (one        (nth (+ pos 3) instructions))
              (dec        (nth (+ pos 4) instructions))

@@ -79,7 +79,7 @@ critical-edge maintenance below."
    for each reachable block and populates bb-post-children lists.
    Returns the exit block (root of the post-dominator tree)."
   (let ((exit (cfg-exit cfg)))
-    (unless exit (return-from cfg-compute-post-dominators nil))
+    (unless exit (return-from cfg-compute-post-dominators))
     (loop for b across (cfg-blocks cfg)
           do (setf (bb-post-idom b) nil (bb-post-children b) nil))
     (let* ((post-order-cell (list nil))

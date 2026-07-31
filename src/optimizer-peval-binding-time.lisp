@@ -79,7 +79,7 @@ partial-evaluation passes without requiring callers to manually merge sources."
               (new-static static-set))
          (dolist (binding bindings)
            (let* ((var (binding-symbol binding))
-                  (rhs (if (and (consp binding) (cdr binding)) (second binding) nil))
+                  (rhs (if (and (consp binding) (cdr binding)) (second binding)))
                   (rhs-static-p (or (null rhs)
                                     (eq (%opt-offline-bta-classify-form rhs static-set)
                                         :static))))

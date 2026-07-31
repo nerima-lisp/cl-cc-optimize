@@ -51,7 +51,7 @@ Tail-position calls require ENABLED-P."
   (make-opt-wasm-gc-layout
    :kind (or kind :struct)
    :fields (copy-list fields)
-   :nullable-p (if (null nullable-p) nil t)))
+   :nullable-p (if nullable-p t)))
 
 (defun opt-wasm-gc-layout-valid-p (layout)
   "Return T when LAYOUT is a structurally valid wasm-gc descriptor.

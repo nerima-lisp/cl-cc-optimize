@@ -55,9 +55,7 @@
                       :initial-value 0))))
 
 (defun %poly-interchange-statement (statement)
-  (if (not (%poly-interchange-beneficial-p statement))
-      statement
-      (let* ((domain (poly-stmt-domain statement))
+  (if (%poly-interchange-beneficial-p statement) (let* ((domain (poly-stmt-domain statement))
              (new-domain (and domain
                               (make-polyhedral-domain
                                :dimensions (%poly-swap-first-two (poly-domain-dimensions domain))
@@ -76,7 +74,7 @@
          :accesses new-accesses
          :schedule (list :interchanged t
                          :previous (poly-stmt-schedule statement))
-         :body (poly-stmt-body statement)))))
+         :body (poly-stmt-body statement))) statement))
 
 (defun %poly-loop-init-index (vec lp)
   (let ((idx (1- (opt-loop-head-index lp))))
@@ -180,20 +178,17 @@
          (i 0))
     (loop while (< i n)
           do (let ((outer (%loop-fr514-parse-canonical-loop-at vec i)))
-               (if (null outer)
-                   (progn (push (aref vec i) out) (incf i))
-                   (let ((inner (%poly-nested-loop-at vec outer)))
+               (if outer (let ((inner (%poly-nested-loop-at vec outer)))
                      (if (and inner
                               (%poly-loop-interchange-candidate-p instructions vec outer inner))
-                         (progn
-                           (setf out (%poly-emit-interchanged-loop vec outer inner out)
+                         (setf out (%poly-emit-interchanged-loop vec outer inner out)
                                  changed t
-                                 i (1+ (opt-loop-exit-index outer))))
+                                 i (1+ (opt-loop-exit-index outer)))
                          (progn
                            (loop for k from (opt-loop-head-index outer)
                                  to (opt-loop-exit-index outer)
                                  do (push (aref vec k) out))
-                           (setf i (1+ (opt-loop-exit-index outer)))))))))
+                           (setf i (1+ (opt-loop-exit-index outer)))))) (progn (push (aref vec i) out) (incf i)))))
     (if changed (nreverse out) instructions)))
 
 (defun polyhedral-loop-interchange (statement)
@@ -277,20 +272,17 @@ shared schedule.  Non-descriptor or incompatible inputs are returned unchanged."
          (i 0))
     (loop while (< i n)
           do (let ((outer (%loop-fr514-parse-canonical-loop-at vec i)))
-               (if (null outer)
-                   (progn (push (aref vec i) out) (incf i))
-                   (let ((inner (%poly-nested-loop-at vec outer)))
+               (if outer (let ((inner (%poly-nested-loop-at vec outer)))
                      (if (and inner
                               (%poly-loop-interchange-candidate-p instructions vec outer inner))
-                         (progn
-                           (setf out (%poly-emit-tile-metadata vec outer inner tile-size out)
+                         (setf out (%poly-emit-tile-metadata vec outer inner tile-size out)
                                  changed t
-                                 i (1+ (opt-loop-exit-index outer))))
+                                 i (1+ (opt-loop-exit-index outer)))
                          (progn
                            (loop for k from (opt-loop-head-index outer)
                                  to (opt-loop-exit-index outer)
                                  do (push (aref vec k) out))
-                           (setf i (1+ (opt-loop-exit-index outer)))))))))
+                           (setf i (1+ (opt-loop-exit-index outer)))))) (progn (push (aref vec i) out) (incf i)))))
     (if changed (nreverse out) instructions)))
 
 (defun opt-pass-polyhedral (instructions)
@@ -300,6 +292,4 @@ This pass is intentionally not part of the default optimizer pipeline.  When
 *POLYHEDRAL-ENABLED* is NIL it is a no-op.  When enabled it performs strict
 two-deep affine loop interchange and emits 2D tile-plan metadata for remaining
 eligible nests."
-  (if (not *polyhedral-enabled*)
-      instructions
-      (%poly-tile-instructions (polyhedral-loop-interchange instructions))))
+  (if *polyhedral-enabled* (%poly-tile-instructions (polyhedral-loop-interchange instructions)) instructions))

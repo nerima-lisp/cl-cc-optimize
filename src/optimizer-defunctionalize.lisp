@@ -35,16 +35,14 @@
 
 (defun %opt-defunctionalize-apply (inst constants)
   (let ((known-fn (%opt-known-function-reg (vm-func-reg inst) constants)))
-    (if (not known-fn)
-        inst
-        (let* ((args (copy-list (vm-args inst)))
+    (if known-fn (let* ((args (copy-list (vm-args inst)))
                (last-reg (car (last args)))
                (concrete-tail (and last-reg (%opt-known-concrete-list-reg last-reg constants))))
           (if concrete-tail
               (make-vm-call :dst (vm-dst inst)
                             :func known-fn
                             :args (append (butlast args) concrete-tail))
-              inst)))))
+              inst)) inst)))
 
 (defun %opt-defunctionalize-call (inst constants)
   (if-let ((known-fn (%opt-known-function-reg (vm-func-reg inst) constants)))

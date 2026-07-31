@@ -37,10 +37,10 @@
           for inst = (aref vec i)
           do (cond
                ((and (> i start-index) (typep inst 'vm-label))
-                (return nil))
+                (return))
                ((funcall predicate inst)
                 (return t)))
-          finally (return nil))))
+          finally (return))))
 
 (defun %opt-cold-labels (instructions)
   "Return a table of labels whose basic blocks contain cold instructions."

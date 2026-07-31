@@ -358,8 +358,7 @@ OPT-BUILD-BLOCK-VERSION-PLAN."
              (body (if (and term (not last-p))
                        (remove term (bb-instructions block) :count 1 :from-end t :test #'eq)
                        (bb-instructions block))))
-        (append (list (make-vm-label :name (%opt-bl-clone-label path-sum block)))
-                (mapcar (lambda (inst) (%opt-bl-remap-jump inst label-map)) body))))))
+        (cons (make-vm-label :name (%opt-bl-clone-label path-sum block)) (mapcar (lambda (inst) (%opt-bl-remap-jump inst label-map)) body))))))
 
 (defun opt-duplicate-hot-paths (instructions counts &key (hot-threshold 1)
                                              (function-id :anonymous) (limit 4))

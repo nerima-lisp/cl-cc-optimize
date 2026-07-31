@@ -68,7 +68,7 @@ unrolling when the body is small."
                (if (and (vm-label-p cur)
                         (<= (+ i 5) (1- n)))
                    (let* ((header cur)
-                          (cmp-inst (aref vec (+ i 1)))
+                          (cmp-inst (aref vec (1+ i)))
                           (jz-inst  (aref vec (+ i 2)))
                           (header-name (vm-name header)))
                       (if (and (%opt-loop-unroll-cmp-inst-p cmp-inst)
@@ -102,7 +102,7 @@ unrolling when the body is small."
                                                     (%opt-loop-unroll-trip-count
                                                      cmp-inst init limit step))))
                                         (cond
-                                          ((and trip (> trip 0)
+                                          ((and trip (plusp trip)
                                                 (<= trip *opt-loop-unroll-max-trip*))
                                            (dotimes (_ trip)
                                              (dolist (b body-insts)

@@ -86,7 +86,7 @@ Returns one of: :pure :alloc :read-only :control :write-global :io :unknown."
 
   ;; Check builtin function properties
   (let ((builtin-kind (known-function-effect-kind fn-name)))
-    (when (not (eq builtin-kind :unknown))
+    (unless (eq builtin-kind :unknown)
       (setf (gethash fn-name *user-function-purity-cache*) builtin-kind)
       (return-from compute-function-purity builtin-kind)))
 

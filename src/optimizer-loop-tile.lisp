@@ -20,7 +20,11 @@ A hung probe is treated as failure (NIL), which disables FR-515 tiling rather
 than stalling optimization.")
 
 (defun %loop-tile-run-program-line (program args)
-  "Return PROGRAM output as a trimmed string, or NIL on failure."
+  "Return PROGRAM output as a trimmed string, or NIL on failure.
+
+Uses SB-EXT directly rather than a #+sbcl reader conditional: this system
+builds and runs only under SBCL (see flake.nix's pkgs.sbcl.buildASDFSystem
+/ sbcl --script), so there is no other implementation to guard against."
   (handler-case
       (sb-ext:with-timeout *opt-loop-tile-probe-timeout-seconds*
         (let ((out (make-string-output-stream)))
@@ -185,7 +189,7 @@ tile end, so non-multiple remainders execute naturally."
          (inner-jz (aref vec (opt-loop-jz-index inner)))
          (outer-step (car (last (opt-loop-body outer))))
          (inner-step (car (last (opt-loop-body inner))))
-         (outer-prefix-start (+ (opt-loop-jz-index outer) 1))
+         (outer-prefix-start (1+ (opt-loop-jz-index outer)))
          (outer-prefix-end (1- (opt-loop-head-index inner)))
          (outer-suffix-start (1+ (opt-loop-exit-index inner)))
          (outer-suffix-end (1- (opt-loop-back-index outer))))
@@ -235,9 +239,7 @@ unknown this pass is a no-op.  For recognized 2D/3D canonical nested loops with
 affine aref/aset-style access patterns, the pass emits tile-plan labels derived
 from L1/L2 tile sizes and preserves the original executable loop body."
   (multiple-value-bind (l1-size l2-size) (opt-loop-tile-sizes)
-    (if (not (and l1-size l2-size))
-        instructions
-        (let* ((vec (coerce instructions 'vector))
+    (if (and l1-size l2-size) (let* ((vec (coerce instructions 'vector))
                (n (length vec))
                (out nil)
                (changed nil)
@@ -246,19 +248,16 @@ from L1/L2 tile sizes and preserves the original executable loop body."
           (declare (ignore speed3-p))
           (loop while (< i n)
                 do (let ((outer (%loop-fr514-parse-canonical-loop-at vec i)))
-                     (if (null outer)
-                         (progn (push (aref vec i) out) (incf i))
-                         (let ((inner (%loop-tile-candidate-p
+                     (if outer (let ((inner (%loop-tile-candidate-p
                                        instructions vec outer l1-size l2-size)))
                             (if (and inner (%loop-tile-safe-2d-p outer inner))
-                                (progn
-                                  (setf out (%loop-tile-emit-strip-mined-2d vec outer inner
+                                (setf out (%loop-tile-emit-strip-mined-2d vec outer inner
                                                                                 l1-size l2-size out)
                                         changed t
-                                        i (1+ (opt-loop-exit-index outer))))
+                                        i (1+ (opt-loop-exit-index outer)))
                                (progn
                                  (loop for k from (opt-loop-head-index outer)
                                        to (opt-loop-exit-index outer)
                                        do (push (aref vec k) out))
-                                 (setf i (1+ (opt-loop-exit-index outer)))))))))
-          (if changed (nreverse out) instructions)))))
+                                 (setf i (1+ (opt-loop-exit-index outer)))))) (progn (push (aref vec i) out) (incf i)))))
+          (if changed (nreverse out) instructions)) instructions)))

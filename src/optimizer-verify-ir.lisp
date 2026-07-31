@@ -122,19 +122,19 @@
         (%opt-signal-ir-verification pass-name :block-terminators
                                      (format nil "IR block ~A has no terminator"
                                              (%opt-call package-name "IRB-LABEL" block))
-                                     (format nil "~S" block)))
+                                     (prin1-to-string block)))
       (dolist (param (%opt-call package-name "IRB-PARAMS" block))
         (when (gethash param defs)
           (%opt-signal-ir-verification pass-name :live-interval-consistency
                                        (format nil "SSA value ~S defined more than once" param)
-                                       (format nil "~S" block)))
+                                       (prin1-to-string block)))
         (setf (gethash param defs) block))
       (dolist (inst (%opt-call package-name "IRB-INSTS" block))
         (when-let ((result (%opt-call package-name "IRI-RESULT" inst)))
           (when (gethash result defs)
             (%opt-signal-ir-verification pass-name :live-interval-consistency
                                          (format nil "SSA value ~S defined more than once" result)
-                                         (format nil "~S" inst)))
+                                         (prin1-to-string inst)))
           (setf (gethash result defs) block))))
     (dolist (block blocks)
       (dolist (inst (%opt-call package-name "IRB-INSTS" block))
@@ -143,12 +143,12 @@
             (unless def-block
               (%opt-signal-ir-verification pass-name :undefined-register-use
                                            (format nil "IR value ~S used before definition" operand)
-                                           (format nil "~S" inst)))
+                                           (prin1-to-string inst)))
             (unless (%opt-dominates-block-p def-block block idom)
               (%opt-signal-ir-verification
                pass-name :ssa-dominance
                (format nil "definition of ~S does not dominate use" operand)
-               (format nil "~S" inst)))))))
+               (prin1-to-string inst)))))))
     t))
 
 (defun %opt-mir-value-p (x)
@@ -168,7 +168,7 @@
           (%opt-signal-ir-verification pass-name :block-terminators
                                        (format nil "MIR block ~A has no terminator"
                                                (%opt-call "CL-CC/MIR" "MIRB-LABEL" block))
-                                       (format nil "~S" block)))
+                                       (prin1-to-string block)))
         (dolist (inst insts)
           (dolist (src (%opt-call "CL-CC/MIR" "MIRI-SRCS" inst))
             (let ((value (if (and (consp src) (%opt-mir-value-p (cdr src))) (cdr src) src)))
@@ -177,12 +177,12 @@
                   (%opt-signal-ir-verification
                    pass-name :undefined-register-use
                    (format nil "MIR value ~S used before definition" value)
-                   (format nil "~S" inst))))))
+                   (prin1-to-string inst))))))
           (when-let ((dst (%opt-call "CL-CC/MIR" "MIRI-DST" inst)))
             (when (gethash dst defs)
               (%opt-signal-ir-verification pass-name :live-interval-consistency
                                            (format nil "MIR value ~S defined more than once" dst)
-                                           (format nil "~S" inst)))
+                                           (prin1-to-string inst)))
             (setf (gethash dst defs) block)))))
     t))
 

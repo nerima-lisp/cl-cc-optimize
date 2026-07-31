@@ -104,10 +104,7 @@
                                         (set-difference new-out (gethash b def-map)
                                                         :test #'eq)
                                         :test #'eq)))
-                     (unless (and (null (set-difference old-in new-in :test #'eq))
-                                  (null (set-difference new-in old-in :test #'eq))
-                                  (null (set-difference old-out new-out :test #'eq))
-                                  (null (set-difference new-out old-out :test #'eq)))
+                     (when (or (set-difference old-in new-in :test #'eq) (set-difference new-in old-in :test #'eq) (set-difference old-out new-out :test #'eq) (set-difference new-out old-out :test #'eq))
                        (setf (gethash b live-in) new-in
                              (gethash b live-out) new-out
                              changed t)))))))

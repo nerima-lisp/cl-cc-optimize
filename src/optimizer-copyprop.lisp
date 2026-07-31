@@ -234,9 +234,7 @@
    incoming paths are propagated. The final rewrite phase then substitutes the
    stabilized canonical registers inside each reachable basic block."
   (let ((cfg (cfg-build instructions)))
-    (if (null (cfg-entry cfg))
-        instructions
-        (let ((state (make-copyprop-pass-state :worklist (list (cfg-entry cfg)))))
+    (if (cfg-entry cfg) (let ((state (make-copyprop-pass-state :worklist (list (cfg-entry cfg)))))
           (setf (gethash (cfg-entry cfg) (cpps-queued state)) t)
           (loop while (cpps-worklist state)
                 for block = (pop (cpps-worklist state))
@@ -248,4 +246,4 @@
                           block
                           (or (gethash block (cpps-in-envs state))
                               (make-hash-table :test #'eq)))))
-          (cfg-flatten cfg)))))
+          (cfg-flatten cfg)) instructions)))

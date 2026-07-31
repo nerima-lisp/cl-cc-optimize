@@ -11,7 +11,7 @@
 (defun analyze-with-context (func call-site)
   "Analyze FUNC with context from CALL-SITE (1-CFA)."
   (declare (ignore func call-site))
-  (when (> *cfa-depth* 0)
+  (when (plusp *cfa-depth*)
     ;; Context-sensitive analysis: track call sites as contexts
     ;; For 1-CFA: each call site gets separate analysis
     ;; For object sensitivity: allocation site as context

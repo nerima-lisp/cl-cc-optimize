@@ -19,7 +19,7 @@
 
 EDGE-LABEL is the successor label on the edge being analyzed."
   (when (gethash pred seen)
-    (return-from %opt-branch-predicate-fact-from-edge nil))
+    (return-from %opt-branch-predicate-fact-from-edge))
   (setf (gethash pred seen) t)
   (let* ((term (car (last (bb-instructions pred))))
          (target-label (and (typep term 'vm-jump-zero)
@@ -98,8 +98,7 @@ block are replaced with vm-const 1/0."
          (facts (map 'vector #'%opt-branch-predicate-fact-for-block (cfg-blocks cfg))))
     (loop for block across (cfg-blocks cfg)
           for fact across facts
-          do (progn
-               (when fact
+          do (when fact
                  (let ((live-fact fact)
                        (new-insts nil))
                    (dolist (inst (bb-instructions block))
@@ -119,5 +118,5 @@ block are replaced with vm-const 1/0."
                               new-insts))
                        (t
                         (push inst new-insts))))
-                   (setf (bb-instructions block) (nreverse new-insts))))))
+                   (setf (bb-instructions block) (nreverse new-insts)))))
     (cfg-flatten cfg)))

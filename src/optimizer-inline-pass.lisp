@@ -160,7 +160,7 @@ preserved verbatim. Non-linear or otherwise uncollected functions are left in
 place by construction."
   (let* ((func-defs (opt-collect-function-defs instructions))
          (name-to-label (opt-build-function-name-map instructions)))
-    (when (= 0 (hash-table-count func-defs))
+    (when (zerop (hash-table-count func-defs))
       (return-from opt-pass-global-dce instructions))
     (multiple-value-bind (body-inst-set body-inst-labels)
         (opt-function-body-instruction-tables func-defs)
@@ -174,7 +174,7 @@ place by construction."
                  (unless (gethash label reachable)
                    (setf (gethash label labels-to-drop) t)))
                func-defs)
-      (when (= 0 (hash-table-count labels-to-drop))
+      (when (zerop (hash-table-count labels-to-drop))
         (return-from opt-pass-global-dce instructions))
       (dolist (inst instructions)
         (when (typep inst '(or vm-closure vm-func-ref))

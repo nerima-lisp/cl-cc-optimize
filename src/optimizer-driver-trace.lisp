@@ -34,7 +34,7 @@
   (format stream "{\"traceEvents\":[")
   (loop for event in events
         for i from 0
-        do (when (> i 0) (format stream ","))
+        do (when (plusp i) (format stream ","))
            (format stream
                    "{\"name\":~S,\"ph\":\"X\",\"pid\":1,\"tid\":1,\"ts\":~D,\"dur\":~D}"
                    (getf event :name)
@@ -62,7 +62,7 @@
 ;;; ─── Per-Pass Reporting ──────────────────────────────────────────────────
 
 (defun %opt-pass-name-string (f)
-  (string-upcase (format nil "~A" f)))
+  (string-upcase (princ-to-string f)))
 
 (defun %opt-remarks-applies-p (changed mode)
   "T when a remarks entry should be emitted given CHANGED status and MODE."

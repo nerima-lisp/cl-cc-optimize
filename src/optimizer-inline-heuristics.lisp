@@ -30,8 +30,7 @@
 (defun %opt-inline-captured-vars (inst)
   "Return captured vars for callable reference INST. vm-func-ref never captures."
   (if (vm-closure-p inst)
-      (vm-captured-vars inst)
-      nil))
+      (vm-captured-vars inst)))
 
 (defun %opt-inline-size-adjustment (inst-count body-cost)
   "Return a conservative inline threshold adjustment for function size."
@@ -53,7 +52,7 @@
 (defun %opt-inline-loop-depths (instructions)
   "Return index -> loop-depth table derived from backward branch ranges."
   (let ((label-pos (make-hash-table :test #'equal))
-        (depths (make-hash-table :test #'eql)))
+        (depths (make-hash-table)))
     (loop for inst in instructions
           for i from 0
           when (typep inst 'vm-label)

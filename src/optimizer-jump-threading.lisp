@@ -48,7 +48,7 @@
         for inst = (aref vec j)
         if (not (vm-label-p inst)) return nil
         if (equal (vm-name inst) target) return t
-        finally (return nil)))
+        finally (return)))
 
 (defun %opt-thread-jump (inst vec i idx)
   "Thread unconditional INST; return the (possibly relabeled) jump, or NIL if it falls through."
@@ -123,7 +123,7 @@ successors."
   (let* ((insts (bb-instructions block))
          (term (car (last insts))))
     (unless (typep term 'vm-jump-zero)
-      (return-from %opt-jump-branch-comparison-fact nil))
+      (return-from %opt-jump-branch-comparison-fact))
     (let ((env (make-hash-table :test #'eq))
           (cond-reg (vm-reg term))
           (fact nil))
@@ -172,7 +172,7 @@ successors."
   "Return the fact propagated on edge PRED -> SUCC, or NIL."
   (unless (and (= (length (bb-predecessors succ)) 1)
                (not (%opt-jump-back-edge-p pred succ)))
-    (return-from %opt-jump-edge-fact nil))
+    (return-from %opt-jump-edge-fact))
   (let* ((term (car (last (bb-instructions pred))))
          (branch-fact (%opt-jump-branch-comparison-fact pred)))
     (if (typep term 'vm-jump-zero)

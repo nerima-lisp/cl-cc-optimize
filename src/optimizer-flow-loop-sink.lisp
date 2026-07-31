@@ -52,9 +52,7 @@ analysis."
 
 (defun %opt-code-sinking-alias-safe-p (inst uses linear-insts alias-roots type-facts)
   "Return T when sinking INST to USES does not cross an aliased write."
-  (if (not (opt-memory-read-inst-p inst))
-      t
-      (let ((def-pos (%opt-code-sinking-linear-index linear-insts inst)))
+  (if (opt-memory-read-inst-p inst) (let ((def-pos (%opt-code-sinking-linear-index linear-insts inst)))
         (and def-pos
              (every (lambda (use)
                       (let* ((use-inst (third use))
@@ -69,7 +67,7 @@ analysis."
                                                                                alias-roots
                                                                                type-facts)))
                                        (subseq linear-insts (1+ lo) hi))))))
-                    uses)))))
+                    uses))) t))
 
 (defun %opt-block-terminator-index (insts)
   "Return the index of the first terminator in INSTS, or NIL."

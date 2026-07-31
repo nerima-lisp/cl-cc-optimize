@@ -45,8 +45,7 @@
   (if (typep inst 'vm-jump-zero)
       (if-let ((entry (assoc (vm-reg inst) constants :test #'eq)))
         (if (opt-falsep (cdr entry))
-            (make-vm-jump :label (vm-label-name inst))
-            nil)
+            (make-vm-jump :label (vm-label-name inst)))
         inst)
       inst))
 

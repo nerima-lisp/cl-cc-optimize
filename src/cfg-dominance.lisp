@@ -39,7 +39,7 @@
    Returns the entry block (root of the dominator tree)."
   (let* ((rpo    (cfg-compute-rpo cfg))
          (entry  (cfg-entry cfg)))
-    (unless entry (return-from cfg-compute-dominators nil))
+    (unless entry (return-from cfg-compute-dominators))
 
     ;; Dominator computation is called by multiple analyses; keep the tree
     ;; idempotent instead of appending duplicate children across recomputes.
@@ -60,9 +60,7 @@
                      ;; new-idom = first processed predecessor
                      (dolist (p (bb-predecessors b))
                        (when (bb-idom p)
-                         (if (null new-idom)
-                             (setf new-idom p)
-                             (setf new-idom (cfg-intersect p new-idom)))))
+                         (if new-idom (setf new-idom (cfg-intersect p new-idom)) (setf new-idom p))))
                      (when (and new-idom (not (eq new-idom (bb-idom b))))
                        (setf (bb-idom b) new-idom
                              changed t)))))))

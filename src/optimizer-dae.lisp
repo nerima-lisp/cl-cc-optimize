@@ -20,13 +20,13 @@
   "Return VALUES with zero-based INDEXES removed."
   (loop for value in values
         for index from 0
-        unless (member index indexes :test #'eql)
+        unless (member index indexes)
           collect value))
 
 (defun %opt-dae-captures-param-p (inst params)
   "Return T when INST captures one of PARAMS, making that parameter live indirectly."
   (and (typep inst 'vm-closure)
-       (intersection (or (vm-captured-vars inst) nil) params :test #'eq)))
+       (intersection (vm-captured-vars inst) params :test #'eq)))
 
 (defun %opt-dae-unsafe-function-shape-p (closure)
   "Return T when CLOSURE has non-positional calling convention metadata."
@@ -83,7 +83,7 @@
          (new-args (%opt-dae-remove-indexes args drop-indexes))
          (dropped-args (loop for arg in args
                              for index from 0
-                             when (member index drop-indexes :test #'eql)
+                             when (member index drop-indexes)
                                collect arg)))
     (values (typecase inst
               (vm-tail-call (make-vm-tail-call :dst (vm-dst inst)

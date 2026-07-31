@@ -42,16 +42,14 @@ Handles both vm-jump (unconditional) and vm-jump-zero (conditional)."
       (when-let ((label (and (bb-label block) (vm-name (bb-label block)))))
         (let* ((sig   (%tail-merge-block-signature block))
                (canon (gethash sig canonical-by-sig)))
-          (if (null canon)
-              (setf (gethash sig canonical-by-sig) block)
-              (unless (eq canon block)
+          (if canon (unless (eq canon block)
                 (let ((canon-label (and (bb-label canon) (vm-name (bb-label canon)))))
                   (when (and canon-label label)
                     (dolist (pred (copy-list (bb-predecessors block)))
                       (%cfg-replace-successor pred block canon)
                       (%opt-rewrite-block-terminator pred label canon-label)
                       (pushnew pred (bb-predecessors canon) :test #'eq))
-                    (setf (bb-predecessors block) nil))))))))))
+                    (setf (bb-predecessors block) nil)))) (setf (gethash sig canonical-by-sig) block)))))))
 
 (defun opt-pass-tail-merge (instructions)
   "Merge CFG blocks with identical bodies and identical successor labels.

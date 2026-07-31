@@ -53,7 +53,7 @@
     (when (and (<= (+ index 5) (1- n))
                (vm-label-p (aref vec index)))
       (let* ((header (aref vec index))
-             (cmp-inst (aref vec (+ index 1)))
+             (cmp-inst (aref vec (1+ index)))
              (jz-inst (aref vec (+ index 2)))
              (header-name (vm-name header)))
         (when (and (%opt-loop-unroll-cmp-inst-p cmp-inst)
@@ -109,7 +109,7 @@ folding and CSE before returning."
                                  (%opt-loop-unroll-trip-count cmp-inst init limit step))))
                  (cond
                   ((and trip
-                        (> trip 0)
+                        (plusp trip)
                         (<= trip *opt-loop-unroll-fr601-max-full-trip*))
                    (setf result (%loop-unroll-full body trip result)
                          changed t

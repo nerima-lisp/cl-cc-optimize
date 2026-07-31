@@ -40,7 +40,11 @@ struct accessor, eliminating PCL dispatch-cache updates in worker threads.
 
 Handles defstruct inheritance: when vm-add inherits dst from vm-binop,
 vm-binop-dst works on vm-add instances, so all vm-binop subclasses are
-registered with vm-binop-dst unless they define a more-specific accessor."
+registered with vm-binop-dst unless they define a more-specific accessor.
+
+Uses SB-MOP directly rather than a #+sbcl reader conditional: this system
+builds and runs only under SBCL (see flake.nix's pkgs.sbcl.buildASDFSystem
+/ sbcl --script), so there is no other implementation to guard against."
   (let ((ht (make-hash-table :test #'eq))
         (visited (make-hash-table :test #'eq)))
     (dolist (method (sb-mop:generic-function-methods #'vm-dst))

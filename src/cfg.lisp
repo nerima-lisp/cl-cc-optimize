@@ -137,7 +137,7 @@ Algorithm:
   1. Mark leaders: index 0, every jump target, fall-throughs after branches.
   2. Allocate a basic block per leader.
   3. Populate each block's instruction list and wire fall-through / jump edges."
-  (when (null instructions)
+  (unless instructions
     (let* ((g (make-cfg)) (entry (cfg-new-block g)))
       (setf (cfg-entry g) entry (cfg-exit g) entry)
       (return-from cfg-build g)))

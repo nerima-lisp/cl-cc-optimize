@@ -125,7 +125,7 @@
                   (typep inst 'vm-jump-zero)
                   (typep inst 'vm-ret)
                   (typep inst 'vm-halt))
-              (return nil))
+              (return))
              ((eq (opt-inst-dst inst) func-reg)
               (return
                 (typecase inst
@@ -170,7 +170,7 @@
         do (cond
              ((or (typep inst 'vm-label) (typep inst 'vm-jump)
                   (typep inst 'vm-ret) (typep inst 'vm-halt))
-              (return nil))
+              (return))
              ((and (typep inst 'vm-typep)
                    (eq (vm-src inst) func-reg)
                    (member (vm-type-name inst) '(function compiled-function) :test #'eq))
@@ -191,8 +191,8 @@ The original join call remains available for fall-through and unknown preds."
   (let* ((len (length instructions))
          (name-to-label (opt-build-function-name-map instructions))
          (used-labels (make-hash-table :test #'equal))
-         (replacements (make-hash-table :test #'eql))
-         (after-labels (make-hash-table :test #'eql)))
+         (replacements (make-hash-table))
+         (after-labels (make-hash-table)))
     (dolist (inst instructions)
       (when (typep inst 'vm-label)
         (setf (gethash (vm-name inst) used-labels) t)))

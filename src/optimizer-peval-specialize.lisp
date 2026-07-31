@@ -107,8 +107,7 @@
            nil))))
     (dolist (cell body-signature)
       (let ((var (car cell)))
-        (when (and (not (member var shadowed-set :test #'equal))
-                   (null (assoc var result :test #'equal)))
+        (unless (or (member var shadowed-set :test #'equal) (assoc var result :test #'equal))
           (push cell result))))
     (nreverse result)))
 
@@ -138,9 +137,7 @@
                              (substitute-node value current-signature)
                            (push value-form result)
                            (setf current-signature
-                                 (if (contains-setq-p value)
-                                     nil
-                                     updated-signature)))
+                                 (unless (contains-setq-p value) updated-signature)))
                          (when (symbolp place)
                            (setf current-signature
                                  (%opt-remove-shadowed-bindings current-signature

@@ -110,7 +110,7 @@
   (loop for tail across (cfg-blocks cfg)
         when tail
         do (dolist (header (bb-successors tail))
-             (when (and (> (bb-loop-depth tail) 0)
+             (when (and (plusp (bb-loop-depth tail))
                         (cfg-dominates-p header tail))
                (let ((hoisted (%opt-remove-safepoints-hoistable-to-tail tail)))
                  (%opt-insert-before-terminator tail hoisted)))))

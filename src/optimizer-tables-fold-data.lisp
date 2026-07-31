@@ -89,7 +89,7 @@
       ;; constant reaching a VM-NOT was therefore miscompiled — most visibly
       ;; through COMPLEMENT, whose (not (apply pred args)) body made every
       ;; -IF-NOT sequence function report "nothing matched".
-      (vm-not         . ,(lambda (value) (if (opt-falsep value) t nil)))))
+      (vm-not         . ,(lambda (value) (if (opt-falsep value) t)))))
   "Maps unary VM instruction types to their CL fold functions.")
 
 (defparameter *opt-type-pred-fold-table*
@@ -146,7 +146,7 @@
      (vm-string-upcase  . ,#'stringp)
      (vm-string-downcase . ,#'stringp)
      (vm-length         . ,(lambda (v) (or (vectorp v)
-                                           (and (listp v) (ignore-errors (length v) t)))))
+                                           (and (listp v) (handler-case (progn (length v) t) (type-error () nil))))))
      (vm-car            . ,(lambda (v) (or (consp v) (null v))))
      (vm-cdr            . ,(lambda (v) (or (consp v) (null v))))
      (vm-not            . ,(constantly t))))

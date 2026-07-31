@@ -30,7 +30,7 @@
                      (egraph-rebuild eg)
                      (return-from egraph-saturate (values nil iter fuel)))))
                (egraph-rebuild eg)
-               (when (= iter-merges 0)
+               (when (zerop iter-merges)
                  (return-from egraph-saturate (values t iter (- fuel total-merges)))))
           finally (return (values nil limit 0)))))
 
@@ -63,11 +63,9 @@
   (let ((canon (egraph-find eg cid)))
     (or (gethash canon cache)
         (let ((cls (gethash canon (eg-classes eg))))
-          (if (null cls)
-              (progn (setf (gethash canon cache) (cons most-positive-fixnum cid)) nil)
-              (let ((best-cost most-positive-fixnum)
+          (if cls (let ((best-cost most-positive-fixnum)
                     (best-sexp nil))
-                (setf (gethash canon cache) (cons most-positive-fixnum nil))
+                (setf (gethash canon cache) (list most-positive-fixnum))
                 (dolist (n (ec-nodes cls))
                   (let* ((child-results
                            (mapcar (lambda (c) (%egraph-extract-class c eg cache cost-fn))
@@ -79,13 +77,11 @@
                     (when (< total-cost best-cost)
                       (setf best-cost total-cost)
                       (setf best-sexp
-                            (if (null (en-children n))
-                                (let ((data (ec-data (gethash canon (eg-classes eg)))))
-                                  (or data (en-op n)))
-                                (cons (en-op n) child-sexps))))))
+                            (if (en-children n) (cons (en-op n) child-sexps) (let ((data (ec-data (gethash canon (eg-classes eg)))))
+                                  (or data (en-op n))))))))
                 (let ((result (cons best-cost best-sexp)))
                   (setf (gethash canon cache) result)
-                  result)))))))
+                  result)) (progn (setf (gethash canon cache) (cons most-positive-fixnum cid)) nil))))))
 
 (defun egraph-extract (eg root-id &optional (cost-fn #'egraph-default-cost))
   "Bottom-up extraction: for each e-class reachable from ROOT-ID,

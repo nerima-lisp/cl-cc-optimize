@@ -119,14 +119,14 @@ pure in PURE-LABELS. Unknown calls remain conservative and therefore impure."
         ((or vm-call vm-tail-call)
          (let ((callee (gethash (vm-func-reg inst) reg-track)))
            (unless (and callee (gethash callee pure-labels))
-             (return-from opt-function-body-transitively-pure-p nil))
+             (return-from opt-function-body-transitively-pure-p))
            (when (opt-inst-dst inst)
              (remhash (opt-inst-dst inst) reg-track))))
         (t
          (unless (or (typep inst 'vm-ret)
                      (typep inst 'vm-label)
                      (opt-inst-pure-p inst))
-           (return-from opt-function-body-transitively-pure-p nil))
+           (return-from opt-function-body-transitively-pure-p))
          (when-let ((dst (opt-inst-dst inst)))
            (remhash dst reg-track)))))))
 
@@ -269,11 +269,8 @@ effects, or no destination are preserved."
           ((typep inst 'vm-call)
            (let* ((dst (opt-inst-dst inst))
                   (label (%opt-resolved-pure-direct-call-label inst reg-track pure-labels)))
-             (if (and dst label (not (gethash dst used)))
-                 nil
-                 (progn
-                   (remhash dst reg-track)
-                   (push inst result)))))
+             (unless (and dst label (not (gethash dst used))) (remhash dst reg-track)
+                   (push inst result))))
           (t
            (%opt-track-known-callee-label inst name-to-label reg-track)
            (push inst result)))))))
@@ -295,7 +292,7 @@ recursive SCCs remain untouched by construction."
   (unless (some (lambda (inst) (typep inst 'vm-call)) instructions)
     (return-from opt-pass-pure-call-optimization instructions))
   (let ((pure-labels (opt-infer-transitive-function-purity instructions)))
-    (when (= 0 (hash-table-count pure-labels))
+    (when (zerop (hash-table-count pure-labels))
       (return-from opt-pass-pure-call-optimization instructions))
     (let* ((name-to-label (opt-build-function-name-map instructions))
            (cse-rewritten (%opt-rewrite-pure-direct-calls instructions name-to-label pure-labels)))

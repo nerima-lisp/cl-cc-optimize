@@ -85,10 +85,8 @@ or emit VLQ-encoded mappings."
 
 (defun opt-format-type-trace (steps)
   "Format type-inference rationale STEPS as a human-readable trace string."
-  (if (null steps)
-      "Type trace: <none>"
-      (with-output-to-string (out)
+  (if steps (with-output-to-string (out)
         (format out "Type trace:")
         (loop for step in steps
               for index from 1
-              do (format out "~%~d. ~a" index step)))))
+              do (format out "~%~d. ~a" index step))) "Type trace: <none>"))

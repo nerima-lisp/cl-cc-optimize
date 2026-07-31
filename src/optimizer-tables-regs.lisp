@@ -114,7 +114,10 @@ that returns the list of register keywords read by that instruction."
            (let ((dst (opt-inst-dst inst)))
              (handler-case
                  (%opt-collect-sexp-regs (instruction->sexp inst) dst nil)
-               (error () nil))))))))
+               (error (condition)
+                 (warn "opt-inst-read-regs: sexp-reflection fallback failed for ~S: ~A -- treating as reading no registers, which may be unsafe for liveness/DCE."
+                       (type-of inst) condition)
+                 nil))))))))
 
 (defun %opt-commutative-inst-p (inst)
   "Return T if INST is a commutative binary instruction."

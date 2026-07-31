@@ -71,7 +71,7 @@ Returned plist keys:
   "Return T only when every optimize-backend FR is marked ✅ and has complete evidence."
   (let* ((summary (optimize-backend-roadmap-status-summary pathname))
          (features (optimize-backend-roadmap-doc-features pathname)))
-    (and (> (getf summary :total 0) 0)
+    (and (plusp (getf summary :total 0))
          (= (getf summary :implemented 0)
             (getf summary :total 0))
          (every (lambda (feature)

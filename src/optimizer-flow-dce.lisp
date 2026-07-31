@@ -104,7 +104,7 @@
                       (let ((dead-p
                               (or (gethash inst dead-stores)
                                   (and (opt-inst-dce-eligible-p inst)
-                                       (let ((dst (ignore-errors (vm-dst inst))))
+                                       (let ((dst (opt-inst-dst inst)))
                                          (and dst (not (gethash dst used))))))))
                        (when dead-p (incf removed))
                        dead-p))

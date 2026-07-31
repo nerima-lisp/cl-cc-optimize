@@ -13,7 +13,7 @@
 
 (defun %opt-yaml-string (value)
   "Return VALUE rendered as a conservative double-quoted YAML scalar."
-  (let ((text (format nil "~A" (or value ""))))
+  (let ((text (princ-to-string (or value ""))))
     (with-output-to-string (out)
       (write-char #\" out)
       (loop for ch across text do

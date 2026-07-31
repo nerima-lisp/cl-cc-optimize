@@ -94,7 +94,7 @@ Returns one of:
   :contended-fallback heavy contention -> conservative fallback"
   (cond
     ((> (opt-chan-site-contention site) 3) :contended-fallback)
-    ((and (> (opt-chan-site-buffer-size site) 0)
+    ((and (plusp (opt-chan-site-buffer-size site))
           (< (opt-chan-site-queue-depth site) (opt-chan-site-buffer-size site)))
      :fast-buffered)
     (t :synchronous-rendezvous)))

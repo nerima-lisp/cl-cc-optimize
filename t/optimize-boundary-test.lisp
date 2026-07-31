@@ -209,8 +209,8 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                          (add :t2 :t1 :b)
                          (halt :t2)))
            (optimized (cl-cc/optimize::opt-pass-reassociate instructions))
-           (first-add (nth 1 optimized))
-           (second-add (nth 2 optimized)))
+           (first-add (second optimized))
+           (second-add (third optimized)))
       (expect (length optimized) :to-equal 4)
       (expect (typep first-add 'cl-cc/vm:vm-add) :to-be-truthy)
       (expect (cl-cc/vm:vm-lhs first-add) :to-be :b)
@@ -456,6 +456,10 @@ inspect its slots\" shape used across the optimizer-pass tests below."
     ;; it-property has no options-plist slot in this pinned cl-weave (v1.1.0)
     ;; to attach :timeout-ms to (confirmed by reading its macro definition),
     ;; so the whole-run timeout guard is applied directly in the body instead.
+    ;; SB-EXT is used directly rather than behind a #+sbcl reader conditional:
+    ;; this system builds and runs only under SBCL (see flake.nix's
+    ;; pkgs.sbcl.buildASDFSystem / sbcl --script), so there is no other
+    ;; implementation for a conditional to guard against.
     (sb-ext:with-timeout 5
       (let* ((lo1 (min a1 a2)) (hi1 (max a1 a2))
              (lo2 (min b1 b2)) (hi2 (max b1 b2))
@@ -660,7 +664,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                          (halt :r0)))
            (optimized (cl-cc/optimize::opt-pass-dce instructions)))
       (expect (length optimized) :to-equal 2)
-      (expect (notany (lambda (i) (eq (ignore-errors (cl-cc/vm:vm-dst i)) :r1)) optimized)
+      (expect (notany (lambda (i) (eq (cl-cc/optimize::opt-inst-dst i) :r1)) optimized)
               :to-be-truthy))))
 
 (describe-sequential
@@ -675,9 +679,9 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                          (halt :r3)))
            (optimized (cl-cc/optimize::opt-pass-cse instructions)))
       (expect (length optimized) :to-equal 5)
-      (expect (typep (nth 2 optimized) 'cl-cc/vm:vm-add) :to-be-truthy)
-      (expect (typep (nth 3 optimized) 'cl-cc/vm:vm-move) :to-be-truthy)
-      (expect (cl-cc/vm:vm-move-src (nth 3 optimized)) :to-be :r2))))
+      (expect (typep (third optimized) 'cl-cc/vm:vm-add) :to-be-truthy)
+      (expect (typep (fourth optimized) 'cl-cc/vm:vm-move) :to-be-truthy)
+      (expect (cl-cc/vm:vm-move-src (fourth optimized)) :to-be :r2))))
 
 (describe-sequential
   "strength reduction rewrites multiply-by-power-of-two as a shift"
@@ -689,8 +693,8 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                          (halt :r1)))
            (optimized (cl-cc/optimize::opt-pass-strength-reduce instructions)))
       (expect (length optimized) :to-equal 4)
-      (let ((shift-const (nth 1 optimized))
-            (ash-inst (nth 2 optimized)))
+      (let ((shift-const (second optimized))
+            (ash-inst (third optimized)))
         (expect (typep shift-const 'cl-cc/vm:vm-const) :to-be-truthy)
         (expect (cl-cc/vm:vm-const-value shift-const) :to-equal 1)
         (expect (typep ash-inst 'cl-cc/vm:vm-ash) :to-be-truthy)
@@ -752,7 +756,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                          (halt :r0)))
            (optimized (cl-cc/optimize::opt-pass-unreachable instructions)))
       (expect (length optimized) :to-equal 3)
-      (expect (notany (lambda (i) (eq (ignore-errors (cl-cc/vm:vm-dst i)) :dead)) optimized)
+      (expect (notany (lambda (i) (eq (cl-cc/optimize::opt-inst-dst i) :dead)) optimized)
               :to-be-truthy))))
 
 (describe-sequential

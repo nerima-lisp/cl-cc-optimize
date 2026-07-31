@@ -62,11 +62,11 @@ values produced by the original loop on normal exit."
    the induction initialization, zero-based index, `< length` guard, exactly one
    ASET store, increment by one, and private loop/exit labels."
   (let ((end (+ pos 10)))
-    (when (and (> pos 0)
+    (when (and (plusp pos)
                (<= end (length instructions)))
       (let* ((len-inst   (nth (1- pos) instructions))
-             (init       (nth (+ pos 0) instructions))
-             (header     (nth (+ pos 1) instructions))
+             (init       (nth pos instructions))
+             (header     (nth (1+ pos) instructions))
              (cmp        (nth (+ pos 2) instructions))
              (exit-jump  (nth (+ pos 3) instructions))
              (store      (nth (+ pos 4) instructions))
@@ -139,7 +139,7 @@ values produced by the original loop on normal exit."
                    (incf i consumed))
                  (progn
                    (push (nth i instructions) result)
-                   (incf i 1))))
+                   (incf i))))
         finally (return (nreverse result))))
 
 (defun %opt-copy-window-shape-valid-p (init header cmp exit-jump load store one inc step back-jump exit-label)
@@ -171,7 +171,7 @@ values produced by the original loop on normal exit."
    The bound may come from ARRAY-LENGTH of either vector or from an already
    computed length register used by the loop guard."
   (let ((end (+ pos 11)))
-    (when (and (> pos 0)
+    (when (and (plusp pos)
                (<= end (length instructions)))
       (destructuring-bind (len-inst init header cmp exit-jump load store one inc step back-jump exit-label)
           (subseq instructions (1- pos) end)
@@ -255,6 +255,6 @@ values produced by the original loop on normal exit."
                      (incf i consumed))
                    (progn
                      (push (nth i instructions) result)
-                     (incf i 1))))
+                     (incf i))))
           finally (return (nreverse result)))))
 

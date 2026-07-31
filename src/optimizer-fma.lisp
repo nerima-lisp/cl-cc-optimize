@@ -60,7 +60,7 @@
   (let* ((n (length block))
          (insts (coerce block 'vector))
          (removed (make-array n :initial-element nil))
-         (replacements (make-hash-table :test #'eql)))
+         (replacements (make-hash-table)))
     (loop for mul-index from 0 below n
           for mul = (aref insts mul-index)
           when (and (not (aref removed mul-index))

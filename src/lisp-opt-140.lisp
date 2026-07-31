@@ -14,7 +14,7 @@
             (body (third form)))
         (when (and (= (length params) 1)
                    (eq (car params) (second body))
-                   (= (length (cddr body)) 0))
+                   (zerop (length (cddr body))))
           (third body)))
       form))
 

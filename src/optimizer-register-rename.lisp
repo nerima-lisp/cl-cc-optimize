@@ -21,7 +21,7 @@
       (dolist (reg (cons (opt-inst-dst inst) (opt-inst-read-regs inst)))
         (when (and reg (opt-register-keyword-p reg))
           (let* ((name (symbol-name reg))
-                 (idx (ignore-errors (parse-integer name :start 1))))
+                 (idx (handler-case (parse-integer name :start 1) (parse-error () nil))))
             (when (and idx (> idx max-idx))
               (setf max-idx idx))))))))
 
@@ -64,10 +64,10 @@
                                        (opt-inst-read-regs inst))))
           (sexp-regs-cell (list nil)))
       (handler-case (%opt-collect-sexp-regs-into-cell (instruction->sexp inst) sexp-regs-cell)
-        (error () (return-from opt-can-safely-rename-p nil)))
+        (error () (return-from opt-can-safely-rename-p)))
       (let ((sexp-regs (car sexp-regs-cell)))
         (unless (every (lambda (r) (member r sexp-regs)) explicit-regs)
-          (return-from opt-can-safely-rename-p nil))))))
+          (return-from opt-can-safely-rename-p))))))
 
 (defun opt-rename-regs-in-inst (inst renaming)
   "Return INST with all VM register keywords substituted per RENAMING.
