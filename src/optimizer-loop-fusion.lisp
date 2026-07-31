@@ -125,31 +125,31 @@ when STRIDE/OFFSET are known constants."
           (index-reg (vm-index-reg inst)))
       (labels ((const (reg) (gethash reg const-env))
                (affine (reg)
-                 (cond
-                   ((eq reg iv) (values 1 0 t))
-                   ((gethash reg const-env) (values 0 (gethash reg const-env) t))
-                   (t
-                    (let ((def (gethash reg def-env)))
-                      (cond
-                        ((and (typep def 'vm-add))
-                         (multiple-value-bind (s1 o1 ok1) (affine (vm-lhs def))
-                           (multiple-value-bind (s2 o2 ok2) (affine (vm-rhs def))
-                             (when (and ok1 ok2)
-                               (values (+ s1 s2) (+ o1 o2) t)))))
-                        ((and (typep def 'vm-mul))
-                         (cond
-                           ((eq (vm-lhs def) iv)
-                            (let ((k (const (vm-rhs def))))
-                              (when k (values k 0 t))))
-                           ((eq (vm-rhs def) iv)
-                            (let ((k (const (vm-lhs def))))
-                              (when k (values k 0 t)))))))))))))
-        (multiple-value-bind (stride offset ok) (affine index-reg)
-          (when ok
-            (list :array array-reg
-                  :write-p (typep inst 'vm-aset)
-                  :stride stride
-                  :offset offset))))))
+                       (cond
+                        ((eq reg iv) (values 1 0 t))
+                        ((gethash reg const-env) (values 0 (gethash reg const-env) t))
+                        (t
+                         (let ((def (gethash reg def-env)))
+                           (cond
+                            ((and (typep def 'vm-add))
+                             (multiple-value-bind (s1 o1 ok1) (affine (vm-lhs def))
+                               (multiple-value-bind (s2 o2 ok2) (affine (vm-rhs def))
+                                 (when (and ok1 ok2)
+                                   (values (+ s1 s2) (+ o1 o2) t)))))
+                            ((and (typep def 'vm-mul))
+                             (cond
+                              ((eq (vm-lhs def) iv)
+                               (when-let ((k (const (vm-rhs def))))
+                                 (values k 0 t)))
+                              ((eq (vm-rhs def) iv)
+                               (when-let ((k (const (vm-lhs def))))
+                                 (values k 0 t))))))))))))
+      (multiple-value-bind (stride offset ok) (affine index-reg)
+        (when ok
+          (list :array array-reg
+                :write-p (typep inst 'vm-aset)
+                :stride stride
+                :offset offset))))))
 
 (defun %loop-fr514-build-envs (instructions end-index)
   "Build constant and local definition environments before END-INDEX."
@@ -157,12 +157,11 @@ when STRIDE/OFFSET are known constants."
         (def-env (make-hash-table :test #'eq)))
     (loop for inst in instructions
           for i from 0 below end-index
-          do (let ((dst (opt-inst-dst inst)))
-               (when dst
-                 (setf (gethash dst def-env) inst)
-                 (if (and (typep inst 'vm-const) (integerp (vm-value inst)))
-                     (setf (gethash dst const-env) (vm-value inst))
-                     (remhash dst const-env)))))
+          do (when-let ((dst (opt-inst-dst inst)))
+               (setf (gethash dst def-env) inst)
+               (if (and (typep inst 'vm-const) (integerp (vm-value inst)))
+                   (setf (gethash dst const-env) (vm-value inst))
+                   (remhash dst const-env))))
     (values const-env def-env)))
 
 (defun %loop-fr514-gcd-test-safe-p (a b)

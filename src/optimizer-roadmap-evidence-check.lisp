@@ -44,31 +44,30 @@
 when a plan path element starts with ANCHOR followed by a space.
 Returns NIL when cl-weave or its public test-plan inspection API is unavailable,
 so cl-weave remains an optional dependency."
-  (let ((cl-weave-package (find-package :cl-weave)))
-    (when cl-weave-package
-      (let* ((list-tests (find-symbol "LIST-TESTS" cl-weave-package))
-             (test-plan-entry-path
-               (find-symbol "TEST-PLAN-ENTRY-PATH" cl-weave-package))
-             (anchor-name (symbol-name anchor))
-             (anchor-length (length anchor-name)))
-        (when (and list-tests
-                   test-plan-entry-path
-                   (fboundp list-tests)
-                   (fboundp test-plan-entry-path))
-          (loop for entry in (funcall list-tests
-                                      :stream (make-broadcast-stream)
-                                      :name-filter nil)
-                thereis (some (lambda (path-element)
-                                (let* ((path-element-name (string path-element))
-                                       (path-length (length path-element-name)))
-                                  (and (<= anchor-length path-length)
-                                       (string-equal anchor-name path-element-name
-                                                     :end2 anchor-length)
-                                       (or (= anchor-length path-length)
-                                           (char= #\Space
-                                                  (char path-element-name
-                                                        anchor-length))))))
-                              (funcall test-plan-entry-path entry))))))))
+  (when-let ((cl-weave-package (find-package :cl-weave)))
+    (let* ((list-tests (find-symbol "LIST-TESTS" cl-weave-package))
+           (test-plan-entry-path
+            (find-symbol "TEST-PLAN-ENTRY-PATH" cl-weave-package))
+           (anchor-name (symbol-name anchor))
+           (anchor-length (length anchor-name)))
+      (when (and list-tests
+                 test-plan-entry-path
+                 (fboundp list-tests)
+                 (fboundp test-plan-entry-path))
+        (loop for entry in (funcall list-tests
+                                    :stream (make-broadcast-stream)
+                                    :name-filter nil)
+              thereis (some (lambda (path-element)
+                              (let* ((path-element-name (string path-element))
+                                     (path-length (length path-element-name)))
+                                (and (<= anchor-length path-length)
+                                     (string-equal anchor-name path-element-name
+                                                   :end2 anchor-length)
+                                     (or (= anchor-length path-length)
+                                         (char= #\Space
+                                                (char path-element-name
+                                                      anchor-length))))))
+                            (funcall test-plan-entry-path entry)))))))
 
 (defun %opt-roadmap-api-entry-fbound-p (entry)
   "Return T when ENTRY names a checkable API evidence target.
@@ -123,19 +122,18 @@ The profile is intentionally coarse-grained by subsystem, but no longer uses a
 single all-FR placeholder: each roadmap cluster points at the subsystem that
 currently carries its implementation evidence."
   (let ((n (%opt-roadmap-feature-number feature-id)))
-    (let ((entry (and n
-                      (find-if (lambda (e)
-                                 (destructuring-bind (lo hi . _rest) e
-                                   (declare (ignore _rest))
-                                   (and (<= lo n)
-                                        (or (null hi) (<= n hi)))))
-                               +opt-roadmap-evidence-profile-ranges+))))
-      (if entry
-          (destructuring-bind (_lo _hi modules api-symbols test-anchors) entry
-            (declare (ignore _lo _hi))
-            (values modules api-symbols test-anchors))
-          (values '("packages/optimize/src/optimizer-pipeline.lisp"
-                    "packages/optimize/tests/optimizer-pipeline-tests.lisp")
-                  '(optimize-roadmap-doc-features
-                    optimize-roadmap-register-doc-evidence)
-                  '(optimize-roadmap-evidence-covers-doc-fr-list))))))
+    (if-let ((entry (and n
+      (find-if (lambda (e)
+                 (destructuring-bind (lo hi . _rest) e
+                   (declare (ignore _rest))
+                   (and (<= lo n)
+                        (or (null hi) (<= n hi)))))
+               +opt-roadmap-evidence-profile-ranges+))))
+      (destructuring-bind (_lo _hi modules api-symbols test-anchors) entry
+      (declare (ignore _lo _hi))
+      (values modules api-symbols test-anchors))
+      (values '("packages/optimize/src/optimizer-pipeline.lisp"
+         "packages/optimize/tests/optimizer-pipeline-tests.lisp")
+       '(optimize-roadmap-doc-features
+         optimize-roadmap-register-doc-evidence)
+       '(optimize-roadmap-evidence-covers-doc-fr-list)))))

@@ -82,7 +82,7 @@ Returns one of: :pure :alloc :read-only :control :write-global :io :unknown."
   ;; Check the cache first
   (when (gethash fn-name *user-function-purity-cache*)
     (return-from compute-function-purity
-      (gethash fn-name *user-function-purity-cache*)))
+                 (gethash fn-name *user-function-purity-cache*)))
 
   ;; Check builtin function properties
   (let ((builtin-kind (known-function-effect-kind fn-name)))
@@ -107,20 +107,19 @@ Returns one of: :pure :alloc :read-only :control :write-global :io :unknown."
   (let ((worst-kind :pure))
     (push fn-name *purity-analysis-in-progress*)
     (unwind-protect
-         (dolist (inst instructions worst-kind)
-           (let ((kind (vm-inst-effect-kind inst)))
-             ;; For vm-call to user functions, recursively analyze callee
-             (when (and (eq kind :unknown)
-                        (typep inst '(or vm-call vm-tail-call)))
-               (let ((callee (%extract-callee-name inst)))
-                 (when callee
-                   (setf kind (compute-function-purity callee)))))
-             ;; Merge effect kinds (track worst)
-             (setf worst-kind (effect-kind-max worst-kind kind))
-             ;; Early exit: if already the worst possible, no need to continue
-             (when (eq worst-kind :unknown)
-               (return))))
-      (pop *purity-analysis-in-progress*))
+     (dolist (inst instructions worst-kind)
+       (let ((kind (vm-inst-effect-kind inst)))
+         ;; For vm-call to user functions, recursively analyze callee
+         (when (and (eq kind :unknown)
+                    (typep inst '(or vm-call vm-tail-call)))
+           (when-let ((callee (%extract-callee-name inst)))
+             (setf kind (compute-function-purity callee))))
+         ;; Merge effect kinds (track worst)
+         (setf worst-kind (effect-kind-max worst-kind kind))
+         ;; Early exit: if already the worst possible, no need to continue
+         (when (eq worst-kind :unknown)
+           (return))))
+     (pop *purity-analysis-in-progress*))
     ;; Cache the result
     (setf (gethash fn-name *user-function-purity-cache*) worst-kind)
     worst-kind))

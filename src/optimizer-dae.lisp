@@ -62,18 +62,17 @@
          (unless (or (%opt-dae-specialized-label-p label)
                      (null params)
                      (%opt-dae-unsafe-function-shape-p closure))
-           (let ((drop-indexes (%opt-dae-absent-param-indexes params body)))
-             (when drop-indexes
-               (let ((new-label (format nil "~A~A~D" label
-                                        *opt-dae-specialized-label-fragment*
-                                        (incf counter))))
-                 (setf (gethash label specializations)
-                       (list :old-label label
-                             :new-label new-label
-                             :old-params params
-                             :new-params (%opt-dae-remove-indexes params drop-indexes)
-                             :drop-indexes drop-indexes
-                             :body body))))))))
+           (when-let ((drop-indexes (%opt-dae-absent-param-indexes params body)))
+             (let ((new-label (format nil "~A~A~D" label
+                                      *opt-dae-specialized-label-fragment*
+                                      (incf counter))))
+               (setf (gethash label specializations)
+                     (list :old-label label
+                           :new-label new-label
+                           :old-params params
+                           :new-params (%opt-dae-remove-indexes params drop-indexes)
+                           :drop-indexes drop-indexes
+                           :body body)))))))
      defs)
     specializations))
 

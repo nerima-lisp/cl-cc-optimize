@@ -30,33 +30,34 @@ Returns T when map changed. Conflicting values conservatively drop knowledge."
 
 Returns alist entries: (callee . ((param-index . const-value) ...))"
   (labels ((const-value (node)
-             (cond
-               ((symbolp node)
-                (let ((cell (assoc node static-signature :test #'equal)))
-                  (if cell (cdr cell) :unknown)))
-               ((or (numberp node) (stringp node) (characterp node)
-                    (keywordp node) (member node '(nil t) :test #'eq))
-                node)
-               ((and (consp node) (eq (car node) 'quote))
-                (second node))
-               (t :unknown)))
+                        (cond
+                         ((symbolp node)
+                          (if-let ((cell (assoc node static-signature :test #'equal)))
+                            (cdr cell)
+                            :unknown))
+                         ((or (numberp node) (stringp node) (characterp node)
+                              (keywordp node) (member node '(nil t) :test #'eq))
+                          node)
+                         ((and (consp node) (eq (car node) 'quote))
+                          (second node))
+                         (t :unknown)))
            (walk (node)
-             (cond
-               ((atom node) nil)
-               ((member (car node) '(quote function) :test #'eq) nil)
-               (t
-                (append
-                 (let ((head (car node)))
-                   (when (symbolp head)
-                     (let ((pairs nil))
-                       (loop for arg in (cdr node)
-                             for i from 0
-                             for v = (const-value arg)
-                             unless (eq v :unknown)
-                             do (push (cons i v) pairs))
-                       (when pairs
-                         (list (cons head (nreverse pairs)))))))
-                 (mapcan #'walk node))))))
+                 (cond
+                  ((atom node) nil)
+                  ((member (car node) '(quote function) :test #'eq) nil)
+                  (t
+                   (append
+                    (let ((head (car node)))
+                      (when (symbolp head)
+                        (let ((pairs nil))
+                          (loop for arg in (cdr node)
+                                for i from 0
+                                for v = (const-value arg)
+                                unless (eq v :unknown)
+                                do (push (cons i v) pairs))
+                          (when pairs
+                            (list (cons head (nreverse pairs)))))))
+                    (mapcan #'walk node))))))
     (walk form)))
 
 (defun %opt-build-inferred-constant-bindings (function-definitions reports)

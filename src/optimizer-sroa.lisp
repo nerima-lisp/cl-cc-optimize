@@ -28,7 +28,7 @@ i.e. it breaks the straight-line, program-order-is-execution-order property
 %SROA-ELIGIBLE-SPAN-P relies on to reason about field values without a real
 CFG/dominance analysis."
     (typep inst '(or vm-label vm-jump vm-jump-zero vm-ret vm-halt
-                  vm-call vm-tail-call vm-apply vm-generic-call vm-trampoline)))
+                     vm-call vm-tail-call vm-apply vm-generic-call vm-trampoline)))
 
   (defun %sroa-def-count-table (instructions)
     "Return an EQ hash table: register -> number of instructions in
@@ -37,8 +37,8 @@ entry has one static definition site, which is what lets this pass reason
 about it as a single value without a real SSA/dataflow analysis."
     (let ((ht (make-hash-table :test #'eq)))
       (dolist (inst instructions ht)
-        (let ((dst (opt-inst-dst inst)))
-          (when dst (incf (gethash dst ht 0)))))))
+        (when-let ((dst (opt-inst-dst inst)))
+          (incf (gethash dst ht 0))))))
 
   (defun %sroa-single-def-constant-map (instructions def-count)
     "Return an EQ hash table: register -> integer, for every register in
@@ -52,19 +52,18 @@ index registers to literal indices."
     (let ((source (make-hash-table :test #'eq))
           (resolved (make-hash-table :test #'eq)))
       (dolist (inst instructions)
-        (let ((dst (opt-inst-dst inst)))
-          (when dst
-            (typecase inst
-              (vm-const (setf (gethash dst source) (cons :const (vm-value inst))))
-              (vm-move  (setf (gethash dst source) (cons :move (vm-src inst))))
-              (t        (setf (gethash dst source) (cons :other nil)))))))
+        (when-let ((dst (opt-inst-dst inst)))
+          (typecase inst
+            (vm-const (setf (gethash dst source) (cons :const (vm-value inst))))
+            (vm-move  (setf (gethash dst source) (cons :move (vm-src inst))))
+            (t        (setf (gethash dst source) (cons :other nil))))))
       (labels ((resolve (reg depth)
-                 (when (and reg (< depth 64) (eql (gethash reg def-count) 1))
-                   (let ((entry (gethash reg source)))
-                     (case (car entry)
-                       (:const (cdr entry))
-                       (:move (resolve (cdr entry) (1+ depth)))
-                       (t nil))))))
+                        (when (and reg (< depth 64) (eql (gethash reg def-count) 1))
+                          (let ((entry (gethash reg source)))
+                            (case (car entry)
+                              (:const (cdr entry))
+                              (:move (resolve (cdr entry) (1+ depth)))
+                              (t nil))))))
         (maphash (lambda (reg count)
                    (declare (ignore count))
                    (let ((value (resolve reg 0)))
@@ -111,43 +110,43 @@ aggregate, never a partial rewrite."
             (dolist (inst instructions)
               (when (member reg (opt-inst-read-regs inst) :test #'eq)
                 (let ((access
-                        (cond
-                          ((and struct-p (typep inst 'vm-slot-read)
-                                (eq (cl-cc/vm:vm-slot-read-obj-reg inst) reg))
-                           (make-aggregate-access
-                            :aggregate reg
-                            :field-index (cl-cc/vm:vm-slot-read-slot-name inst)
-                            :is-read-p t
-                            :instruction inst))
-                          ((and struct-p (typep inst 'vm-slot-write)
-                                (eq (cl-cc/vm:vm-slot-write-obj-reg inst) reg))
-                           (when (eq (cl-cc/vm:vm-slot-write-value-reg inst) reg)
+                       (cond
+                        ((and struct-p (typep inst 'vm-slot-read)
+                              (eq (cl-cc/vm:vm-slot-read-obj-reg inst) reg))
+                         (make-aggregate-access
+                          :aggregate reg
+                          :field-index (cl-cc/vm:vm-slot-read-slot-name inst)
+                          :is-read-p t
+                          :instruction inst))
+                        ((and struct-p (typep inst 'vm-slot-write)
+                              (eq (cl-cc/vm:vm-slot-write-obj-reg inst) reg))
+                         (when (eq (cl-cc/vm:vm-slot-write-value-reg inst) reg)
+                           (return-from %sroa-collect-accesses nil))
+                         (make-aggregate-access
+                          :aggregate reg
+                          :field-index (cl-cc/vm:vm-slot-write-slot-name inst)
+                          :is-read-p nil
+                          :instruction inst))
+                        ((and array-p (typep inst 'vm-aref)
+                              (eq (vm-array-reg inst) reg))
+                         (let ((idx (gethash (vm-index-reg inst) const-map)))
+                           (unless (integerp idx)
                              (return-from %sroa-collect-accesses nil))
                            (make-aggregate-access
-                            :aggregate reg
-                            :field-index (cl-cc/vm:vm-slot-write-slot-name inst)
-                            :is-read-p nil
-                            :instruction inst))
-                          ((and array-p (typep inst 'vm-aref)
-                                (eq (vm-array-reg inst) reg))
-                           (let ((idx (gethash (vm-index-reg inst) const-map)))
-                             (unless (integerp idx)
-                               (return-from %sroa-collect-accesses nil))
-                             (make-aggregate-access
-                              :aggregate reg :field-index idx :is-read-p t
-                              :instruction inst)))
-                          ((and array-p (typep inst 'vm-aset)
-                                (eq (vm-array-reg inst) reg))
-                           (let ((idx (gethash (vm-index-reg inst) const-map)))
-                             (unless (integerp idx)
-                               (return-from %sroa-collect-accesses nil))
-                             (when (eq (vm-val-reg inst) reg)
-                               (return-from %sroa-collect-accesses nil))
-                             (make-aggregate-access
-                              :aggregate reg :field-index idx :is-read-p nil
-                              :instruction inst)))
-                          (t
-                           (return-from %sroa-collect-accesses nil)))))
+                            :aggregate reg :field-index idx :is-read-p t
+                            :instruction inst)))
+                        ((and array-p (typep inst 'vm-aset)
+                              (eq (vm-array-reg inst) reg))
+                         (let ((idx (gethash (vm-index-reg inst) const-map)))
+                           (unless (integerp idx)
+                             (return-from %sroa-collect-accesses nil))
+                           (when (eq (vm-val-reg inst) reg)
+                             (return-from %sroa-collect-accesses nil))
+                           (make-aggregate-access
+                            :aggregate reg :field-index idx :is-read-p nil
+                            :instruction inst)))
+                        (t
+                         (return-from %sroa-collect-accesses nil)))))
                   (push access accesses))))
             (nreverse accesses))))))
 
@@ -169,9 +168,8 @@ BASIC-BLOCK is already known to be one of the accesses returned."
             (results nil))
         (dolist (inst basic-block)
           (when (typep inst '(or vm-make-obj vm-make-array))
-            (let ((accesses (%sroa-collect-accesses inst basic-block def-count const-map)))
-              (when accesses
-                (push (cons inst accesses) results)))))
+            (when-let ((accesses (%sroa-collect-accesses inst basic-block def-count const-map)))
+              (push (cons inst accesses) results))))
         (nreverse results)))))
 
 (progn
@@ -207,15 +205,13 @@ allocation site, or NIL when no seed is needed (write-first case)."
     (let ((first (first group)))
       (typecase alloc-inst
         (vm-make-obj
-         (let ((entry (assoc (aa-field-index first) (vm-initarg-regs alloc-inst))))
-           (if entry
-               (values t (cdr entry))
-               (values (not (aa-is-read-p first)) nil))))
+         (if-let ((entry (assoc (aa-field-index first) (vm-initarg-regs alloc-inst))))
+           (values t (cdr entry))
+           (values (not (aa-is-read-p first)) nil)))
         (vm-make-array
-         (let ((seed (vm-initial-element alloc-inst)))
-           (if seed
-               (values t seed)
-               (values (not (aa-is-read-p first)) nil))))
+         (if-let ((seed (vm-initial-element alloc-inst)))
+           (values t seed)
+           (values (not (aa-is-read-p first)) nil)))
         (t (values nil nil)))))
 
   (defun sroa-promote (aggregate accesses new-reg-fn)

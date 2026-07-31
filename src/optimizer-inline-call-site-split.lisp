@@ -79,8 +79,8 @@
       (dolist (r (opt-inst-read-regs inst))
         (unless (gethash r safe)
           (return-from opt-body-has-global-refs-p t)))
-      (let ((dst (opt-inst-dst inst)))
-        (when dst (setf (gethash dst safe) t))))))
+      (when-let ((dst (opt-inst-dst inst)))
+        (setf (gethash dst safe) t)))))
 
 (defun opt-build-function-name-map (instructions)
   "Return symbol → function-label mapping for top-level function registrations."
@@ -89,17 +89,15 @@
     (dolist (inst instructions)
       (typecase inst
         ((or vm-closure vm-func-ref)
-         (let ((label (vm-label-name inst)))
-           (when label
-             (setf (gethash (vm-dst inst) reg-track) label))))
+         (when-let ((label (vm-label-name inst)))
+           (setf (gethash (vm-dst inst) reg-track) label)))
         (vm-register-function
-         (let ((label (or (gethash (vm-src inst) reg-track)
-                          (dolist (i instructions)
-                            (when (and (vm-closure-p i)
-                                       (eq (vm-dst i) (vm-src inst)))
-                              (return (vm-label-name i)))))))
-            (when label
-              (setf (gethash (vm-func-name inst) name-to-label) label))))))
+         (when-let ((label (or (gethash (vm-src inst) reg-track)
+           (dolist (i instructions)
+             (when (and (vm-closure-p i)
+                        (eq (vm-dst i) (vm-src inst)))
+               (return (vm-label-name i)))))))
+           (setf (gethash (vm-func-name inst) name-to-label) label)))))
     name-to-label))
 
 (defun opt-known-callee-labels (instructions)
@@ -202,32 +200,31 @@ The original join call remains available for fall-through and unknown preds."
           for call-inst = (nth call-index instructions)
           for join-labels = (%opt-call-site-split-join-labels instructions call-index)
           when (and join-labels (%opt-call-like-p call-inst))
-            do (let ((func-reg (vm-func-reg call-inst))
-                     (split-jumps nil))
-                 (dolist (join-label join-labels)
-                   (loop for jump-index from 0 below call-index
-                         for jump-inst = (nth jump-index instructions)
-                         when (and (typep jump-inst 'vm-jump)
-                                   (equal (vm-label-name jump-inst) join-label))
-                           do (let ((callee-label
-                                      (%opt-known-callee-before-index
-                                       instructions jump-index func-reg name-to-label)))
-                                (when (or callee-label
-                                          (%opt-callable-type-proof-before-index-p
-                                           instructions jump-index func-reg))
-                                  (push (list jump-index callee-label) split-jumps)))))
-                 (when split-jumps
-                   (let ((after-label (%opt-call-site-split-fresh-label used-labels)))
-                     (setf (gethash call-index after-labels) after-label)
-                     (dolist (split split-jumps)
-                       (destructuring-bind (jump-index callee-label) split
-                         (setf (gethash jump-index replacements)
-                               (%opt-call-site-split-replacement
-                                call-inst func-reg callee-label after-label))))))))
+          do (let ((func-reg (vm-func-reg call-inst))
+                   (split-jumps nil))
+               (dolist (join-label join-labels)
+                 (loop for jump-index from 0 below call-index
+                       for jump-inst = (nth jump-index instructions)
+                       when (and (typep jump-inst 'vm-jump)
+                                 (equal (vm-label-name jump-inst) join-label))
+                       do (let ((callee-label
+                                 (%opt-known-callee-before-index
+                                  instructions jump-index func-reg name-to-label)))
+                            (when (or callee-label
+                                      (%opt-callable-type-proof-before-index-p
+                                       instructions jump-index func-reg))
+                              (push (list jump-index callee-label) split-jumps)))))
+               (when split-jumps
+                 (let ((after-label (%opt-call-site-split-fresh-label used-labels)))
+                   (setf (gethash call-index after-labels) after-label)
+                   (dolist (split split-jumps)
+                     (destructuring-bind (jump-index callee-label) split
+                       (setf (gethash jump-index replacements)
+                             (%opt-call-site-split-replacement
+                              call-inst func-reg callee-label after-label))))))))
     (loop for index from 0 below len
           for inst = (nth index instructions)
           append (or (gethash index replacements)
-                     (let ((after-label (gethash index after-labels)))
-                       (if after-label
-                           (list inst (make-vm-label :name after-label))
-                           (list inst)))))))
+                     (if-let ((after-label (gethash index after-labels)))
+                       (list inst (make-vm-label :name after-label))
+                       (list inst))))))

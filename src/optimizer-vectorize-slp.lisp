@@ -21,9 +21,8 @@
      (when (eq (vm-float-precision inst) :f64)
        (values :mul :f64)))
     (t
-     (let ((op (%opt-autovec-op-kind inst)))
-       (when op
-         (values op :i32))))))
+     (when-let ((op (%opt-autovec-op-kind inst)))
+       (values op :i32)))))
 
 (defun %opt-slp-index-descriptor (reg values offsets)
   "Return a normalized descriptor for index register REG.
@@ -39,39 +38,38 @@ base index register for an affine `(+ base constant)` value found in the block."
 (defun %opt-slp-record-index-fact (inst values offsets)
   "Record simple integer/affine index facts produced by INST."
   (cond
-    ((typep inst 'vm-const)
-     (if (integerp (vm-value inst))
-         (setf (gethash (vm-dst inst) values) (vm-value inst))
-         (remhash (vm-dst inst) values))
-     (remhash (vm-dst inst) offsets))
-    ((typep inst 'vm-add)
-     (let ((dst (vm-dst inst))
-           (lhs (vm-lhs inst))
-           (rhs (vm-rhs inst)))
-       (multiple-value-bind (lhs-value lhs-const-p) (gethash lhs values)
-         (multiple-value-bind (rhs-value rhs-const-p) (gethash rhs values)
-           (cond
-             ((and lhs-const-p rhs-const-p)
-              (setf (gethash dst values) (+ lhs-value rhs-value))
-              (remhash dst offsets))
-             (rhs-const-p
-              (remhash dst values)
-              (setf (gethash dst offsets)
-                    (let ((base (%opt-slp-index-descriptor lhs values offsets)))
-                      (cons (car base) (+ (cdr base) rhs-value)))))
-             (lhs-const-p
-              (remhash dst values)
-              (setf (gethash dst offsets)
-                    (let ((base (%opt-slp-index-descriptor rhs values offsets)))
-                      (cons (car base) (+ (cdr base) lhs-value)))))
-             (t
-              (remhash dst values)
-              (remhash dst offsets)))))))
-    (t
-     (let ((dst (opt-inst-dst inst)))
-       (when dst
-         (remhash dst values)
-         (remhash dst offsets))))))
+   ((typep inst 'vm-const)
+    (if (integerp (vm-value inst))
+        (setf (gethash (vm-dst inst) values) (vm-value inst))
+        (remhash (vm-dst inst) values))
+    (remhash (vm-dst inst) offsets))
+   ((typep inst 'vm-add)
+    (let ((dst (vm-dst inst))
+          (lhs (vm-lhs inst))
+          (rhs (vm-rhs inst)))
+      (multiple-value-bind (lhs-value lhs-const-p) (gethash lhs values)
+        (multiple-value-bind (rhs-value rhs-const-p) (gethash rhs values)
+          (cond
+           ((and lhs-const-p rhs-const-p)
+            (setf (gethash dst values) (+ lhs-value rhs-value))
+            (remhash dst offsets))
+           (rhs-const-p
+            (remhash dst values)
+            (setf (gethash dst offsets)
+                  (let ((base (%opt-slp-index-descriptor lhs values offsets)))
+                    (cons (car base) (+ (cdr base) rhs-value)))))
+           (lhs-const-p
+            (remhash dst values)
+            (setf (gethash dst offsets)
+                  (let ((base (%opt-slp-index-descriptor rhs values offsets)))
+                    (cons (car base) (+ (cdr base) lhs-value)))))
+           (t
+            (remhash dst values)
+            (remhash dst offsets)))))))
+   (t
+    (when-let ((dst (opt-inst-dst inst)))
+      (remhash dst values)
+      (remhash dst offsets)))))
 
 (defun %opt-slp-analyze-block (insts)
   "Return per-block producer/index facts used by SLP matching."
@@ -196,9 +194,8 @@ base index register for an affine `(+ base constant)` value found in the block."
     (let ((buckets (make-hash-table :test #'equal))
           (groups nil))
       (dolist (inst insts)
-        (let ((lane (%opt-slp-store-lane inst loads ops indexes reads)))
-          (when lane
-            (push lane (gethash (%opt-slp-lane-key lane) buckets)))))
+        (when-let ((lane (%opt-slp-store-lane inst loads ops indexes reads)))
+          (push lane (gethash (%opt-slp-lane-key lane) buckets))))
       (loop for lanes being the hash-values of buckets
             do (let* ((ordered (sort (copy-list lanes) #'< :key #'%opt-slp-lane-offset))
                       (element-type (getf (first ordered) :element-type))

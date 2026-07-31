@@ -33,12 +33,11 @@
 (defun %opt-closure-descriptor (inst index)
   "Build a plist descriptor for shareable closure INST at INDEX."
   (when (%opt-simple-closure-inst-p inst)
-    (let ((captures (%opt-closure-captured-vars inst)))
-      (when captures
-        (list :index index
-              :inst inst
-              :entry-label (vm-label-name inst)
-              :captured-vars captures)))))
+    (when-let ((captures (%opt-closure-captured-vars inst)))
+      (list :index index
+            :inst inst
+            :entry-label (vm-label-name inst)
+            :captured-vars captures))))
 
 (defun %opt-closure-groups (instructions)
   "Return shareable closure descriptor groups keyed by AST closure analysis."

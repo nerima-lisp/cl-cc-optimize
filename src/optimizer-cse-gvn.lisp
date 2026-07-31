@@ -25,11 +25,10 @@
 
 (defun %cse-bump-gen (state dst)
   "Overwrite DST: evict stale val-env/memo entries and bump the generation."
-  (let ((old-val (gethash dst (cse-val-env state))))
-    (when old-val
-      (when (eq (gethash old-val (cse-memo state)) dst)
-        (remhash old-val (cse-memo state)))
-      (remhash dst (cse-val-env state))))
+  (when-let ((old-val (gethash dst (cse-val-env state))))
+    (when (eq (gethash old-val (cse-memo state)) dst)
+      (remhash old-val (cse-memo state)))
+    (remhash dst (cse-val-env state)))
   (setf (gethash dst (cse-gen state))
         (1+ (or (gethash dst (cse-gen state)) 0))))
 
@@ -57,15 +56,14 @@
 (defun %cse-emit-or-cse (inst dst key state result)
   "Emit INST or replace with vm-move if KEY is already in STATE.
    Returns updated RESULT list (head = most recently emitted, not yet reversed)."
-  (let ((existing (%cse-try-find state key)))
-    (if existing
-        (progn (%cse-bump-gen state dst)
-               (setf (gethash dst (cse-val-env state)) key)
-               (incf *opt-cse-unification-count*)
-               (cons (make-vm-move :dst dst :src existing) result))
-        (progn (%cse-bump-gen state dst)
-               (%cse-record state dst key)
-               (cons inst result)))))
+  (if-let ((existing (%cse-try-find state key)))
+    (progn (%cse-bump-gen state dst)
+      (setf (gethash dst (cse-val-env state)) key)
+      (incf *opt-cse-unification-count*)
+      (cons (make-vm-move :dst dst :src existing) result))
+    (progn (%cse-bump-gen state dst)
+      (%cse-record state dst key)
+      (cons inst result))))
 
 (defun opt-pass-cse (instructions)
   "Common subexpression elimination via generation-numbered value numbering.
@@ -76,55 +74,55 @@
         (result        nil))
     (let ((*opt-cse-unification-count* 0))
       (prog1
-          (progn
-            (dolist (inst instructions)
-              (typecase inst
-                (vm-label
-                 (when (gethash (vm-name inst) target-labels)
-                   (%cse-flush state))
-                 (push inst result))
-                (vm-const
-                 ;; Never replace vm-const with vm-move: doing so creates a
-                 ;; fold<->CSE oscillation that DCE can turn into a dangling
-                 ;; register reference (first canonical reg gets removed by
-                 ;; DCE while later moves still point to it, leaving the
-                 ;; register uninitialized = 0 instead of NIL).
-                 ;; The fold pass already propagates constant values; CSE is
-                 ;; only needed for computed expressions.
-                 (let ((dst (vm-dst inst))
-                       (key (list :const (vm-value inst))))
-                   (%cse-bump-gen state dst)
-                   (%cse-record state dst key)
-                   (push inst result)))
-                (vm-move
-                 (let* ((dst     (vm-move-dst inst))
-                        (src-val (%cse-get-val state (vm-move-src inst))))
-                   (%cse-bump-gen state dst)
-                   (setf (gethash dst (cse-val-env state)) src-val)
-                   (push inst result)))
-                (t
-                 (cond
-                   ((opt-binary-lhs-rhs-p inst)
-                    (let* ((dst (vm-dst inst))
-                           (lv  (%cse-get-val state (vm-lhs inst)))
-                           (rv  (%cse-get-val state (vm-rhs inst)))
-                           (op  (type-of inst))
-                           (key (if (%opt-commutative-inst-p inst)
-                                    (list op (if (%opt-value< lv rv) lv rv)
-                                          (if (%opt-value< lv rv) rv lv))
-                                    (list op lv rv))))
-                      (setf result (%cse-emit-or-cse inst dst key state result))))
-                   ((opt-unary-src-p inst)
-                    (let* ((dst (vm-dst inst))
-                           (sv  (%cse-get-val state (vm-src inst)))
-                           (key (list (type-of inst) sv)))
-                      (setf result (%cse-emit-or-cse inst dst key state result))))
-                   (t
-                    (let ((dst (opt-inst-dst inst)))
-                      (when dst (%cse-bump-gen state dst)))
-                    (push inst result))))))
-            (nreverse result))
-        (%opt-report :cse "unified=~D" *opt-cse-unification-count*)))))
+       (progn
+         (dolist (inst instructions)
+           (typecase inst
+             (vm-label
+              (when (gethash (vm-name inst) target-labels)
+                (%cse-flush state))
+              (push inst result))
+             (vm-const
+              ;; Never replace vm-const with vm-move: doing so creates a
+              ;; fold<->CSE oscillation that DCE can turn into a dangling
+              ;; register reference (first canonical reg gets removed by
+              ;; DCE while later moves still point to it, leaving the
+              ;; register uninitialized = 0 instead of NIL).
+              ;; The fold pass already propagates constant values; CSE is
+              ;; only needed for computed expressions.
+              (let ((dst (vm-dst inst))
+                    (key (list :const (vm-value inst))))
+                (%cse-bump-gen state dst)
+                (%cse-record state dst key)
+                (push inst result)))
+             (vm-move
+              (let* ((dst     (vm-move-dst inst))
+                     (src-val (%cse-get-val state (vm-move-src inst))))
+                (%cse-bump-gen state dst)
+                (setf (gethash dst (cse-val-env state)) src-val)
+                (push inst result)))
+             (t
+              (cond
+               ((opt-binary-lhs-rhs-p inst)
+                (let* ((dst (vm-dst inst))
+                       (lv  (%cse-get-val state (vm-lhs inst)))
+                       (rv  (%cse-get-val state (vm-rhs inst)))
+                       (op  (type-of inst))
+                       (key (if (%opt-commutative-inst-p inst)
+                                (list op (if (%opt-value< lv rv) lv rv)
+                                      (if (%opt-value< lv rv) rv lv))
+                                (list op lv rv))))
+                  (setf result (%cse-emit-or-cse inst dst key state result))))
+               ((opt-unary-src-p inst)
+                (let* ((dst (vm-dst inst))
+                       (sv  (%cse-get-val state (vm-src inst)))
+                       (key (list (type-of inst) sv)))
+                  (setf result (%cse-emit-or-cse inst dst key state result))))
+               (t
+                (when-let ((dst (opt-inst-dst inst)))
+                  (%cse-bump-gen state dst))
+                (push inst result))))))
+         (nreverse result))
+       (%opt-report :cse "unified=~D" *opt-cse-unification-count*)))))
 
 ;;; ─── GVN helpers ─────────────────────────────────────────────────────────
 
@@ -310,9 +308,8 @@ would require different source registers."
         (local-memo    (%gvn-copy-env memo :test #'equal))
         (new-insts     nil))
     (dolist (inst (bb-instructions block))
-      (let ((dst (opt-inst-dst inst)))
-        (when dst
-          (%gvn-kill dst local-gen local-val-env local-memo)))
+      (when-let ((dst (opt-inst-dst inst)))
+        (%gvn-kill dst local-gen local-val-env local-memo))
       (setf new-insts
             (typecase inst
               (vm-const
@@ -356,9 +353,8 @@ would require different source registers."
   "Remove labels that are not referenced by any jump or closure instruction."
   (let ((used (make-hash-table :test #'equal)))
     (dolist (inst instructions)
-      (let ((accessor (gethash (type-of inst) *opt-label-ref-table*)))
-        (when accessor
-          (setf (gethash (funcall accessor inst) used) t))))
+      (when-let ((accessor (gethash (type-of inst) *opt-label-ref-table*)))
+        (setf (gethash (funcall accessor inst) used) t)))
     (remove-if (lambda (inst)
                  (and (vm-label-p inst)
                       (not (gethash (vm-name inst) used))))

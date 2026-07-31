@@ -88,36 +88,34 @@ supports intervals that include negative dividends."
 
 Returns NIL when no exact sequence is known for INTERVAL. Emitted instructions
 are limited to vm-const, vm-mul, and vm-ash as required by FR-282."
-  (let ((params (%opt-find-verified-reciprocal-div-params divisor interval)))
-    (when params
-      (destructuring-bind (multiplier shift) params
-        (let ((mult-reg  (funcall new-reg-fn))
-              (tmp-reg   (funcall new-reg-fn))
-              (shift-reg (funcall new-reg-fn)))
-          (list (make-vm-const :dst mult-reg :value multiplier)
-                (make-vm-mul   :dst tmp-reg :lhs src :rhs mult-reg)
-                (make-vm-const :dst shift-reg :value (- shift))
-                (make-vm-ash   :dst dst :lhs tmp-reg :rhs shift-reg)))))))
+  (when-let ((params (%opt-find-verified-reciprocal-div-params divisor interval)))
+    (destructuring-bind (multiplier shift) params
+      (let ((mult-reg  (funcall new-reg-fn))
+            (tmp-reg   (funcall new-reg-fn))
+            (shift-reg (funcall new-reg-fn)))
+        (list (make-vm-const :dst mult-reg :value multiplier)
+              (make-vm-mul   :dst tmp-reg :lhs src :rhs mult-reg)
+              (make-vm-const :dst shift-reg :value (- shift))
+              (make-vm-ash   :dst dst :lhs tmp-reg :rhs shift-reg))))))
 
 (defun %opt-div-by-verified-reciprocal-seq-with-bias (dst src divisor interval new-reg-fn)
   "Build exact reciprocal multiply/add/shift sequence for bounded signed ranges.
 
 Returns NIL when no exact affine reciprocal exists for INTERVAL. Emitted
 instructions are limited to vm-const, vm-mul, vm-add, and vm-ash."
-  (let ((params (%opt-find-verified-reciprocal-div-params-with-bias divisor interval)))
-    (when params
-      (destructuring-bind (multiplier shift bias) params
-        (let ((mult-reg  (funcall new-reg-fn))
-              (tmp-reg   (funcall new-reg-fn))
-              (bias-reg  (funcall new-reg-fn))
-              (sum-reg   (funcall new-reg-fn))
-              (shift-reg (funcall new-reg-fn)))
-          (list (make-vm-const :dst mult-reg :value multiplier)
-                (make-vm-mul   :dst tmp-reg :lhs src :rhs mult-reg)
-                (make-vm-const :dst bias-reg :value bias)
-                (make-vm-add   :dst sum-reg :lhs tmp-reg :rhs bias-reg)
-                (make-vm-const :dst shift-reg :value (- shift))
-                (make-vm-ash   :dst dst :lhs sum-reg :rhs shift-reg)))))))
+  (when-let ((params (%opt-find-verified-reciprocal-div-params-with-bias divisor interval)))
+    (destructuring-bind (multiplier shift bias) params
+      (let ((mult-reg  (funcall new-reg-fn))
+            (tmp-reg   (funcall new-reg-fn))
+            (bias-reg  (funcall new-reg-fn))
+            (sum-reg   (funcall new-reg-fn))
+            (shift-reg (funcall new-reg-fn)))
+        (list (make-vm-const :dst mult-reg :value multiplier)
+              (make-vm-mul   :dst tmp-reg :lhs src :rhs mult-reg)
+              (make-vm-const :dst bias-reg :value bias)
+              (make-vm-add   :dst sum-reg :lhs tmp-reg :rhs bias-reg)
+              (make-vm-const :dst shift-reg :value (- shift))
+              (make-vm-ash   :dst dst :lhs sum-reg :rhs shift-reg))))))
 
 (defun %opt-word64-nonnegative-interval-p (interval)
   "Return T when INTERVAL is proven to fit the unsigned 64-bit dividend domain."
@@ -190,26 +188,25 @@ The transformation is only selected when interval analysis proves SRC is in the
 unsigned 64-bit domain, preserving CL floor semantics for the values covered by
 that fixed-width lowering. Unknown, signed, or wider values remain on vm-div."
   (when (%opt-word64-nonnegative-interval-p interval)
-    (let ((params (%opt-find-unsigned-magic-div-params divisor)))
-      (when params
-        (destructuring-bind (multiplier shift add-adjust-p) params
-          (let ((mult-reg (funcall new-reg-fn))
-                (high-reg (funcall new-reg-fn)))
-            (append
-             (list (make-vm-const :dst mult-reg :value multiplier)
-                   (make-vm-integer-mul-high-u :dst high-reg :lhs src :rhs mult-reg))
-             (if add-adjust-p
-                 (let ((diff-reg (funcall new-reg-fn))
-                       (one-reg (funcall new-reg-fn))
-                       (half-reg (funcall new-reg-fn))
-                       (sum-reg (funcall new-reg-fn)))
-                   (append
-                    (list (make-vm-sub :dst diff-reg :lhs src :rhs high-reg)
-                          (make-vm-const :dst one-reg :value -1)
-                          (make-vm-ash :dst half-reg :lhs diff-reg :rhs one-reg)
-                          (make-vm-add :dst sum-reg :lhs half-reg :rhs high-reg))
-                    (%opt-emit-final-right-shift dst sum-reg (1- shift) new-reg-fn)))
-                 (%opt-emit-final-right-shift dst high-reg shift new-reg-fn)))))))))
+    (when-let ((params (%opt-find-unsigned-magic-div-params divisor)))
+      (destructuring-bind (multiplier shift add-adjust-p) params
+        (let ((mult-reg (funcall new-reg-fn))
+              (high-reg (funcall new-reg-fn)))
+          (append
+           (list (make-vm-const :dst mult-reg :value multiplier)
+                 (make-vm-integer-mul-high-u :dst high-reg :lhs src :rhs mult-reg))
+           (if add-adjust-p
+               (let ((diff-reg (funcall new-reg-fn))
+                     (one-reg (funcall new-reg-fn))
+                     (half-reg (funcall new-reg-fn))
+                     (sum-reg (funcall new-reg-fn)))
+                 (append
+                  (list (make-vm-sub :dst diff-reg :lhs src :rhs high-reg)
+                        (make-vm-const :dst one-reg :value -1)
+                        (make-vm-ash :dst half-reg :lhs diff-reg :rhs one-reg)
+                        (make-vm-add :dst sum-reg :lhs half-reg :rhs high-reg))
+                  (%opt-emit-final-right-shift dst sum-reg (1- shift) new-reg-fn)))
+               (%opt-emit-final-right-shift dst high-reg shift new-reg-fn))))))))
 
 (defun %opt-mul-by-const-seq (dst src n new-reg-fn)
   "Build a shift/add instruction sequence computing DST ← SRC * N.
@@ -262,105 +259,100 @@ Returns a list of vm instructions (may include vm-const, vm-ash, vm-add, vm-move
          (counter   base)
          (result    nil))
     (labels ((new-reg ()
-               (prog1 (intern (format nil "R~A" counter) :keyword)
-                 (incf counter)))
+                      (prog1 (intern (format nil "R~A" counter) :keyword)
+                             (incf counter)))
              (const-val (reg)
-               (gethash reg env))
+                        (gethash reg env))
              (emit (inst)
-               (push inst result))
+                   (push inst result))
              (emit-seq (insts)
-               (dolist (inst insts)
-                 (push inst result)))
+                       (dolist (inst insts)
+                         (push inst result)))
              (advance-intervals (inst)
-               (%opt-transfer-interval-inst inst intervals))
+                                (%opt-transfer-interval-inst inst intervals))
              (handle-mul-inst (inst)
-               (let* ((dst (vm-dst inst))
-                      (lhs (vm-lhs inst))
-                      (rhs (vm-rhs inst))
-                      (rv  (const-val rhs))
-                      (lv  (const-val lhs)))
-                 (cond
-                   ((and rv (opt-power-of-2-p rv))
-                    (let* ((k         (1- (integer-length rv)))
-                           (shift-reg (new-reg)))
-                      (remhash dst env)
-                      (emit (make-vm-const :dst shift-reg :value k))
-                      (emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
+                              (let* ((dst (vm-dst inst))
+                                     (lhs (vm-lhs inst))
+                                     (rhs (vm-rhs inst))
+                                     (rv  (const-val rhs))
+                                     (lv  (const-val lhs)))
+                                (cond
+                                 ((and rv (opt-power-of-2-p rv))
+                                  (let* ((k         (1- (integer-length rv)))
+                                         (shift-reg (new-reg)))
+                                    (remhash dst env)
+                                    (emit (make-vm-const :dst shift-reg :value k))
+                                    (emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
 
-                   ((and lv (opt-power-of-2-p lv))
-                    (let* ((k         (1- (integer-length lv)))
-                           (shift-reg (new-reg)))
-                      (remhash dst env)
-                      (emit (make-vm-const :dst shift-reg :value k))
-                      (emit (make-vm-ash   :dst dst :lhs rhs :rhs shift-reg))))
+                                 ((and lv (opt-power-of-2-p lv))
+                                  (let* ((k         (1- (integer-length lv)))
+                                         (shift-reg (new-reg)))
+                                    (remhash dst env)
+                                    (emit (make-vm-const :dst shift-reg :value k))
+                                    (emit (make-vm-ash   :dst dst :lhs rhs :rhs shift-reg))))
 
-                   ((and rv (integerp rv) (not (zerop rv)) (<= (logcount (abs rv)) 2))
-                    (remhash dst env)
-                    (emit-seq (%opt-mul-by-const-seq dst lhs rv #'new-reg)))
+                                 ((and rv (integerp rv) (not (zerop rv)) (<= (logcount (abs rv)) 2))
+                                  (remhash dst env)
+                                  (emit-seq (%opt-mul-by-const-seq dst lhs rv #'new-reg)))
 
-                   ((and lv (integerp lv) (not (zerop lv)) (<= (logcount (abs lv)) 2))
-                    (remhash dst env)
-                    (emit-seq (%opt-mul-by-const-seq dst rhs lv #'new-reg)))
+                                 ((and lv (integerp lv) (not (zerop lv)) (<= (logcount (abs lv)) 2))
+                                  (remhash dst env)
+                                  (emit-seq (%opt-mul-by-const-seq dst rhs lv #'new-reg)))
 
-                   (t
-                    (emit inst)))))
+                                 (t
+                                  (emit inst)))))
              (handle-div-inst (inst)
-               (let* ((dst          (vm-dst inst))
-                      (lhs          (vm-lhs inst))
-                      (rhs          (vm-rhs inst))
-                      (rv           (const-val rhs))
-                      (lhs-interval (gethash lhs intervals)))
-                 (cond
-                   ((and rv (opt-power-of-2-p rv))
-                    (let* ((k         (- (1- (integer-length rv))))
-                           (shift-reg (new-reg)))
-                      (remhash dst env)
-                      (emit (make-vm-const :dst shift-reg :value k))
-                      (emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
+                              (let* ((dst          (vm-dst inst))
+                                     (lhs          (vm-lhs inst))
+                                     (rhs          (vm-rhs inst))
+                                     (rv           (const-val rhs))
+                                     (lhs-interval (gethash lhs intervals)))
+                                (cond
+                                 ((and rv (opt-power-of-2-p rv))
+                                  (let* ((k         (- (1- (integer-length rv))))
+                                         (shift-reg (new-reg)))
+                                    (remhash dst env)
+                                    (emit (make-vm-const :dst shift-reg :value k))
+                                    (emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
 
-                   ((and rv
-                         (integerp rv)
-                         (> rv 1)
-                         (not (opt-power-of-2-p rv)))
-                    (let ((seq
-                            (or (%opt-div-by-verified-reciprocal-seq
-                                 dst lhs rv lhs-interval #'new-reg)
-                                (%opt-div-by-verified-reciprocal-seq-with-bias
-                                 dst lhs rv lhs-interval #'new-reg)
-                                (%opt-div-by-unsigned-magic-seq
-                                 dst lhs rv lhs-interval #'new-reg))))
-                      (if seq
-                          (progn
-                            (remhash dst env)
-                            (emit-seq seq))
-                          (progn
-                            (let ((dstreg (opt-inst-dst inst)))
-                              (when dstreg
-                                (remhash dstreg env)))
-                            (emit inst)))))
+                                 ((and rv
+                                       (integerp rv)
+                                       (> rv 1)
+                                       (not (opt-power-of-2-p rv)))
+                                  (if-let ((seq (or (%opt-div-by-verified-reciprocal-seq
+                                    dst lhs rv lhs-interval #'new-reg)
+                                   (%opt-div-by-verified-reciprocal-seq-with-bias
+                                    dst lhs rv lhs-interval #'new-reg)
+                                   (%opt-div-by-unsigned-magic-seq
+                                    dst lhs rv lhs-interval #'new-reg))))
+                                    (progn
+                                      (remhash dst env)
+                                      (emit-seq seq))
+                                    (progn
+                                      (when-let ((dstreg (opt-inst-dst inst)))
+                                        (remhash dstreg env))
+                                      (emit inst))))
 
-                   (t
-                    (let ((dstreg (opt-inst-dst inst)))
-                      (when dstreg
-                        (remhash dstreg env)))
-                    (emit inst)))))
+                                 (t
+                                  (when-let ((dstreg (opt-inst-dst inst)))
+                                    (remhash dstreg env))
+                                  (emit inst)))))
              (handle-mod-inst (inst)
-               (let* ((dst (vm-dst inst))
-                      (lhs (vm-lhs inst))
-                      (rhs (vm-rhs inst))
-                      (rv  (const-val rhs)))
-                 (cond
-                   ((and rv (opt-power-of-2-p rv))
-                    (let ((mask-reg (new-reg)))
-                      (remhash dst env)
-                      (emit (make-vm-const  :dst mask-reg :value (1- rv)))
-                      (emit (make-vm-logand :dst dst :lhs lhs :rhs mask-reg))))
+                              (let* ((dst (vm-dst inst))
+                                     (lhs (vm-lhs inst))
+                                     (rhs (vm-rhs inst))
+                                     (rv  (const-val rhs)))
+                                (cond
+                                 ((and rv (opt-power-of-2-p rv))
+                                  (let ((mask-reg (new-reg)))
+                                    (remhash dst env)
+                                    (emit (make-vm-const  :dst mask-reg :value (1- rv)))
+                                    (emit (make-vm-logand :dst dst :lhs lhs :rhs mask-reg))))
 
-                   (t
-                    (let ((dstreg (opt-inst-dst inst)))
-                      (when dstreg
-                        (remhash dstreg env)))
-                    (emit inst))))))
+                                 (t
+                                  (when-let ((dstreg (opt-inst-dst inst)))
+                                    (remhash dstreg env))
+                                  (emit inst))))))
       (dolist (inst instructions)
         (typecase inst
           (vm-label
@@ -386,9 +378,8 @@ Returns a list of vm instructions (may include vm-const, vm-ash, vm-add, vm-move
            (advance-intervals inst))
 
           (t
-           (let ((dst (opt-inst-dst inst)))
-             (when dst
-               (remhash dst env)))
+           (when-let ((dst (opt-inst-dst inst)))
+             (remhash dst env))
            (emit inst)
            (advance-intervals inst)))))
     (nreverse result)))

@@ -161,9 +161,8 @@ observable summary."
   "Return a multiset of block-exit control signatures for INSTRUCTIONS."
   (let ((counts (make-hash-table :test #'equal)))
     (dolist (inst instructions counts)
-      (let ((kind (%tv-exit-kind inst)))
-        (when kind
-          (%tv-table-increment kind counts))))))
+      (when-let ((kind (%tv-exit-kind inst)))
+        (%tv-table-increment kind counts)))))
 
 (defun %tv-equal-count-tables-p (left right)
   "T when LEFT and RIGHT contain the same keys and counts."
@@ -222,9 +221,8 @@ observable summary."
       (dolist (reg (opt-inst-read-regs inst))
         (when (and reg (not (gethash reg defined)))
           (pushnew reg uninitialized :test #'eq)))
-      (let ((dst (opt-inst-dst inst)))
-        (when dst
-          (setf (gethash dst defined) t))))))
+      (when-let ((dst (opt-inst-dst inst)))
+        (setf (gethash dst defined) t)))))
 
 (defun %tv-validate-liveness (before after)
   "Reject new use-before-definition registers introduced by AFTER."

@@ -96,17 +96,15 @@
   (cfg-compute-dominators cfg)
   (let ((memo (make-hash-table :test #'eq)))
     (labels ((count-from (block visiting)
-               (or (gethash block memo)
-                   (setf (gethash block memo)
-                         (let ((dag-successors
-                                 (remove-if (lambda (succ)
-                                              (or (%opt-bl-backedge-p block succ)
-                                                  (member succ visiting :test #'eq)))
-                                            (%opt-bl-successors block))))
-                           (if dag-successors
-                               (loop for succ in dag-successors
-                                     sum (count-from succ (cons block visiting)))
-                               1))))))
+                         (or (gethash block memo)
+                             (setf (gethash block memo)
+                                   (if-let ((dag-successors (remove-if (lambda (succ)
+                                     (or (%opt-bl-backedge-p block succ)
+                                         (member succ visiting :test #'eq)))
+                                   (%opt-bl-successors block))))
+                                     (loop for succ in dag-successors
+                                           sum (count-from succ (cons block visiting)))
+                                     1)))))
       (count-from (cfg-entry cfg) nil)
       memo)))
 
@@ -238,17 +236,16 @@ and OPT-VM-PATH-PROFILE-RECORD increments the path counter at exits/backedges."
 (defun %opt-bl-enumerate-paths (cfg edge-table)
   "Enumerate acyclic Ball-Larus paths as plists (:sum N :blocks (...))."
   (labels ((walk (block sum blocks visiting)
-             (let ((successors (remove-if (lambda (succ)
-                                            (or (%opt-bl-backedge-p block succ)
-                                                (member succ visiting :test #'eq)))
-                                          (%opt-bl-successors block))))
-               (if successors
+                 (if-let ((successors (remove-if (lambda (succ)
+                   (or (%opt-bl-backedge-p block succ)
+                       (member succ visiting :test #'eq)))
+                 (%opt-bl-successors block))))
                    (loop for succ in successors append
-                     (let ((edge (gethash (cons block succ) edge-table)))
-                       (walk succ (+ sum (opt-ball-larus-edge-value edge))
-                             (cons succ blocks)
-                             (cons block visiting))))
-                   (list (list :sum sum :blocks (nreverse blocks)))))))
+                   (let ((edge (gethash (cons block succ) edge-table)))
+                    (walk succ (+ sum (opt-ball-larus-edge-value edge))
+                          (cons succ blocks)
+                          (cons block visiting))))
+                   (list (list :sum sum :blocks (nreverse blocks))))))
     (when (cfg-entry cfg)
       (walk (cfg-entry cfg) 0 (list (cfg-entry cfg)) nil))))
 

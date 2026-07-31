@@ -76,16 +76,15 @@
           for i from 0
           do (typecase inst
                ((or vm-call vm-tail-call vm-apply)
-                (let ((label (gethash (vm-func-reg inst) reg-track)))
-                  (when label
-                    (let ((entry (or (gethash label profile)
-                                     (setf (gethash label profile)
-                                           (list :call-count 0 :loop-depth 0)))))
-                      (incf (getf entry :call-count))
-                      (setf (getf entry :loop-depth)
-                            (max (getf entry :loop-depth 0) (gethash i depths 0))))))
-                (let ((dst (opt-inst-dst inst)))
-                  (when dst (remhash dst reg-track))))
+                (when-let ((label (gethash (vm-func-reg inst) reg-track)))
+                  (let ((entry (or (gethash label profile)
+                                   (setf (gethash label profile)
+                                         (list :call-count 0 :loop-depth 0)))))
+                    (incf (getf entry :call-count))
+                    (setf (getf entry :loop-depth)
+                          (max (getf entry :loop-depth 0) (gethash i depths 0)))))
+                (when-let ((dst (opt-inst-dst inst)))
+                  (remhash dst reg-track)))
                (t (%opt-track-known-callee-label inst name-to-label reg-track))))
     profile))
 

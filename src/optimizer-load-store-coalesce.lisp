@@ -227,21 +227,20 @@ groups until the VM grows an explicit unaligned access marker."
   (let ((fresh (%opt-fresh-register-generator instructions))
         (aliases (or alias-roots (opt-compute-heap-aliases instructions))))
     (labels ((walk (rest acc changed)
-               (cond
-                 ((endp rest) (values (nreverse acc) changed))
-                 (t
-                  (let ((group (%opt-lsc-group-prefix rest aliases)))
-                    (if group
-                        (multiple-value-bind (kind)
-                            (%opt-lsc-access (first group))
-                          (ecase kind
-                            (:load
-                             (walk (nthcdr (length group) rest)
-                                   (nreconc (%opt-lsc-extract-loads group fresh) acc)
-                                   t))
-                            (:store
-                             (walk (nthcdr (length group) rest)
-                                   (nreconc (%opt-lsc-pack-stores group fresh) acc)
-                                   t))))
-                        (walk (cdr rest) (cons (first rest) acc) changed)))))))
+                   (cond
+                    ((endp rest) (values (nreverse acc) changed))
+                    (t
+                     (if-let ((group (%opt-lsc-group-prefix rest aliases)))
+                       (multiple-value-bind (kind)
+                           (%opt-lsc-access (first group))
+                         (ecase kind
+                           (:load
+                            (walk (nthcdr (length group) rest)
+                                  (nreconc (%opt-lsc-extract-loads group fresh) acc)
+                                  t))
+                           (:store
+                            (walk (nthcdr (length group) rest)
+                                  (nreconc (%opt-lsc-pack-stores group fresh) acc)
+                                  t))))
+                       (walk (cdr rest) (cons (first rest) acc) changed))))))
       (walk instructions nil nil))))

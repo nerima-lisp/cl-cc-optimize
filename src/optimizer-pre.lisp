@@ -27,11 +27,10 @@
   "Return key→dst availability after BLOCK for PRE join-point analysis."
   (let ((env (make-hash-table :test #'equal)))
     (dolist (inst (bb-instructions block) env)
-      (let ((dst (opt-inst-dst inst)))
-        (when dst (%opt-pre-env-evict-dst env dst)))
-      (let ((key (%opt-pre-expression-key inst)))
-        (when key
-          (setf (gethash key env) (opt-inst-dst inst)))))))
+      (when-let ((dst (opt-inst-dst inst)))
+        (%opt-pre-env-evict-dst env dst))
+      (when-let ((key (%opt-pre-expression-key inst)))
+        (setf (gethash key env) (opt-inst-dst inst))))))
 
 (defun %opt-pre-splice-before-terminator (insts additions)
   "Insert ADDITIONS before INSTS' terminator, preserving order."

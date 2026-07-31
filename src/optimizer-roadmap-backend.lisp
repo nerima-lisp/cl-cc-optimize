@@ -6,18 +6,17 @@ Backend FRs span compiler analysis, runtime modelling, native code generation,
 and tooling.  Status still comes from the roadmap heading: unmarked headings
 are tracked as planned evidence, not completed implementation."
   (let ((n (%opt-roadmap-feature-number feature-id)))
-    (let ((entry (and n
-                      (find-if (lambda (e)
-                                 (destructuring-bind (lo hi . _rest) e
-                                   (declare (ignore _rest))
-                                   (and (<= lo n)
-                                        (or (null hi) (<= n hi)))))
-                               +opt-backend-roadmap-evidence-profile-ranges+))))
-      (if entry
-          (destructuring-bind (_lo _hi modules api-symbols test-anchors) entry
-            (declare (ignore _lo _hi))
-            (values modules api-symbols test-anchors))
-          (error "No optimize-backend evidence profile entry for ~A" feature-id)))))
+    (if-let ((entry (and n
+      (find-if (lambda (e)
+                 (destructuring-bind (lo hi . _rest) e
+                   (declare (ignore _rest))
+                   (and (<= lo n)
+                        (or (null hi) (<= n hi)))))
+               +opt-backend-roadmap-evidence-profile-ranges+))))
+      (destructuring-bind (_lo _hi modules api-symbols test-anchors) entry
+      (declare (ignore _lo _hi))
+      (values modules api-symbols test-anchors))
+      (error "No optimize-backend evidence profile entry for ~A" feature-id))))
 
 (defun make-opt-roadmap-evidence-for-feature
     (feature &key (doc-module "docs/notes/optimize-passes.md") profile-function)

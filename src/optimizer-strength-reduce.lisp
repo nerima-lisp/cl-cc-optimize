@@ -126,11 +126,10 @@ step and multiplier constants, and leaves other loops unchanged."
          (result nil)
          (i 0))
     (flet ((new-reg ()
-             (prog1 (intern (format nil "R~A" counter) :keyword)
-               (incf counter))))
+                    (prog1 (intern (format nil "R~A" counter) :keyword)
+                           (incf counter))))
       (loop while (< i n) do
-        (let ((candidate (%opt-sr-counted-loop-at vec i)))
-          (if candidate
+            (if-let ((candidate (%opt-sr-counted-loop-at vec i)))
               (multiple-value-bind (new-result next-pos done-p)
                   (%opt-sr-emit-iv-reduction vec i candidate
                                              (%opt-sr-const-env-before vec i)
@@ -139,7 +138,7 @@ step and multiplier constants, and leaves other loops unchanged."
                 (if done-p
                     (setf i next-pos)
                     (progn (push (aref vec i) result) (incf i))))
-              (progn (push (aref vec i) result) (incf i))))))
+              (progn (push (aref vec i) result) (incf i)))))
     (nreverse result)))
 
 (defun opt-pass-div-by-const (instructions)

@@ -44,38 +44,36 @@
 (defun %opt-simple-scaled-expr (inst constants)
   "Return (values BASE MULTIPLIER T) when INST computes BASE * constant."
   (when (typep inst 'vm-mul)
-    (let ((dst (opt-inst-dst inst)))
-      (when dst
-        (cond
-          ((eq dst (vm-lhs inst))
-           (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
-             (when (and ok (not (zerop c))) (values dst c t))))
-          ((eq dst (vm-rhs inst))
-           (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-lhs inst) constants)
-             (when (and ok (not (zerop c))) (values dst c t))))
-          (t
-           (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
-             (when (and ok (not (zerop c)))
-               (return-from %opt-simple-scaled-expr (values (vm-lhs inst) c t))))
-           (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-lhs inst) constants)
-             (when (and ok (not (zerop c)))
-               (values (vm-rhs inst) c t)))))))))
+    (when-let ((dst (opt-inst-dst inst)))
+      (cond
+       ((eq dst (vm-lhs inst))
+        (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
+          (when (and ok (not (zerop c))) (values dst c t))))
+       ((eq dst (vm-rhs inst))
+        (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-lhs inst) constants)
+          (when (and ok (not (zerop c))) (values dst c t))))
+       (t
+        (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
+          (when (and ok (not (zerop c)))
+            (return-from %opt-simple-scaled-expr (values (vm-lhs inst) c t))))
+        (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-lhs inst) constants)
+          (when (and ok (not (zerop c)))
+            (values (vm-rhs inst) c t))))))))
 
 (defun %opt-simple-add-expr (inst constants)
   "Return (values BASE OFFSET T) when INST computes BASE + integer constant."
   (when (typep inst '(or vm-add vm-sub))
-    (let ((dst (opt-inst-dst inst)))
-      (when dst
-        (cond
-          ((typep inst 'vm-add)
-           (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
-             (if ok
-                 (values (vm-lhs inst) c t)
-                 (multiple-value-bind (c2 ok2) (%opt-constant-reg-value (vm-lhs inst) constants)
-                   (when ok2 (values (vm-rhs inst) c2 t))))))
-          ((typep inst 'vm-sub)
-           (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
-             (when ok (values (vm-lhs inst) (- c) t)))))))))
+    (when-let ((dst (opt-inst-dst inst)))
+      (cond
+       ((typep inst 'vm-add)
+        (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
+          (if ok
+              (values (vm-lhs inst) c t)
+              (multiple-value-bind (c2 ok2) (%opt-constant-reg-value (vm-lhs inst) constants)
+                (when ok2 (values (vm-rhs inst) c2 t))))))
+       ((typep inst 'vm-sub)
+        (multiple-value-bind (c ok) (%opt-constant-reg-value (vm-rhs inst) constants)
+          (when ok (values (vm-lhs inst) (- c) t))))))))
 
 (defun %opt-copy-constant-fact (inst constants)
   "Propagate a constant fact through a vm-move, or kill the destination fact."
@@ -220,15 +218,15 @@ induction variable. Existing affine callers continue to read OPT-IV-STEP."
 (defun %opt-constant-transfer-inst (inst constants)
   "Conservatively update CONSTANTS for simple constant propagation."
   (cond
-    ((typep inst 'vm-const)
-     (if (integerp (vm-value inst))
-         (setf (gethash (vm-dst inst) constants) (vm-value inst))
-         (remhash (vm-dst inst) constants)))
-    ((typep inst 'vm-move)
-     (%opt-copy-constant-fact inst constants))
-    (t
-     (let ((dst (opt-inst-dst inst)))
-       (when dst (remhash dst constants)))))
+   ((typep inst 'vm-const)
+    (if (integerp (vm-value inst))
+        (setf (gethash (vm-dst inst) constants) (vm-value inst))
+        (remhash (vm-dst inst) constants)))
+   ((typep inst 'vm-move)
+    (%opt-copy-constant-fact inst constants))
+   (t
+    (when-let ((dst (opt-inst-dst inst)))
+      (remhash dst constants))))
   constants)
 
 (defun %opt-loop-member-table (blocks)

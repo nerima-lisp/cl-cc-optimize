@@ -72,10 +72,9 @@ If either operand has no known interval, conservatively kills the destination."
 
 (defun %opt-update-interval-unary (inst intervals fn)
   "Update INTERVALS for unary arithmetic INST using interval transformer FN."
-  (let ((src (gethash (vm-src inst) intervals)))
-    (if src
-        (setf (gethash (vm-dst inst) intervals) (funcall fn src))
-        (remhash (vm-dst inst) intervals))))
+  (if-let ((src (gethash (vm-src inst) intervals)))
+    (setf (gethash (vm-dst inst) intervals) (funcall fn src))
+    (remhash (vm-dst inst) intervals)))
 
 (defmacro define-interval-log-transfer (op doc)
   "Define %OPT-UPDATE-INTERVAL-OP, an INTERVALS transfer function for a bitwise
@@ -147,42 +146,39 @@ The shift range must be a singleton integer interval."
 With KILL-SELF-UPDATES, instructions that read their own destination kill that
 fact instead of expanding ranges indefinitely across loop backedges."
   (cond
-    ((typep inst 'vm-const)
-     (if (integerp (vm-value inst))
-         (setf (gethash (vm-dst inst) intervals)
-               (opt-make-interval (vm-value inst) (vm-value inst)))
-         (remhash (vm-dst inst) intervals)))
-    ((typep inst 'vm-move)
-     (let ((src (gethash (vm-src inst) intervals)))
-       (if src
-           (setf (gethash (vm-dst inst) intervals) src)
-           (remhash (vm-dst inst) intervals))))
-    ((and kill-self-updates (%opt-self-referential-range-update-p inst))
-     (let ((dst (opt-inst-dst inst)))
-       (when dst
-         (remhash dst intervals))))
-    (t
-     (let ((binop-entry (%opt-interval-binop-entry inst))
-           (unary-entry (%opt-interval-unary-entry inst)))
-         (cond
-           ((typep inst 'vm-logand)
-            (%opt-update-interval-logand inst intervals))
-           ((typep inst 'vm-logior)
-            (%opt-update-interval-logior inst intervals))
-           ((typep inst 'vm-logxor)
-            (%opt-update-interval-logxor inst intervals))
-           ((typep inst 'vm-ash)
-            (%opt-update-interval-ash inst intervals))
-           (binop-entry
-            (%opt-update-interval-binop inst intervals
-                                        (%opt-interval-function binop-entry)))
-         (unary-entry
-          (%opt-update-interval-unary inst intervals
-                                      (%opt-interval-function unary-entry)))
-         (t
-          (let ((dst (opt-inst-dst inst)))
-            (when dst
-              (remhash dst intervals))))))))
+   ((typep inst 'vm-const)
+    (if (integerp (vm-value inst))
+        (setf (gethash (vm-dst inst) intervals)
+              (opt-make-interval (vm-value inst) (vm-value inst)))
+        (remhash (vm-dst inst) intervals)))
+   ((typep inst 'vm-move)
+    (if-let ((src (gethash (vm-src inst) intervals)))
+      (setf (gethash (vm-dst inst) intervals) src)
+      (remhash (vm-dst inst) intervals)))
+   ((and kill-self-updates (%opt-self-referential-range-update-p inst))
+    (when-let ((dst (opt-inst-dst inst)))
+      (remhash dst intervals)))
+   (t
+    (let ((binop-entry (%opt-interval-binop-entry inst))
+          (unary-entry (%opt-interval-unary-entry inst)))
+      (cond
+       ((typep inst 'vm-logand)
+        (%opt-update-interval-logand inst intervals))
+       ((typep inst 'vm-logior)
+        (%opt-update-interval-logior inst intervals))
+       ((typep inst 'vm-logxor)
+        (%opt-update-interval-logxor inst intervals))
+       ((typep inst 'vm-ash)
+        (%opt-update-interval-ash inst intervals))
+       (binop-entry
+        (%opt-update-interval-binop inst intervals
+                                    (%opt-interval-function binop-entry)))
+       (unary-entry
+        (%opt-update-interval-unary inst intervals
+                                    (%opt-interval-function unary-entry)))
+       (t
+        (when-let ((dst (opt-inst-dst inst)))
+          (remhash dst intervals)))))))
   intervals)
 
 (defun %opt-checked-arithmetic-elision-entry (inst)
@@ -193,18 +189,17 @@ fact instead of expanding ranges indefinitely across loop backedges."
 
 (defun %opt-rewrite-checked-arithmetic-if-safe (inst intervals)
   "Rewrite checked arithmetic INST to unchecked integer arithmetic if ranges prove safety."
-  (let ((entry (%opt-checked-arithmetic-elision-entry inst)))
-    (when entry
-      (destructuring-bind (interval-fn . constructor) entry
-        (let ((lhs (gethash (vm-lhs inst) intervals))
-              (rhs (gethash (vm-rhs inst) intervals)))
-          (when (and lhs rhs)
-            (let ((result (funcall (symbol-function interval-fn) lhs rhs)))
-              (when (opt-interval-fits-fixnum-p result)
-                (funcall (symbol-function constructor)
-                         :dst (vm-dst inst)
-                         :lhs (vm-lhs inst)
-                         :rhs (vm-rhs inst))))))))))
+  (when-let ((entry (%opt-checked-arithmetic-elision-entry inst)))
+    (destructuring-bind (interval-fn . constructor) entry
+      (let ((lhs (gethash (vm-lhs inst) intervals))
+            (rhs (gethash (vm-rhs inst) intervals)))
+        (when (and lhs rhs)
+          (let ((result (funcall (symbol-function interval-fn) lhs rhs)))
+            (when (opt-interval-fits-fixnum-p result)
+              (funcall (symbol-function constructor)
+                       :dst (vm-dst inst)
+                       :lhs (vm-lhs inst)
+                       :rhs (vm-rhs inst)))))))))
 
 (defun opt-pass-elide-proven-overflow-checks (instructions)
   "Elide FR-303 checked arithmetic when interval analysis proves fixnum safety."

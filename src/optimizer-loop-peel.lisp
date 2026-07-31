@@ -99,11 +99,9 @@ semantically distinct are left unchanged."
          (n (length vec))
          (i 0))
     (loop while (< i n) do
-      (let ((candidate (%opt-counted-loop-candidate-at vec i)))
-        (if candidate
-            (let ((replacement (%opt-loop-peel-apply-candidate instructions candidate)))
-              (if replacement
-                  (return-from opt-pass-loop-peel replacement)
-                  (incf i)))
-            (incf i))))
+          (if-let ((candidate (%opt-counted-loop-candidate-at vec i)))
+            (if-let ((replacement (%opt-loop-peel-apply-candidate instructions candidate)))
+              (return-from opt-pass-loop-peel replacement)
+              (incf i))
+            (incf i)))
     (opt-pass-loop-peeling instructions)))

@@ -82,10 +82,9 @@ Safe to call multiple times; subsequent calls rebuild the table."
   "Return the single destination register written by INST, or NIL.
 Returns NIL for instructions that do not write a destination (jump, halt,
 ret, set-global, slot-write, etc.) or for unrecognised types."
-  (let ((fn (and *vm-dst-table* (gethash (type-of inst) *vm-dst-table*))))
-    (if fn
-        (funcall fn inst)
-        (ignore-errors (vm-dst inst)))))
+  (if-let ((fn (and *vm-dst-table* (gethash (type-of inst) *vm-dst-table*))))
+    (funcall fn inst)
+    (ignore-errors (vm-dst inst))))
 
 ;;; opt-inst-pure-p is defined in effects.lisp (loaded first in the optimize module).
 ;;; It replaces the former 2-type whitelist with a 100+-type data-driven table.

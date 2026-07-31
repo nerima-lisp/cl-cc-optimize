@@ -34,8 +34,8 @@
            (setf (gethash (vm-dst inst) env) value)
            (remhash (vm-dst inst) env))))
     (t
-     (let ((dst (opt-inst-dst inst)))
-       (when dst (remhash dst env))))))
+     (when-let ((dst (opt-inst-dst inst)))
+       (remhash dst env)))))
 
 (defun %opt-memory-pattern-class (stride)
   (cond

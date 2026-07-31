@@ -94,8 +94,8 @@
 
    COST-FN: (op children-costs) → numeric cost."
   (let ((cache (make-hash-table)))
-    (let ((result (%egraph-extract-class root-id eg cache cost-fn)))
-      (when result (cdr result)))))
+    (when-let ((result (%egraph-extract-class root-id eg cache cost-fn)))
+      (cdr result))))
 
 ;;; ─── VM Instruction ↔ E-graph ────────────────────────────────────────────
 
@@ -127,8 +127,8 @@
              (class-id  (apply #'egraph-add eg op child-ids)))
         ;; Handle constant values specially
         (when (vm-const-p inst)
-          (let ((cls (gethash class-id (eg-classes eg))))
-            (when cls (setf (ec-data cls) (vm-value inst)))))
+          (when-let ((cls (gethash class-id (eg-classes eg))))
+            (setf (ec-data cls) (vm-value inst))))
         ;; Map destination register to this e-class
         (when dst
           (setf (gethash dst reg->class) class-id))))

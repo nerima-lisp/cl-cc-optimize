@@ -29,14 +29,13 @@
 
 (defun %opt-roadmap-fr-id-from-line (line)
   "Extract the FR-#### id from LINE."
-  (let ((pos (search "FR-" line)))
-    (when pos
-      (let ((end (+ pos 3)))
-        (loop while (and (< end (length line))
-                         (digit-char-p (char line end)))
-              do (incf end))
-        (when (> end (+ pos 3))
-          (subseq line pos end))))))
+  (when-let ((pos (search "FR-" line)))
+    (let ((end (+ pos 3)))
+      (loop while (and (< end (length line))
+                       (digit-char-p (char line end)))
+            do (incf end))
+      (when (> end (+ pos 3))
+        (subseq line pos end)))))
 
 (defun %opt-roadmap-trim-title (text)
   "Normalize a roadmap heading title."

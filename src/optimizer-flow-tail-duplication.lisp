@@ -79,13 +79,12 @@
 
 (defun %tail-dup-rewrite-conditional-pred (cfg pred succ)
   "Duplicate SUCC through an edge pad for a conditional predecessor."
-  (let ((pad (%tail-dup-split-conditional-target-edge cfg pred succ)))
-    (when pad
-      (setf (bb-instructions pad) (%tail-dup-copy-insts succ)
-            (bb-successors pad) (copy-list (bb-successors succ)))
-      (dolist (old-succ (bb-successors succ))
-        (pushnew pad (bb-predecessors old-succ) :test #'eq))
-      t)))
+  (when-let ((pad (%tail-dup-split-conditional-target-edge cfg pred succ)))
+    (setf (bb-instructions pad) (%tail-dup-copy-insts succ)
+          (bb-successors pad) (copy-list (bb-successors succ)))
+    (dolist (old-succ (bb-successors succ))
+      (pushnew pad (bb-predecessors old-succ) :test #'eq))
+    t))
 
 (defun %tail-dup-linear-candidates (cfg)
   "Return an alist of label-name to tail instruction copies for CFG candidates."

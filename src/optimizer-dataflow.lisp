@@ -256,9 +256,8 @@ iterations to accelerate convergence on growing lattices."
                (when dst
                  (remhash dst state)))))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-             (remhash dst state))))))))
+         (when-let ((dst (opt-inst-dst inst)))
+           (remhash dst state)))))))
 
 ;;; ─── Available Expressions ────────────────────────────────────────────────
 
@@ -367,12 +366,11 @@ iterations to accelerate convergence on growing lattices."
   (let ((state (copy-list in-state)))
     (loop for inst in (bb-instructions block)
           for instruction-index from 0
-          do (let ((dst (opt-inst-dst inst)))
-               (when dst
-                 (setf state
-                       (remove dst state :test #'eq :key #'%reaching-definition-reg))
-                 (push (%reaching-definition-entry dst block instruction-index inst)
-                       state))))
+          do (when-let ((dst (opt-inst-dst inst)))
+               (setf state
+                     (remove dst state :test #'eq :key #'%reaching-definition-reg))
+               (push (%reaching-definition-entry dst block instruction-index inst)
+                     state)))
     state))
 
 (define-dataflow-pass opt-compute-reaching-definitions (cfg-or-instructions)

@@ -67,24 +67,23 @@
                     (typep mul 'vm-float-mul)
                     (%opt-fma-pure-p mul)
                     (= 1 (%opt-register-read-count (vm-dst mul) instructions)))
-            do (let ((protected-regs (remove-duplicates
-                                      (list (vm-dst mul) (vm-lhs mul) (vm-rhs mul))
-                                      :test #'eq)))
-                 (loop for add-index from (1+ mul-index) below n
-                       for candidate = (aref insts add-index)
-                       do (cond
-                            ((and (not (aref removed add-index))
-                                  (typep candidate 'vm-float-add))
-                             (let ((replacement (%opt-fma-replacement mul candidate instructions)))
-                               (when replacement
-                                 (setf (aref removed mul-index) t)
-                                 (setf (gethash add-index replacements) replacement)
-                                 (return))))
-                            ((%opt-fma-intervening-barrier-p candidate protected-regs)
-                             (return))))))
+          do (let ((protected-regs (remove-duplicates
+                                    (list (vm-dst mul) (vm-lhs mul) (vm-rhs mul))
+                                    :test #'eq)))
+               (loop for add-index from (1+ mul-index) below n
+                     for candidate = (aref insts add-index)
+                     do (cond
+                         ((and (not (aref removed add-index))
+                               (typep candidate 'vm-float-add))
+                          (when-let ((replacement (%opt-fma-replacement mul candidate instructions)))
+                            (setf (aref removed mul-index) t)
+                            (setf (gethash add-index replacements) replacement)
+                            (return)))
+                         ((%opt-fma-intervening-barrier-p candidate protected-regs)
+                          (return))))))
     (loop for i from 0 below n
           unless (aref removed i)
-            collect (or (gethash i replacements) (aref insts i)))))
+          collect (or (gethash i replacements) (aref insts i)))))
 
 (defun opt-pass-fma-recognition (instructions)
   "FR-099: Recognize scalar floating FMA in flat VM instruction streams.

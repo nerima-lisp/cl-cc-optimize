@@ -96,39 +96,38 @@ folding and CSE before returning."
          (changed nil)
          (i 0))
     (loop while (< i n)
-          do (let ((candidate (%loop-unroll-candidate-at vec i)))
-               (if candidate
-                   (let* ((cmp-inst (getf candidate :cmp))
-                          (jz-inst (getf candidate :jump-zero))
-                          (body (getf candidate :body))
-                          (exit-pos (getf candidate :exit-pos))
-                          (const-env (%opt-build-const-env-up-to vec i))
-                          (init (gethash (getf candidate :iv-reg) const-env))
-                          (limit (gethash (getf candidate :limit-reg) const-env))
-                          (step (gethash (getf candidate :step-reg) const-env))
-                          (trip (and init limit step
-                                     (%opt-loop-unroll-trip-count cmp-inst init limit step))))
-                     (cond
-                       ((and trip
-                             (> trip 0)
-                             (<= trip *opt-loop-unroll-fr601-max-full-trip*))
-                        (setf result (%loop-unroll-full body trip result)
-                              changed t
-                              i exit-pos)
-                        (push (%loop-unroll-copy-inst (aref vec i)) result)
-                        (incf i))
-                       ((plusp *opt-loop-unroll-fr601-factor*)
-                        (setf result (%loop-unroll-partial body cmp-inst jz-inst result)
-                              changed t)
-                        (loop for j from i to exit-pos
-                              do (push (%loop-unroll-copy-inst (aref vec j)) result))
-                        (setf i (1+ exit-pos)))
-                       (t
-                        (push (aref vec i) result)
-                        (incf i))))
-                   (progn
-                     (push (aref vec i) result)
-                     (incf i)))))
+          do (if-let ((candidate (%loop-unroll-candidate-at vec i)))
+               (let* ((cmp-inst (getf candidate :cmp))
+                      (jz-inst (getf candidate :jump-zero))
+                      (body (getf candidate :body))
+                      (exit-pos (getf candidate :exit-pos))
+                      (const-env (%opt-build-const-env-up-to vec i))
+                      (init (gethash (getf candidate :iv-reg) const-env))
+                      (limit (gethash (getf candidate :limit-reg) const-env))
+                      (step (gethash (getf candidate :step-reg) const-env))
+                      (trip (and init limit step
+                                 (%opt-loop-unroll-trip-count cmp-inst init limit step))))
+                 (cond
+                  ((and trip
+                        (> trip 0)
+                        (<= trip *opt-loop-unroll-fr601-max-full-trip*))
+                   (setf result (%loop-unroll-full body trip result)
+                         changed t
+                         i exit-pos)
+                   (push (%loop-unroll-copy-inst (aref vec i)) result)
+                   (incf i))
+                  ((plusp *opt-loop-unroll-fr601-factor*)
+                   (setf result (%loop-unroll-partial body cmp-inst jz-inst result)
+                         changed t)
+                   (loop for j from i to exit-pos
+                         do (push (%loop-unroll-copy-inst (aref vec j)) result))
+                   (setf i (1+ exit-pos)))
+                  (t
+                   (push (aref vec i) result)
+                   (incf i))))
+               (progn
+                 (push (aref vec i) result)
+                 (incf i))))
     (let ((out (nreverse result)))
       (if changed
           (%loop-unroll-optimize-expanded-body out)

@@ -91,9 +91,8 @@
                 (gethash id  (eg-union-find eg)) id
                 (gethash key (eg-memo eg))        id)
           (dolist (c canon-children)
-            (let ((child-cls (gethash (egraph-find eg c) (eg-classes eg))))
-              (when child-cls
-                (push (cons node id) (ec-parents child-cls)))))
+            (when-let ((child-cls (gethash (egraph-find eg c) (eg-classes eg))))
+              (push (cons node id) (ec-parents child-cls))))
           id))))
 
 (defun egraph-merge (eg id1 id2)
@@ -130,14 +129,13 @@
          (new-key (enode-memo-key new-pn)))
     (unless (equal old-key new-key)
       (remhash old-key (eg-memo eg))
-      (let ((existing (gethash new-key (eg-memo eg))))
-        (if existing
-            (let ((pn-class (egraph-find eg (en-eclass pn))))
-              (unless (= pn-class existing)
-                (egraph-merge eg pn-class existing)))
-            (progn
-              (setf (en-children pn) (en-children new-pn))
-              (setf (gethash new-key (eg-memo eg)) (en-eclass pn))))))))
+      (if-let ((existing (gethash new-key (eg-memo eg))))
+        (let ((pn-class (egraph-find eg (en-eclass pn))))
+          (unless (= pn-class existing)
+            (egraph-merge eg pn-class existing)))
+        (progn
+          (setf (en-children pn) (en-children new-pn))
+          (setf (gethash new-key (eg-memo eg)) (en-eclass pn)))))))
 
 (defun egraph-rebuild (eg)
   "Process the worklist of pending merges to restore the congruence invariant."
@@ -148,10 +146,9 @@
             (r2 (egraph-find eg (cdr pair))))
         (unless (= r1 r2)
           (%egraph-absorb-class eg r1 r2)
-          (let ((cls1 (gethash r1 (eg-classes eg))))
-            (when cls1
-              (dolist (parent-pair (ec-parents cls1))
-                (%egraph-repair-parent-node eg (car parent-pair)))))
+          (when-let ((cls1 (gethash r1 (eg-classes eg))))
+            (dolist (parent-pair (ec-parents cls1))
+              (%egraph-repair-parent-node eg (car parent-pair))))
           (when (eg-worklist eg)
             (egraph-rebuild eg)))))))
 

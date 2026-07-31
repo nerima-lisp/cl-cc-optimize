@@ -58,12 +58,11 @@ Returns OPT-CANONICAL-LOOP or NIL."
          (i 0)
          (n (length vec)))
     (loop while (< i n)
-          do (let ((lp (%opt-parse-canonical-loop-at vec i)))
-               (if lp
-                   (progn
-                     (push lp loops)
-                     (setf i (1+ (opt-loop-exit-index lp))))
-                   (incf i))))
+          do (if-let ((lp (%opt-parse-canonical-loop-at vec i)))
+               (progn
+                 (push lp loops)
+                 (setf i (1+ (opt-loop-exit-index lp))))
+               (incf i)))
     (nreverse loops)))
 
 (defun opt-build-affine-loop-summary (&key induction-vars bounds accesses)

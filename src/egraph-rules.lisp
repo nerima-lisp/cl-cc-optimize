@@ -70,10 +70,9 @@ Rule structure itself is sourced from the Prolog rule database emitted by `defru
 
 (defun egraph-binding-const (eg bindings var)
   "Return the constant value of the e-class bound to VAR, or NIL if not constant."
-  (let ((cid (egraph-binding bindings var)))
-    (when cid
-      (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-        (when cls (ec-data cls))))))
+  (when-let ((cid (egraph-binding bindings var)))
+    (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+      (ec-data cls))))
 
 ;;; ─── Constant Folding Rules ───────────────────────────────────────────────
 ;;;
@@ -180,76 +179,76 @@ Rule structure itself is sourced from the Prolog rule database emitted by `defru
 ;;; These replace opt-pass-strength-reduce.
 
 (defrule mul-pow2
-  (mul ?x (const ?n))
-  (ash ?x (const))
-  :when (let ((n (egraph-binding-const eg bindings '?n)))
-          (and (integerp n) (>= n 2) (zerop (logand n (1- n)))
-               ;; Build the shift-amount constant e-class
-               (let* ((k  (1- (integer-length n)))
-                      (cid (egraph-add eg 'const)))
-                 (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-                   (when cls (setf (ec-data cls) k)))
-                 t))))
+         (mul ?x (const ?n))
+         (ash ?x (const))
+         :when (let ((n (egraph-binding-const eg bindings '?n)))
+                 (and (integerp n) (>= n 2) (zerop (logand n (1- n)))
+                      ;; Build the shift-amount constant e-class
+                      (let* ((k  (1- (integer-length n)))
+                             (cid (egraph-add eg 'const)))
+                        (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+                          (setf (ec-data cls) k))
+                        t))))
 
 (defrule mul-pow2-l
-  (mul (const ?n) ?x)
-  (ash ?x (const))
-  :when (let ((n (egraph-binding-const eg bindings '?n)))
-          (and (integerp n) (>= n 2) (zerop (logand n (1- n)))
-               (let* ((k  (1- (integer-length n)))
-                      (cid (egraph-add eg 'const)))
-                 (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-                   (when cls (setf (ec-data cls) k)))
-                 t))))
+         (mul (const ?n) ?x)
+         (ash ?x (const))
+         :when (let ((n (egraph-binding-const eg bindings '?n)))
+                 (and (integerp n) (>= n 2) (zerop (logand n (1- n)))
+                      (let* ((k  (1- (integer-length n)))
+                             (cid (egraph-add eg 'const)))
+                        (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+                          (setf (ec-data cls) k))
+                        t))))
 
 (defrule div-pow2
-  (div ?x (const ?n))
-  (ash ?x (const))
-  :when (let ((n (egraph-binding-const eg bindings '?n)))
-          (and (integerp n) (>= n 2) (zerop (logand n (1- n)))
-               (let* ((k   (- (1- (integer-length n))))
-                      (cid (egraph-add eg 'const)))
-                 (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-                   (when cls (setf (ec-data cls) k)))
-                 t))))
+         (div ?x (const ?n))
+         (ash ?x (const))
+         :when (let ((n (egraph-binding-const eg bindings '?n)))
+                 (and (integerp n) (>= n 2) (zerop (logand n (1- n)))
+                      (let* ((k   (- (1- (integer-length n))))
+                             (cid (egraph-add eg 'const)))
+                        (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+                          (setf (ec-data cls) k))
+                        t))))
 
 ;;; ─── Type Predicate Folding ───────────────────────────────────────────────
 
 (defrule null-p-const
-  (null-p (const ?v))
-  (const)
-  :when (let ((v (egraph-binding-const eg bindings '?v)))
-          (let ((cid (egraph-add eg 'const)))
-            (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-              (when cls (setf (ec-data cls) (if (null v) 1 0))))
-            t)))
+         (null-p (const ?v))
+         (const)
+         :when (let ((v (egraph-binding-const eg bindings '?v)))
+                 (let ((cid (egraph-add eg 'const)))
+                   (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+                     (setf (ec-data cls) (if (null v) 1 0)))
+                   t)))
 
 (defrule cons-p-const
-  (cons-p (const ?v))
-  (const)
-  :when (let ((v (egraph-binding-const eg bindings '?v)))
-          (let ((cid (egraph-add eg 'const)))
-            (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-              (when cls (setf (ec-data cls) (if (consp v) 1 0))))
-            t)))
+         (cons-p (const ?v))
+         (const)
+         :when (let ((v (egraph-binding-const eg bindings '?v)))
+                 (let ((cid (egraph-add eg 'const)))
+                   (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+                     (setf (ec-data cls) (if (consp v) 1 0)))
+                   t)))
 
 (defrule number-p-const
-  (number-p (const ?v))
-  (const)
-  :when (let ((v (egraph-binding-const eg bindings '?v)))
-          (let ((cid (egraph-add eg 'const)))
-            (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-              (when cls (setf (ec-data cls) (if (numberp v) 1 0))))
-            t)))
+         (number-p (const ?v))
+         (const)
+         :when (let ((v (egraph-binding-const eg bindings '?v)))
+                 (let ((cid (egraph-add eg 'const)))
+                   (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+                     (setf (ec-data cls) (if (numberp v) 1 0)))
+                   t)))
 
 (defrule integer-p-const
-  (integer-p (const ?v))
-  (const)
-  :when (let ((v (egraph-binding-const eg bindings '?v)))
-          (let ((cid (egraph-add eg 'const)))
-            (let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
-              (when cls (setf (ec-data cls) (if (integerp v) 1 0))))
-            t)))
+         (integer-p (const ?v))
+         (const)
+         :when (let ((v (egraph-binding-const eg bindings '?v)))
+                 (let ((cid (egraph-add eg 'const)))
+                   (when-let ((cls (gethash (egraph-find eg cid) (eg-classes eg))))
+                     (setf (ec-data cls) (if (integerp v) 1 0)))
+                   t)))
 
 ;;; Advanced rules (mul-neg-neg, neg-sub), egraph-builtin-rules,
 ;;; and optimize-with-egraph are in egraph-rules-advanced.lisp (loads next).

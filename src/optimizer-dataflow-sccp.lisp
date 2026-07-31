@@ -112,11 +112,10 @@
 
 (defun %sccp-update-env-for-inst (inst env)
   "Update ENV by binding or killing the destination of INST after folding."
-  (let ((dst (opt-inst-dst inst)))
-    (when dst
-      (typecase inst
-        (vm-const (setf (gethash dst env) (vm-value inst)))
-        (t (remhash dst env))))))
+  (when-let ((dst (opt-inst-dst inst)))
+    (typecase inst
+      (vm-const (setf (gethash dst env) (vm-value inst)))
+      (t (remhash dst env)))))
 
 (defun %sccp-process-block (block in-env)
   "Fold BLOCK's instructions under IN-ENV; return the resulting out-env."

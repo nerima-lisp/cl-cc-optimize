@@ -24,8 +24,8 @@
 (defun %opt-autovec-clone-cmp (inst dst lhs rhs)
   "Clone supported comparison INST with new DST/LHS/RHS registers.
    Dispatch is data-driven via *opt-autovec-cmp-clone-table*."
-  (let ((ctor (gethash (type-of inst) *opt-autovec-cmp-clone-table*)))
-    (when ctor (funcall ctor dst lhs rhs))))
+  (when-let ((ctor (gethash (type-of inst) *opt-autovec-cmp-clone-table*)))
+    (funcall ctor dst lhs rhs)))
 
 (defun %opt-autovec-op-kind (inst)
   "Return a backend-neutral SIMD op keyword for scalar binary INST, or NIL.
@@ -51,13 +51,12 @@ indices and do not carry values between iterations."
         (producers (make-hash-table :test #'eq))
         (simd nil))
     (dolist (inst body)
-      (let ((op (%opt-autovec-op-kind inst)))
-        (when op
-          (multiple-value-bind (lhs-array lhs-ok) (gethash (vm-lhs inst) loads)
-            (multiple-value-bind (rhs-array rhs-ok) (gethash (vm-rhs inst) loads)
-              (when (and lhs-ok rhs-ok)
-                (setf (gethash (vm-dst inst) producers)
-                      (list op lhs-array rhs-array))))))))
+      (when-let ((op (%opt-autovec-op-kind inst)))
+        (multiple-value-bind (lhs-array lhs-ok) (gethash (vm-lhs inst) loads)
+          (multiple-value-bind (rhs-array rhs-ok) (gethash (vm-rhs inst) loads)
+            (when (and lhs-ok rhs-ok)
+              (setf (gethash (vm-dst inst) producers)
+                    (list op lhs-array rhs-array)))))))
     (dolist (inst body)
       (when (and (typep inst 'vm-aset)
                  (eq (vm-index-reg inst) iv-reg))

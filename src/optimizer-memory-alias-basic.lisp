@@ -10,9 +10,8 @@
     (dolist (inst instructions kinds)
       (let ((dst (opt-inst-dst inst)))
         (when (and dst (opt-heap-root-inst-p inst))
-          (let ((root (gethash dst points-to)))
-            (when root
-              (setf (gethash root kinds) (opt-heap-root-kind inst)))))))
+          (when-let ((root (gethash dst points-to)))
+            (setf (gethash root kinds) (opt-heap-root-kind inst))))))
     kinds))
 
 (defun opt-may-alias-by-type-p (reg-a reg-b points-to heap-kinds)

@@ -77,7 +77,7 @@ The second value is the next fresh register base."
       (values (nreverse replacement) (+ base-idx (hash-table-count rename))))))
 
 (defun %opt-inline-body-bottom-up (body func-defs candidates name-to-label profile-data
-                                   threshold base-idx)
+                                        threshold base-idx)
   "Inline candidate calls inside BODY using already processed callee bodies."
   (let ((reg-track (make-hash-table :test #'eq))
         (const-track (make-hash-table :test #'eq))
@@ -123,17 +123,15 @@ The second value is the next fresh register base."
                      (progn
                        (setf base-idx next-base)
                        (setf result (nconc (reverse replacement) result))
-                       (let ((dst (vm-dst inst)))
-                         (when dst
-                           (remhash dst reg-track)
-                           (remhash dst const-track))))
+                       (when-let ((dst (vm-dst inst)))
+                         (remhash dst reg-track)
+                         (remhash dst const-track)))
                      (push inst result)))
                (push inst result))))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-             (remhash dst reg-track)
-             (remhash dst const-track)))
+         (when-let ((dst (opt-inst-dst inst)))
+           (remhash dst reg-track)
+           (remhash dst const-track))
          (push inst result))))
     (values (nreverse result) base-idx)))
 
@@ -171,7 +169,7 @@ left untouched, preserving references to the enclosing compilation unit."
               base-idx next-base)))))
 
 (defun %opt-inline-rewrite-toplevel (instructions func-defs candidates name-to-label
-                                     threshold profile-data base-idx)
+                                                  threshold profile-data base-idx)
   "Rewrite INSTRUCTIONS, resolving function-valued registers through const,
   move, and box/car pass-through, and inlining eligible vm-call sites.
   Returns the rewritten instruction list."
@@ -180,35 +178,34 @@ left untouched, preserving references to the enclosing compilation unit."
         (const-track (make-hash-table :test #'eq))
         (result nil))
     (flet ((process-call (inst)
-             (let* ((label (gethash (vm-func-reg inst) reg-track))
-                    (def   (and label (gethash label func-defs)))
-                    (effective-threshold
-                      (and def
-                           (%opt-inline-effective-threshold def threshold profile-data))))
-               (if (and def
-                        (gethash label candidates))
-                   (multiple-value-bind (replacement next-base)
-                       (%opt-inline-expand-call inst label def base-idx name-to-label
-                                                const-track effective-threshold)
-                     (if replacement
-                         (progn
-                           (setf base-idx next-base)
-                           (setf result (nconc (reverse replacement) result))
-                           (let ((dst (vm-dst inst)))
-                             (when dst
-                               (remhash dst reg-track)
-                               (remhash dst box-track)
-                               (remhash dst const-track))))
-                         (push inst result)))
-                   (push inst result)))))
+                         (let* ((label (gethash (vm-func-reg inst) reg-track))
+                                (def   (and label (gethash label func-defs)))
+                                (effective-threshold
+                                 (and def
+                                      (%opt-inline-effective-threshold def threshold profile-data))))
+                           (if (and def
+                                    (gethash label candidates))
+                               (multiple-value-bind (replacement next-base)
+                                   (%opt-inline-expand-call inst label def base-idx name-to-label
+                                                            const-track effective-threshold)
+                                 (if replacement
+                                     (progn
+                                       (setf base-idx next-base)
+                                       (setf result (nconc (reverse replacement) result))
+                                       (when-let ((dst (vm-dst inst)))
+                                         (remhash dst reg-track)
+                                         (remhash dst box-track)
+                                         (remhash dst const-track)))
+                                     (push inst result)))
+                               (push inst result)))))
       (dolist (inst instructions)
         (typecase inst
           ((or vm-closure vm-func-ref)
            (let ((label (vm-label-name inst)))
              (when (gethash label func-defs)
                (setf (gethash (vm-dst inst) reg-track) label)))
-           (let ((dst (opt-inst-dst inst)))
-             (when dst (remhash dst const-track)))
+           (when-let ((dst (opt-inst-dst inst)))
+             (remhash dst const-track))
            (push inst result))
           (vm-const
            (let* ((val (vm-value inst))
@@ -236,25 +233,22 @@ left untouched, preserving references to the enclosing compilation unit."
                  (remhash (vm-dst inst) const-track)))
            (push inst result))
           (vm-rplaca
-           (let ((label (gethash (vm-val-reg inst) reg-track)))
-             (when label
-               (setf (gethash (vm-cons-reg inst) box-track) label)))
+           (when-let ((label (gethash (vm-val-reg inst) reg-track)))
+             (setf (gethash (vm-cons-reg inst) box-track) label))
            (push inst result))
           (vm-car
-           (let ((label (gethash (vm-src inst) box-track)))
-             (if label
-                 (setf (gethash (vm-dst inst) reg-track) label)
-                 (remhash (vm-dst inst) reg-track)))
+           (if-let ((label (gethash (vm-src inst) box-track)))
+             (setf (gethash (vm-dst inst) reg-track) label)
+             (remhash (vm-dst inst) reg-track))
            (remhash (vm-dst inst) const-track)
            (push inst result))
           (vm-call
            (process-call inst))
           (t
-           (let ((dst (opt-inst-dst inst)))
-             (when dst
-               (remhash dst reg-track)
-               (remhash dst box-track)
-               (remhash dst const-track)))
+           (when-let ((dst (opt-inst-dst inst)))
+             (remhash dst reg-track)
+             (remhash dst box-track)
+             (remhash dst const-track))
            (push inst result)))))
     (nreverse result)))
 

@@ -29,10 +29,9 @@
            (setf (gethash (vm-dst inst) reg-label) label)
            (remhash (vm-dst inst) reg-label))))
     (t
-     (let ((dst (opt-inst-dst inst)))
-       (when dst
-         (remhash dst reg-const)
-         (remhash dst reg-label))))))
+     (when-let ((dst (opt-inst-dst inst)))
+       (remhash dst reg-const)
+       (remhash dst reg-label)))))
 
 (defun %ipcp-constant-arg-map (params args reg-const)
   (let ((result nil))
@@ -44,12 +43,11 @@
 
 (defun %ipcp-fold-entry-branch (inst constants)
   (if (typep inst 'vm-jump-zero)
-      (let ((entry (assoc (vm-reg inst) constants :test #'eq)))
-        (if entry
-            (if (opt-falsep (cdr entry))
-                (make-vm-jump :label (vm-label-name inst))
-                nil)
-            inst))
+      (if-let ((entry (assoc (vm-reg inst) constants :test #'eq)))
+        (if (opt-falsep (cdr entry))
+            (make-vm-jump :label (vm-label-name inst))
+            nil)
+        inst)
       inst))
 
 (defun %ipcp-clone-body (label body constants)

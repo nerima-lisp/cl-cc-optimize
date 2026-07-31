@@ -11,9 +11,8 @@ instructions. Unknown overwrites kill stale array-length facts."
     (dolist (inst instructions array-lengths)
       (typecase inst
         (vm-make-array
-         (let ((dst (vm-dst inst)))
-           (when dst
-             (setf (gethash dst array-lengths) (vm-size-reg inst)))))
+         (when-let ((dst (vm-dst inst)))
+           (setf (gethash dst array-lengths) (vm-size-reg inst))))
         (vm-array-length
          (let ((known (gethash (vm-src inst) array-lengths)))
            ;; Preserve a known allocation size when available; otherwise record
@@ -21,13 +20,12 @@ instructions. Unknown overwrites kill stale array-length facts."
            (setf (gethash (vm-src inst) array-lengths)
                  (or known (vm-dst inst)))))
         (vm-move
-         (let ((dst (vm-dst inst)))
-           (when dst
-             (multiple-value-bind (length-reg found-p)
-                 (gethash (vm-src inst) array-lengths)
-               (if found-p
-                   (setf (gethash dst array-lengths) length-reg)
-                   (remhash dst array-lengths))))))
+         (when-let ((dst (vm-dst inst)))
+           (multiple-value-bind (length-reg found-p)
+               (gethash (vm-src inst) array-lengths)
+             (if found-p
+                 (setf (gethash dst array-lengths) length-reg)
+                 (remhash dst array-lengths)))))
         (t
          (let ((dst (opt-inst-dst inst)))
            (when (and dst (not (typep inst 'vm-array-length)))
@@ -99,9 +97,8 @@ the original instruction objects/order."
     (loop for block across (cfg-blocks cfg)
           when block
           do (dolist (inst (bb-instructions block))
-               (let ((dst (opt-inst-dst inst)))
-                 (when dst
-                   (setf (gethash dst defs) block)))))
+               (when-let ((dst (opt-inst-dst inst)))
+                 (setf (gethash dst defs) block))))
     defs))
 
 (defun %opt-sink-use-blocks (cfg reg alloc-inst)

@@ -76,10 +76,9 @@
     (vm-class-def
      (setf (gethash (vm-dst inst) reg-symbol) (vm-class-name-sym inst)))
     (vm-make-obj
-     (let ((class (gethash (vm-class-reg inst) reg-symbol)))
-       (if class
-           (setf (gethash (vm-dst inst) reg-object-class) class)
-           (remhash (vm-dst inst) reg-object-class))))
+     (if-let ((class (gethash (vm-class-reg inst) reg-symbol)))
+       (setf (gethash (vm-dst inst) reg-object-class) class)
+       (remhash (vm-dst inst) reg-object-class)))
     (vm-move
      (multiple-value-bind (sym found-p) (gethash (vm-src inst) reg-symbol)
        (if found-p
@@ -94,11 +93,10 @@
            (setf (gethash (vm-dst inst) reg-gf-name) gf)
            (remhash (vm-dst inst) reg-gf-name))))
     (t
-     (let ((dst (opt-inst-dst inst)))
-       (when dst
-         (remhash dst reg-symbol)
-         (remhash dst reg-object-class)
-         (remhash dst reg-gf-name))))))
+     (when-let ((dst (opt-inst-dst inst)))
+       (remhash dst reg-symbol)
+       (remhash dst reg-object-class)
+       (remhash dst reg-gf-name)))))
 
 (defun %opt-cha-note-gf-definition (inst reg-symbol reg-gf-name)
   (when (and (typep inst 'vm-register-function)

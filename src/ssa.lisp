@@ -49,9 +49,8 @@
 
 (defun ssr-pop-version (state reg)
   "Pop the top version of REG from the rename stack."
-  (let ((stack (gethash reg (ssr-stacks state))))
-    (when stack
-      (setf (gethash reg (ssr-stacks state)) (cdr stack)))))
+  (when-let ((stack (gethash reg (ssr-stacks state))))
+    (setf (gethash reg (ssr-stacks state)) (cdr stack))))
 
 ;;; ─── Phi-Node Representation ─────────────────────────────────────────────
 
@@ -73,9 +72,8 @@
       (dolist (r (opt-inst-read-regs inst))
         (when (and r (not (member r defs :test #'eq)))
           (pushnew r uses :test #'eq)))
-      (let ((dst (ignore-errors (vm-dst inst))))
-        (when dst
-          (pushnew dst defs :test #'eq))))
+      (when-let ((dst (ignore-errors (vm-dst inst))))
+        (pushnew dst defs :test #'eq)))
     (values uses defs)))
 
 (defun %ssa-compute-live-in (cfg)
@@ -130,29 +128,28 @@
   ;; Step 1: collect all registers, their definition blocks, and live-in uses.
   ;; Pruned SSA: if a variable is not live-in at a frontier block, skip phi placement.
   (let ((def-sites  (make-hash-table :test #'eq))  ; reg → list of blocks
-         (used-regs  (make-hash-table :test #'eq))  ; reg → t when read anywhere
-         (live-in    (%ssa-compute-live-in cfg))
-         (phi-map    (make-hash-table :test #'eq))) ; block → list of ssa-phi
+        (used-regs  (make-hash-table :test #'eq))  ; reg → t when read anywhere
+        (live-in    (%ssa-compute-live-in cfg))
+        (phi-map    (make-hash-table :test #'eq))) ; block → list of ssa-phi
 
     (loop for b across (cfg-blocks cfg)
           do (dolist (inst (bb-instructions b))
                (dolist (r (opt-inst-read-regs inst))
                  (when r
                    (setf (gethash r used-regs) t)))
-               (let ((dst (ignore-errors (vm-dst inst))))
-                  (when dst
-                    (pushnew b (gethash dst def-sites) :test #'eq)))))
+               (when-let ((dst (ignore-errors (vm-dst inst))))
+                 (pushnew b (gethash dst def-sites) :test #'eq))))
 
     ;; Step 2: for each register, place phis at IDF(def-sites)
     (maphash
      (lambda (reg blocks)
-        (when (gethash reg used-regs)
-          (let ((idf (cfg-idf blocks)))
-            (dolist (f idf)
-              (when (and (member reg (gethash f live-in) :test #'eq)
-                         (not (find-if (lambda (p) (eq (phi-reg p) reg))
-                                       (gethash f phi-map))))
-                (push (make-ssa-phi :reg reg) (gethash f phi-map)))))))
+       (when (gethash reg used-regs)
+         (let ((idf (cfg-idf blocks)))
+           (dolist (f idf)
+             (when (and (member reg (gethash f live-in) :test #'eq)
+                        (not (find-if (lambda (p) (eq (phi-reg p) reg))
+                                      (gethash f phi-map))))
+               (push (make-ssa-phi :reg reg) (gethash f phi-map)))))))
      def-sites)
 
     phi-map))
@@ -166,9 +163,8 @@
   (let ((defined (make-hash-table :test #'eq)))
     (dolist (b loop-blocks defined)
       (dolist (inst (bb-instructions b))
-        (let ((dst (ignore-errors (vm-dst inst))))
-          (when dst
-            (setf (gethash dst defined) t)))))))
+        (when-let ((dst (ignore-errors (vm-dst inst))))
+          (setf (gethash dst defined) t))))))
 
 (defun %ssa-loop-exit-blocks (loop-blocks)
   (let ((members (make-hash-table :test #'eq))

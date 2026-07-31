@@ -59,10 +59,9 @@ metadata without requiring cross-package instruction-shape changes."
         (remove key (mps-pending-order state) :test #'equal)))
 
 (defun %mps-flush-one (state key)
-  (let ((inst (%mps-pending-store state key)))
-    (when inst
-      (%mps-emit state inst)
-      (%mps-drop-pending state key))))
+  (when-let ((inst (%mps-pending-store state key)))
+    (%mps-emit state inst)
+    (%mps-drop-pending state key)))
 
 (defun %mps-flush-all (state)
   (dolist (key (reverse (mps-pending-order state)))
@@ -143,14 +142,14 @@ predecessors to agree on the same slot fact."
         (result nil))
     (labels ((emit (inst) (push inst result))
              (remember-cons (dst car-reg cdr-reg)
-               (if (%opt-cons-slot-safe-source-p dst car-reg cdr-reg)
-                   (setf (gethash dst facts) (cons car-reg cdr-reg))
-                   (remhash dst facts)))
+                            (if (%opt-cons-slot-safe-source-p dst car-reg cdr-reg)
+                                (setf (gethash dst facts) (cons car-reg cdr-reg))
+                                (remhash dst facts)))
              (copy-fact (dst src)
-               (multiple-value-bind (entry found-p) (gethash src facts)
-                 (if found-p
-                     (setf (gethash dst facts) entry)
-                     (remhash dst facts)))))
+                        (multiple-value-bind (entry found-p) (gethash src facts)
+                          (if found-p
+                              (setf (gethash dst facts) entry)
+                              (remhash dst facts)))))
       (dolist (inst instructions (nreverse result))
         (typecase inst
           (vm-cons
@@ -183,9 +182,8 @@ predecessors to agree on the same slot fact."
            (clrhash facts)
            (emit inst))
           (t
-           (let ((dst (opt-inst-dst inst)))
-             (when dst
-               (%opt-cons-slot-kill-dependent-on-reg facts dst)))
+           (when-let ((dst (opt-inst-dst inst)))
+             (%opt-cons-slot-kill-dependent-on-reg facts dst))
            (when (%opt-cons-slot-mutation-boundary-p inst)
              (clrhash facts))
            (emit inst)))))))
@@ -210,13 +208,13 @@ predecessors to agree on the same slot fact."
          (%mps-flush-all state)
          (%mps-emit state inst))
         (vm-get-global
-         (let ((dst (cl-cc/vm:vm-get-global-dst inst)))
-           (when dst (%mps-flush-if-src-overwritten state dst)))
+         (when-let ((dst (cl-cc/vm:vm-get-global-dst inst)))
+           (%mps-flush-if-src-overwritten state dst))
          (%mps-flush-one state (cl-cc/vm:vm-get-global-name inst))
          (%mps-emit state inst))
         (vm-slot-read
-         (let ((dst (cl-cc/vm:vm-slot-read-dst inst)))
-           (when dst (%mps-flush-if-src-overwritten state dst)))
+         (when-let ((dst (cl-cc/vm:vm-slot-read-dst inst)))
+           (%mps-flush-if-src-overwritten state dst))
          (%mps-flush-slot-writes-aliasing-read
           state inst alias-roots type-facts)
          (%mps-emit state inst))
@@ -224,16 +222,16 @@ predecessors to agree on the same slot fact."
          (%mps-remember-store state (cl-cc/vm:vm-set-global-name inst) inst))
         (vm-slot-write
          (%mps-remember-store state (opt-slot-alias-key (cl-cc/vm:vm-slot-write-obj-reg inst)
-                                                         (cl-cc/vm:vm-slot-write-slot-name inst)
-                                                         alias-roots)
+                                                        (cl-cc/vm:vm-slot-write-slot-name inst)
+                                                        alias-roots)
                               inst))
         ;; FR-342. An array read cannot be shown to miss a pending store: the
         ;; index is a register, so two different index registers may still hold
         ;; the same value at run time. Flush every pending store rather than the
         ;; matching key alone.
         ((or vm-aref vm-aref-multi)
-         (let ((dst (opt-inst-dst inst)))
-           (when dst (%mps-flush-if-src-overwritten state dst)))
+         (when-let ((dst (opt-inst-dst inst)))
+           (%mps-flush-if-src-overwritten state dst))
          (%mps-flush-all state)
          (%mps-emit state inst))
         (vm-aset
@@ -246,8 +244,8 @@ predecessors to agree on the same slot fact."
                                                         alias-roots)
                               inst))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst (%mps-flush-if-src-overwritten state dst)))
+         (when-let ((dst (opt-inst-dst inst)))
+           (%mps-flush-if-src-overwritten state dst))
          (unless (opt-inst-pure-p inst) (%mps-flush-all state))
          (%mps-emit state inst))))
     (%mps-flush-all state)

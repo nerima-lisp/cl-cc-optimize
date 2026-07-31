@@ -105,17 +105,16 @@ Single destination slots are preserved to match the historical sexp rewrite."
              (multiple-value-bind (replacement present-p) (gethash x copies)
                (if present-p replacement x)))))
     (handler-case
-        (let ((slots (gethash (type-of inst) *opt-register-slot-table*)))
-          (if slots
-              (%opt-rewrite-inst-regs-direct! inst copies slots)
-              (let* ((sexp     (instruction->sexp inst))
-                     (has-dst  (not (null (opt-inst-dst inst))))
-                     ;; Rewrite all leaves; for instructions with a dst, the dst sits at
-                     ;; position 1 (immediately after the opcode tag) — leave it intact.
-                     (new-sexp (if has-dst
-                                   (list* (first sexp) (second sexp) (opt-map-tree c (cddr sexp)))
-                                   (cons  (first sexp) (opt-map-tree c (cdr sexp))))))
-                (if (equal sexp new-sexp) inst (sexp->instruction new-sexp)))))
+        (if-let ((slots (gethash (type-of inst) *opt-register-slot-table*)))
+          (%opt-rewrite-inst-regs-direct! inst copies slots)
+          (let* ((sexp     (instruction->sexp inst))
+                 (has-dst  (not (null (opt-inst-dst inst))))
+                 ;; Rewrite all leaves; for instructions with a dst, the dst sits at
+                 ;; position 1 (immediately after the opcode tag) — leave it intact.
+                 (new-sexp (if has-dst
+                               (list* (first sexp) (second sexp) (opt-map-tree c (cddr sexp)))
+                               (cons  (first sexp) (opt-map-tree c (cdr sexp))))))
+            (if (equal sexp new-sexp) inst (sexp->instruction new-sexp))))
       (error () inst))))
 
 ;; opt-pass-dead-store-elim and opt-pass-store-to-load-forward are in

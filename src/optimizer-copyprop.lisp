@@ -136,14 +136,13 @@
       (typecase inst
         (vm-move
          (let* ((dst (vm-move-dst inst))
-                 (src (%opt-copy-prop-canonical (vm-move-src inst) copies)))
-            (%opt-copy-prop-kill dst copies reverse)
-            (unless (eq dst src)
-              (%opt-copy-prop-add dst src copies reverse))))
+                (src (%opt-copy-prop-canonical (vm-move-src inst) copies)))
+           (%opt-copy-prop-kill dst copies reverse)
+           (unless (eq dst src)
+             (%opt-copy-prop-add dst src copies reverse))))
         (t
-          (let ((dst (opt-inst-dst inst)))
-            (when dst
-              (%opt-copy-prop-kill dst copies reverse))))))
+         (when-let ((dst (opt-inst-dst inst)))
+           (%opt-copy-prop-kill dst copies reverse)))))
     copies))
 
 (defun %opt-copy-prop-rewrite-inst (inst copies)
@@ -201,18 +200,17 @@
   "Compute the in/out copy environments for BLOCK, enqueue changed successors."
   (let* ((preds (bb-predecessors block))
          (incoming
-           (cond
-             ((null preds) (make-hash-table :test #'eq))
-             ((null (cdr preds))
-              (let ((pred-out (gethash (first preds) (cpps-out-envs state))))
-                (if pred-out
-                    (%opt-copy-prop-env-copy pred-out)
-                    (make-hash-table :test #'eq))))
-             (t (%opt-copy-prop-merge
-                 (mapcar (lambda (pred)
-                           (or (gethash pred (cpps-out-envs state))
-                               (make-hash-table :test #'eq)))
-                         preds)))))
+          (cond
+           ((null preds) (make-hash-table :test #'eq))
+           ((null (cdr preds))
+            (if-let ((pred-out (gethash (first preds) (cpps-out-envs state))))
+              (%opt-copy-prop-env-copy pred-out)
+              (make-hash-table :test #'eq)))
+           (t (%opt-copy-prop-merge
+               (mapcar (lambda (pred)
+                         (or (gethash pred (cpps-out-envs state))
+                             (make-hash-table :test #'eq)))
+                       preds)))))
          (old-in  (gethash block (cpps-in-envs state)))
          (changed nil))
     (unless (and old-in (%opt-copy-prop-env-equal-p old-in incoming))

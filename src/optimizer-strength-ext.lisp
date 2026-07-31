@@ -26,10 +26,9 @@
   (not (null (assoc (type-of inst) *opt-commutative-binop-table* :test #'eq))))
 
 (defun opt-copy-commutative-binop (inst dst lhs rhs)
-  (let ((entry (assoc (type-of inst) *opt-commutative-binop-table* :test #'eq)))
-    (if entry
-        (funcall (cdr entry) :dst dst :lhs lhs :rhs rhs)
-        inst)))
+  (if-let ((entry (assoc (type-of inst) *opt-commutative-binop-table* :test #'eq)))
+    (funcall (cdr entry) :dst dst :lhs lhs :rhs rhs)
+    inst))
 
 ;;; ─── Reassociate helpers ─────────────────────────────────────────────────
 

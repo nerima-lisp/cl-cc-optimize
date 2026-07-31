@@ -11,14 +11,13 @@
 (defun %opt-mod-by-const-seq (dst src divisor interval new-reg-fn)
   "Build mod via q = div-const(src), dst = src - divisor*q."
   (let ((q-reg (funcall new-reg-fn)))
-    (let ((q-seq (%opt-div-const-quotient-seq q-reg src divisor interval new-reg-fn)))
-      (when q-seq
-        (let ((divisor-reg (funcall new-reg-fn))
-              (prod-reg (funcall new-reg-fn)))
-          (append q-seq
-                  (list (make-vm-const :dst divisor-reg :value divisor)
-                        (make-vm-mul :dst prod-reg :lhs q-reg :rhs divisor-reg)
-                        (make-vm-sub :dst dst :lhs src :rhs prod-reg))))))))
+    (when-let ((q-seq (%opt-div-const-quotient-seq q-reg src divisor interval new-reg-fn)))
+      (let ((divisor-reg (funcall new-reg-fn))
+            (prod-reg (funcall new-reg-fn)))
+        (append q-seq
+                (list (make-vm-const :dst divisor-reg :value divisor)
+                      (make-vm-mul :dst prod-reg :lhs q-reg :rhs divisor-reg)
+                      (make-vm-sub :dst dst :lhs src :rhs prod-reg)))))))
 
 (defun %opt-pass-div-by-const/fr685 (instructions)
   "FR-685: lower safe integer division/modulo by known non-zero constants.
@@ -32,17 +31,17 @@ when range facts prove the dividend is an unsigned word."
          (counter (1+ (opt-max-reg-index instructions)))
          (result nil))
     (flet ((new-reg ()
-             (prog1 (intern (format nil "R~A" counter) :keyword)
-               (incf counter)))
+                    (prog1 (intern (format nil "R~A" counter) :keyword)
+                           (incf counter)))
            (const-val (reg)
-             (gethash reg env))
+                      (gethash reg env))
            (emit-seq (seq)
-             (dolist (inst seq) (push inst result)))
+                     (dolist (inst seq) (push inst result)))
            (kill-dst (inst)
-             (let ((dst (opt-inst-dst inst)))
-               (when dst (remhash dst env))))
+                     (when-let ((dst (opt-inst-dst inst)))
+                       (remhash dst env)))
            (advance (inst)
-             (%opt-transfer-interval-inst inst intervals)))
+                    (%opt-transfer-interval-inst inst intervals)))
       (dolist (inst instructions)
         (typecase inst
           (vm-label

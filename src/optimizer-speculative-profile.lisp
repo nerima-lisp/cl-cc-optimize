@@ -41,14 +41,13 @@
 
 (defun %opt-profile-record-range (profile site-id value)
   (when (numberp value)
-    (let ((current (gethash site-id (opt-profile-value-ranges profile))))
-      (if current
-          (progn
-            (setf (car current) (min (car current) value))
-            (setf (cdr current) (max (cdr current) value))
-            current)
-          (setf (gethash site-id (opt-profile-value-ranges profile))
-                (cons value value))))))
+    (if-let ((current (gethash site-id (opt-profile-value-ranges profile))))
+      (progn
+        (setf (car current) (min (car current) value))
+        (setf (cdr current) (max (cdr current) value))
+        current)
+      (setf (gethash site-id (opt-profile-value-ranges profile))
+            (cons value value)))))
 
 (defun opt-profile-record-edge (profile from to &optional (delta 1))
   "Increment the execution count for CFG edge FROM → TO."
@@ -128,11 +127,10 @@
 
 (defun opt-pgo-rotate-loop (loop-chain preferred-exit)
   "Rotate LOOP-CHAIN so PREFERRED-EXIT becomes the loop bottom."
-  (let ((index (position preferred-exit loop-chain :test #'equal)))
-    (if index
-        (append (subseq loop-chain (1+ index))
-                (subseq loop-chain 0 (1+ index)))
-        (copy-list loop-chain))))
+  (if-let ((index (position preferred-exit loop-chain :test #'equal)))
+    (append (subseq loop-chain (1+ index))
+            (subseq loop-chain 0 (1+ index)))
+    (copy-list loop-chain)))
 
 (defun opt-pgo-build-counter-plan (entry successors-alist)
   "Build an explicit BB/edge counter plan from CFG successor relations.

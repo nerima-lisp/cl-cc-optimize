@@ -15,8 +15,8 @@
   (let ((constants (make-hash-table :test #'eq)))
     (dolist (block blocks constants)
       (dolist (inst (bb-instructions block))
-        (let ((dst (opt-inst-dst inst)))
-          (when dst (remhash dst constants)))
+        (when-let ((dst (opt-inst-dst inst)))
+          (remhash dst constants))
         (when (typep inst 'vm-const)
           (setf (gethash (vm-dst inst) constants) t))))))
 
@@ -131,11 +131,10 @@ analysis."
                               uses))
                       succs))
       (dolist (succ succs)
-        (let ((pos (%opt-first-use-index-in-block succ reg)))
-          (when pos
-            (setf (bb-instructions succ)
-                  (%opt-insert-before-index (bb-instructions succ) pos
-                                            (list (%opt-copy-inst inst)))))))
+        (when-let ((pos (%opt-first-use-index-in-block succ reg)))
+          (setf (bb-instructions succ)
+                (%opt-insert-before-index (bb-instructions succ) pos
+                                          (list (%opt-copy-inst inst))))))
       (setf (bb-instructions def-block)
             (%opt-remove-nth (bb-instructions def-block) def-index))
       t)))

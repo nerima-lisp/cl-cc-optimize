@@ -9,32 +9,31 @@
 (in-package :cl-cc/optimize)
 
 (defun opt-build-specialization-plan (callee-label arguments constant-bindings
-                                      &key cache)
+                                                   &key cache)
   "Build a conservative clone/call-redirection plan for known constant arguments.
 
 Returns NIL when ARGUMENTS have no known constants. When CACHE is supplied, the
 same `(callee . signature)` pair reuses the earlier specialized name and marks
 the plan as a cache hit instead of requesting a new clone."
-  (let ((signature (%opt-constant-binding-signature arguments constant-bindings)))
-    (when signature
-      (let* ((cache-key (list callee-label signature))
-             (cached-name nil)
-             (cache-hit-p nil))
-        (when cache
-          (multiple-value-setq (cached-name cache-hit-p)
-            (gethash cache-key cache)))
-        (let ((specialized-name (or cached-name
-                                    (%opt-specialized-name callee-label signature))))
-          (when (and cache (not cache-hit-p))
-            (setf (gethash cache-key cache) specialized-name))
-          (make-opt-specialization-plan
-           :callee-label callee-label
-           :specialized-name specialized-name
-           :signature signature
-           :static-args signature
-           :dynamic-args (%opt-dynamic-parameters arguments signature)
-           :clone-needed-p (not cache-hit-p)
-           :cache-hit-p cache-hit-p))))))
+  (when-let ((signature (%opt-constant-binding-signature arguments constant-bindings)))
+    (let* ((cache-key (list callee-label signature))
+           (cached-name nil)
+           (cache-hit-p nil))
+      (when cache
+        (multiple-value-setq (cached-name cache-hit-p)
+                             (gethash cache-key cache)))
+      (let ((specialized-name (or cached-name
+                                  (%opt-specialized-name callee-label signature))))
+        (when (and cache (not cache-hit-p))
+          (setf (gethash cache-key cache) specialized-name))
+        (make-opt-specialization-plan
+         :callee-label callee-label
+         :specialized-name specialized-name
+         :signature signature
+         :static-args signature
+         :dynamic-args (%opt-dynamic-parameters arguments signature)
+         :clone-needed-p (not cache-hit-p)
+         :cache-hit-p cache-hit-p)))))
 
 (defun %opt-constant-bindings-from-call-args (params args const-track)
   (let ((result nil))

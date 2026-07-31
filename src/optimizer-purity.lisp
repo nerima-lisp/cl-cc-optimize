@@ -47,11 +47,11 @@ edges."
                       (let ((callee (gethash (vm-func-reg inst) reg-track)))
                         (when (and callee (gethash callee func-defs))
                           (pushnew callee callees :test #'equal)))
-                      (let ((dst (opt-inst-dst inst)))
-                        (when dst (remhash dst reg-track))))
+                      (when-let ((dst (opt-inst-dst inst)))
+                        (remhash dst reg-track)))
                      (t
-                      (let ((dst (opt-inst-dst inst)))
-                        (when dst (remhash dst reg-track))))))
+                      (when-let ((dst (opt-inst-dst inst)))
+                        (remhash dst reg-track)))))
                  (setf (gethash label graph) callees)))
              func-defs)
     graph))
@@ -127,9 +127,8 @@ pure in PURE-LABELS. Unknown calls remain conservative and therefore impure."
                      (typep inst 'vm-label)
                      (opt-inst-pure-p inst))
            (return-from opt-function-body-transitively-pure-p nil))
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-             (remhash dst reg-track))))))))
+         (when-let ((dst (opt-inst-dst inst)))
+           (remhash dst reg-track)))))))
 
 (defun opt-infer-transitive-function-purity (instructions)
   "Infer a conservative set of transitively pure function labels.

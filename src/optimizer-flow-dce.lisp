@@ -74,14 +74,13 @@
         (dead    (make-hash-table :test #'eq)))
     (dolist (inst instructions dead)
       (%opt-drop-pending-targets-with-reg pending (opt-inst-dst inst))
-      (let ((store-target (%opt-collection-store-target inst)))
-        (if store-target
-            (let ((previous (gethash store-target pending)))
-              (when previous
-                (setf (gethash previous dead) t))
-              (clrhash pending)
-              (setf (gethash store-target pending) inst))
-            (%opt-clear-pending-aliasing-collection-stores pending inst))))))
+      (if-let ((store-target (%opt-collection-store-target inst)))
+        (let ((previous (gethash store-target pending)))
+          (when previous
+            (setf (gethash previous dead) t))
+          (clrhash pending)
+          (setf (gethash store-target pending) inst))
+        (%opt-clear-pending-aliasing-collection-stores pending inst)))))
 
 (defun opt-pass-dce (instructions)
   "Dead code elimination via global usedness analysis.

@@ -20,14 +20,13 @@
 
 (defun %opt-binding-value (key bindings)
   (cond
-    ((hash-table-p bindings)
-     (gethash key bindings))
-    (bindings
-     (let ((cell (assoc key bindings :test #'equal)))
-       (if cell
-           (values (%opt-normalize-binding-cell-value cell) t)
-           (values nil nil))))
-    (t (values nil nil))))
+   ((hash-table-p bindings)
+    (gethash key bindings))
+   (bindings
+    (if-let ((cell (assoc key bindings :test #'equal)))
+      (values (%opt-normalize-binding-cell-value cell) t)
+      (values nil nil)))
+   (t (values nil nil))))
 
 (defun %opt-parameter-constant (parameter index constant-bindings)
   (multiple-value-bind (value present-p)

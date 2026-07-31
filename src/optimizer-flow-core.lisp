@@ -204,10 +204,9 @@ The transform is skipped unless all structural checks pass."
 
 (defun opt-pass-loop-rotation (instructions)
   "Rotate loops using CFG natural-loop detection, falling back to linear matching."
-  (let ((candidate (%opt-loop-cfg-candidate instructions)))
-    (if candidate
-        (%opt-loop-rotation-apply-candidate instructions candidate)
-        (%opt-pass-loop-rotation-linear instructions))))
+  (if-let ((candidate (%opt-loop-cfg-candidate instructions)))
+    (%opt-loop-rotation-apply-candidate instructions candidate)
+    (%opt-pass-loop-rotation-linear instructions)))
 
 ;;; ─── Conservative loop peeling (FR-170 subset) ──────────────────────────
 

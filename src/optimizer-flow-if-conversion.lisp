@@ -108,16 +108,15 @@ one select. Later dead-label cleanup can remove the now-unreferenced join label.
          (result nil)
          (i 0))
     (loop while (< i n)
-          do (let ((candidate (%opt-if-conversion-candidate vec i label-counts)))
-               (if candidate
-                   (progn
-                     (push (getf candidate :cond-inst) result)
-                     (push (getf candidate :select) result)
-                     ;; Keep the join label in-place. It is harmless if dead and
-                     ;; preserves layout for diagnostics until dead-label cleanup.
-                     (push (aref vec (getf candidate :end)) result)
-                     (setf i (1+ (getf candidate :end))))
-                   (progn
-                     (push (aref vec i) result)
-                     (incf i)))))
+          do (if-let ((candidate (%opt-if-conversion-candidate vec i label-counts)))
+               (progn
+                 (push (getf candidate :cond-inst) result)
+                 (push (getf candidate :select) result)
+                 ;; Keep the join label in-place. It is harmless if dead and
+                 ;; preserves layout for diagnostics until dead-label cleanup.
+                 (push (aref vec (getf candidate :end)) result)
+                 (setf i (1+ (getf candidate :end))))
+               (progn
+                 (push (aref vec i) result)
+                 (incf i))))
     (nreverse result)))

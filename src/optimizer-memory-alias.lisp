@@ -24,25 +24,22 @@ vm-move propagates the source root. Any other destination write kills the root f
     (dolist (inst instructions roots)
       (typecase inst
         (vm-move
-          (let ((dst (vm-move-dst inst)))
-            (when dst
-              (multiple-value-bind (root found-p) (gethash (vm-move-src inst) roots)
-                (if found-p (setf (gethash dst roots) root)
-                  (remhash dst roots))))))
+         (when-let ((dst (vm-move-dst inst)))
+           (multiple-value-bind (root found-p) (gethash (vm-move-src inst) roots)
+             (if found-p (setf (gethash dst roots) root)
+                 (remhash dst roots)))))
         (vm-get-global
-          (let ((dst (cl-cc/vm:vm-get-global-dst inst)))
-            (when dst
-              (remhash dst roots))))
+         (when-let ((dst (cl-cc/vm:vm-get-global-dst inst)))
+           (remhash dst roots)))
         (vm-slot-read
-          (let ((dst (cl-cc/vm:vm-slot-read-dst inst)))
-            (when dst
-              (remhash dst roots))))
+         (when-let ((dst (cl-cc/vm:vm-slot-read-dst inst)))
+           (remhash dst roots)))
         (t
-          (let ((dst (opt-inst-dst inst)))
-            (cond
-              ((and dst (opt-heap-root-inst-p inst))
-                (setf (gethash dst roots) dst))
-              (dst (remhash dst roots)))))))))
+         (let ((dst (opt-inst-dst inst)))
+           (cond
+            ((and dst (opt-heap-root-inst-p inst))
+             (setf (gethash dst roots) dst))
+            (dst (remhash dst roots)))))))))
 
 ;;; FR-017: Alias Analysis / Memory Disambiguation — Type-Based Alias
 ;;; Analysis (TBAA) determines when two heap references cannot alias,
@@ -64,15 +61,13 @@ callers can pass it directly to `opt-tbaa-must-not-alias-p'."
     (dolist (inst instructions facts)
       (let ((dst (opt-inst-dst inst)))
         (when (and dst (opt-heap-root-inst-p inst))
-          (let ((kind (opt-heap-root-kind inst)))
-            (when kind
-              (setf (gethash dst facts) kind))))))
+          (when-let ((kind (opt-heap-root-kind inst)))
+            (setf (gethash dst facts) kind)))))
     (maphash
-      (lambda (reg root)
-        (let ((kind (gethash root facts)))
-          (when kind
-            (setf (gethash reg facts) kind))))
-      roots)
+     (lambda (reg root)
+       (when-let ((kind (gethash root facts)))
+         (setf (gethash reg facts) kind)))
+     roots)
     facts))
 
 (defun %opt-tbaa-kind (reg type-facts)

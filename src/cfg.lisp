@@ -74,21 +74,21 @@
                 (setf (aref leader i) 1))
                ((or vm-jump vm-jump-zero)
                 (when (< (1+ i) n) (setf (aref leader (1+ i)) 1))
-                (let ((tgt (cfg-find-label-position vec n (vm-label-name inst))))
-                  (when tgt (setf (aref leader tgt) 1))))
+                (when-let ((tgt (cfg-find-label-position vec n (vm-label-name inst))))
+                  (setf (aref leader tgt) 1)))
                ((or vm-ret vm-halt)
                 (when (< (1+ i) n) (setf (aref leader (1+ i)) 1)))))
     leader))
 
 (defun %cfg-fallthrough-edge (b next-start blocks-by-start)
   "Add a fall-through edge from B to the block starting at NEXT-START, if any."
-  (let ((fall (and next-start (gethash next-start blocks-by-start))))
-    (when fall (cfg-add-edge b fall))))
+  (when-let ((fall (and next-start (gethash next-start blocks-by-start))))
+    (cfg-add-edge b fall)))
 
 (defun %cfg-jump-target-edge (b inst g)
   "Add an unconditional jump edge from B to the explicit target of INST."
-  (let ((tgt (cfg-get-block-by-label g (vm-label-name inst))))
-    (when tgt (cfg-add-edge b tgt))))
+  (when-let ((tgt (cfg-get-block-by-label g (vm-label-name inst))))
+    (cfg-add-edge b tgt)))
 
 (defun %cfg-connect-block (b insts g blocks-by-start next-start)
   "Wire outgoing edges for block B whose instructions are INSTS."

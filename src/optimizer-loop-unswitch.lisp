@@ -40,8 +40,8 @@
   "Return registers defined by INSTS."
   (let ((defs (make-hash-table :test #'eq)))
     (dolist (inst insts defs)
-      (let ((dst (opt-inst-dst inst)))
-        (when dst (setf (gethash dst defs) t))))))
+      (when-let ((dst (opt-inst-dst inst)))
+        (setf (gethash dst defs) t)))))
 
 (defun %loop-unswitch-def-index (body reg)
   "Return the first index in BODY that defines REG, if any."
@@ -200,9 +200,8 @@ therefore policy-gated in the default pipeline by SPEED=3 and SPACE=0."
     (loop for i from 0 below n
           for candidate = (%loop-unswitch-loop-candidate-at vec i)
           when candidate
-            do (let ((branch-info (%loop-unswitch-invariant-branch
-                                   (getf candidate :body))))
-                 (when branch-info
-                   (return-from opt-pass-loop-unswitch
-                     (%loop-unswitch-apply-candidate instructions candidate branch-info)))))
+          do (when-let ((branch-info (%loop-unswitch-invariant-branch
+               (getf candidate :body))))
+               (return-from opt-pass-loop-unswitch
+                            (%loop-unswitch-apply-candidate instructions candidate branch-info))))
     instructions))

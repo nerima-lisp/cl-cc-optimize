@@ -87,14 +87,13 @@ and never across CFG back-edges."
           (n (length vec)))
       (loop for i from 0 below n
             for inst = (aref vec i)
-             do (let ((handler (loop for entry in *opt-jump-thread-table*
-                                      for type = (car entry)
-                                      for fn = (cdr entry)
-                                      when (typep inst type) return fn)))
-                  (if handler
-                      (let ((new (funcall handler inst vec i idx)))
-                        (when new (push new result)))
-                      (push inst result))))
+            do (if-let ((handler (loop for entry in *opt-jump-thread-table*
+                 for type = (car entry)
+                 for fn = (cdr entry)
+                 when (typep inst type) return fn)))
+                 (when-let ((new (funcall handler inst vec i idx)))
+                   (push new result))
+                 (push inst result)))
       (nreverse result))))
 
 (define-inst-type-predicate %opt-jump-comparison-p (or vm-lt vm-le vm-gt vm-ge vm-eq vm-num-eq) "Return T when INST is a comparison supported by jump fact propagation.")
@@ -154,8 +153,9 @@ successors."
   (copy-list (getf fact :constants)))
 
 (defun %opt-jump-known-constant (reg constants)
-  (let ((cell (assoc reg constants :test #'eq)))
-    (if cell (values (cdr cell) t) (values nil nil))))
+  (if-let ((cell (assoc reg constants :test #'eq)))
+    (values (cdr cell) t)
+    (values nil nil)))
 
 (defun %opt-jump-put-constant (reg value constants)
   (acons reg value (remove reg constants :key #'car :test #'eq)))
@@ -233,9 +233,8 @@ Returns the still-live fact after scanning the block."
         (let ((live-fact (%opt-jump-rewrite-block-with-fact
                           block (gethash block facts))))
           (dolist (succ (bb-successors block))
-            (let ((edge-fact (%opt-jump-edge-fact block succ cfg live-fact)))
-              (when edge-fact
-                (setf (gethash succ facts) edge-fact))))))
+            (when-let ((edge-fact (%opt-jump-edge-fact block succ cfg live-fact)))
+              (setf (gethash succ facts) edge-fact)))))
       (cfg-flatten cfg))))
 
 (defun opt-pass-jump-threading-with-propagation (instructions)

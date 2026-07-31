@@ -17,13 +17,13 @@
     (loop for i from 0 below end
           for inst = (aref vec i)
           do (cond
-               ((typep inst 'vm-const)
-                (if (integerp (vm-value inst))
-                    (setf (gethash (vm-dst inst) env) (vm-value inst))
-                    (remhash (vm-dst inst) env)))
-               (t
-                (let ((dst (opt-inst-dst inst)))
-                  (when dst (remhash dst env))))))
+              ((typep inst 'vm-const)
+               (if (integerp (vm-value inst))
+                   (setf (gethash (vm-dst inst) env) (vm-value inst))
+                   (remhash (vm-dst inst) env)))
+              (t
+               (when-let ((dst (opt-inst-dst inst)))
+                 (remhash dst env)))))
     env))
 
 (defun %opt-has-external-jump-to-label-p (vec label-name start end)

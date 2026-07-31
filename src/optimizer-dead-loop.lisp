@@ -37,8 +37,8 @@ hard barriers so volatile loops are never deleted."
   "Return an EQ set of destination registers defined by INSTS."
   (let ((defs (make-hash-table :test #'eq)))
     (dolist (inst insts defs)
-      (let ((dst (opt-inst-dst inst)))
-        (when dst (setf (gethash dst defs) t))))))
+      (when-let ((dst (opt-inst-dst inst)))
+        (setf (gethash dst defs) t)))))
 
 (defun %dead-loop-defs-unused-after-p (insts read-after)
   "Return T when no destination defined by INSTS is read after the loop."
@@ -89,14 +89,13 @@ Matches:
          (i 0)
          (changed nil))
     (loop while (< i n)
-          do (let ((candidate (%dead-loop-linear-candidate-at vec i)))
-               (if candidate
-                   (progn
-                     (setf changed t
-                           i (getf candidate :exit-pos)))
-                   (progn
-                     (push (aref vec i) result)
-                     (incf i)))))
+          do (if-let ((candidate (%dead-loop-linear-candidate-at vec i)))
+               (progn
+                 (setf changed t
+                       i (getf candidate :exit-pos)))
+               (progn
+                 (push (aref vec i) result)
+                 (incf i))))
     (values (nreverse result) changed)))
 
 (defun opt-pass-dead-loop-elimination (instructions)

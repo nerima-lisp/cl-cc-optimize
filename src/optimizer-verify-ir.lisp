@@ -19,13 +19,12 @@
 
 (defun %opt-dump-vm-context (instructions inst &key (radius 2))
   (with-output-to-string (s)
-    (let ((pos (position inst instructions :test #'eq)))
-      (if pos
-          (loop for i from (max 0 (- pos radius)) below (min (length instructions) (+ pos radius 1))
-                for cur = (nth i instructions)
-                do (format s "~:[  ~;> ~]~D: ~S~%" (= i pos) i (instruction->sexp cur)))
-          (dolist (cur instructions)
-            (format s "  ~S~%" (instruction->sexp cur)))))))
+                         (if-let ((pos (position inst instructions :test #'eq)))
+                           (loop for i from (max 0 (- pos radius)) below (min (length instructions) (+ pos radius 1))
+                                 for cur = (nth i instructions)
+                                 do (format s "~:[  ~;> ~]~D: ~S~%" (= i pos) i (instruction->sexp cur)))
+                           (dolist (cur instructions)
+                             (format s "  ~S~%" (instruction->sexp cur))))))
 
 (defun %opt-signal-ir-verification (pass-name invariant detail context)
   (error 'opt-ir-verification-error
@@ -78,13 +77,12 @@
                                        (format nil "register ~A used before definition in ~S"
                                                reg (instruction->sexp inst))
                                        (%opt-dump-vm-context instructions inst))))
-      (let ((dst (opt-inst-dst inst)))
-        (when dst
-          ;; VM registers may be reassigned, but live intervals for the same register may
-          ;; not overlap. A linear VM stream has a new non-overlapping interval once the
-          ;; previous value is no longer read; conservatively reject consecutive WAW with
-          ;; no intervening read as a stale interval conflict.
-          (setf (gethash dst defined) t))))
+      (when-let ((dst (opt-inst-dst inst)))
+        ;; VM registers may be reassigned, but live intervals for the same register may
+        ;; not overlap. A linear VM stream has a new non-overlapping interval once the
+        ;; previous value is no longer read; conservatively reject consecutive WAW with
+        ;; no intervening read as a stale interval conflict.
+        (setf (gethash dst defined) t)))
     (dolist (block (%opt-vm-blocks instructions))
       (let ((last (car (last block))))
         (unless (and last (%opt-vm-terminator-p last))
@@ -132,13 +130,12 @@
                                        (format nil "~S" block)))
         (setf (gethash param defs) block))
       (dolist (inst (%opt-call package-name "IRB-INSTS" block))
-        (let ((result (%opt-call package-name "IRI-RESULT" inst)))
-          (when result
-            (when (gethash result defs)
-              (%opt-signal-ir-verification pass-name :live-interval-consistency
-                                           (format nil "SSA value ~S defined more than once" result)
-                                           (format nil "~S" inst)))
-            (setf (gethash result defs) block)))))
+        (when-let ((result (%opt-call package-name "IRI-RESULT" inst)))
+          (when (gethash result defs)
+            (%opt-signal-ir-verification pass-name :live-interval-consistency
+                                         (format nil "SSA value ~S defined more than once" result)
+                                         (format nil "~S" inst)))
+          (setf (gethash result defs) block))))
     (dolist (block blocks)
       (dolist (inst (%opt-call package-name "IRB-INSTS" block))
         (dolist (operand (%opt-call package-name "IR-OPERANDS" inst))
@@ -181,13 +178,12 @@
                    pass-name :undefined-register-use
                    (format nil "MIR value ~S used before definition" value)
                    (format nil "~S" inst))))))
-          (let ((dst (%opt-call "CL-CC/MIR" "MIRI-DST" inst)))
-            (when dst
-              (when (gethash dst defs)
-                (%opt-signal-ir-verification pass-name :live-interval-consistency
-                                             (format nil "MIR value ~S defined more than once" dst)
-                                             (format nil "~S" inst)))
-              (setf (gethash dst defs) block))))))
+          (when-let ((dst (%opt-call "CL-CC/MIR" "MIRI-DST" inst)))
+            (when (gethash dst defs)
+              (%opt-signal-ir-verification pass-name :live-interval-consistency
+                                           (format nil "MIR value ~S defined more than once" dst)
+                                           (format nil "~S" inst)))
+            (setf (gethash dst defs) block)))))
     t))
 
 (defun opt-verify-ir (ir &key pass-name)

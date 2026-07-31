@@ -73,12 +73,11 @@
 (defun %opt-superopt-find-shorter-equivalent (window)
   "Return a shorter equivalent replacement for WINDOW, or NIL."
   (when (%opt-superopt-move-window-p window)
-    (let ((registers (%opt-superopt-window-registers window)))
-      (when registers
-        (find-if (lambda (candidate)
-                   (%opt-superopt-equivalent-p window candidate registers))
-                 (%opt-superopt-enumerate-move-candidates
-                  registers (1- (length window))))))))
+    (when-let ((registers (%opt-superopt-window-registers window)))
+      (find-if (lambda (candidate)
+                 (%opt-superopt-equivalent-p window candidate registers))
+               (%opt-superopt-enumerate-move-candidates
+                registers (1- (length window)))))))
 
 (defun %opt-superopt-rewrite-once (instructions)
   "Apply the first discovered FR-750 peephole rewrite."

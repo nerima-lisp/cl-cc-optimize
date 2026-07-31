@@ -22,12 +22,12 @@ single-block instruction streams so existing behavior stays intact."
            (if store
                (progn (%mps-emit state
                                  (make-vm-move :dst dst :src (cl-cc/vm:vm-set-global-src store)))
-                      (when dst
-                        (%mps-flush-dependent-on-reg state dst :exclude-key key)))
+                 (when dst
+                   (%mps-flush-dependent-on-reg state dst :exclude-key key)))
                (progn (when dst
                         (%mps-flush-dependent-on-reg state dst))
-                      (%mps-flush-one state key)
-                      (%mps-emit state inst)))))
+                 (%mps-flush-one state key)
+                 (%mps-emit state inst)))))
         (vm-slot-read
          (let* ((key   (opt-slot-alias-key (cl-cc/vm:vm-slot-read-obj-reg inst)
                                            (cl-cc/vm:vm-slot-read-slot-name inst)
@@ -38,24 +38,24 @@ single-block instruction streams so existing behavior stays intact."
                (progn (%mps-emit
                        state
                        (make-vm-move :dst dst :src (cl-cc/vm:vm-slot-write-value-reg store)))
-                      (when dst
-                        (%mps-flush-dependent-on-reg state dst :exclude-key key)))
+                 (when dst
+                   (%mps-flush-dependent-on-reg state dst :exclude-key key)))
                (progn (when dst
                         (%mps-flush-dependent-on-reg state dst))
-                      (%mps-flush-one state key)
-                      (%mps-emit state inst)))))
+                 (%mps-flush-one state key)
+                 (%mps-emit state inst)))))
         (vm-set-global
          (%mps-remember-store state (list :global (cl-cc/vm:vm-set-global-name inst)) inst))
         (vm-slot-write
          (%mps-remember-store state (opt-slot-alias-key (cl-cc/vm:vm-slot-write-obj-reg inst)
-                                                         (cl-cc/vm:vm-slot-write-slot-name inst)
-                                                         alias-roots)
+                                                        (cl-cc/vm:vm-slot-write-slot-name inst)
+                                                        alias-roots)
                               inst))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst (%mps-flush-dependent-on-reg state dst)))
+         (when-let ((dst (opt-inst-dst inst)))
+           (%mps-flush-dependent-on-reg state dst))
          (unless (opt-inst-pure-p inst) (%mps-flush-all state))
-          (%mps-emit state inst))))
+         (%mps-emit state inst))))
     (%mps-flush-all state)
     (nreverse (mps-result state))))
 
@@ -174,9 +174,8 @@ CFG-aware forwarding models globals and slot accesses keyed by alias roots."
         ((or vm-set-global vm-slot-write)
          (%available-store-remember-store state inst alias-roots))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-             (%available-store-kill-dependent-on-reg state dst)))
+         (when-let ((dst (opt-inst-dst inst)))
+           (%available-store-kill-dependent-on-reg state dst))
          (when (%available-store-clobber-inst-p inst)
            (clrhash state)))))))
 
@@ -215,9 +214,8 @@ Conservative straight-line scan: tracks vm-const and vm-move aliases within BLOC
                        (remhash dst env)))
                  (remhash dst env)))))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-             (remhash dst env))))))
+         (when-let ((dst (opt-inst-dst inst)))
+           (remhash dst env)))))
     (gethash reg env)))
 
 (defun %available-store-edge-feasible-p (pred succ)
@@ -300,9 +298,8 @@ loads in-place."
         ((or vm-set-global vm-slot-write)
          (%available-store-remember-store state inst alias-roots))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-             (%available-store-kill-dependent-on-reg state dst)))
+         (when-let ((dst (opt-inst-dst inst)))
+           (%available-store-kill-dependent-on-reg state dst))
          (when (%available-store-clobber-inst-p inst)
            (clrhash state)))))))
 

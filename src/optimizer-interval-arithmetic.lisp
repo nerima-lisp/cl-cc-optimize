@@ -75,9 +75,8 @@ intervals return NIL rather than pretending the result is narrower than proven."
 For a non-negative interval with width W, the result is 2^W-1. Bits outside
 that mask are therefore known zero for every value in INTERVAL. Returns NIL
 when INTERVAL has no proven non-negative width bound."
-  (let ((width (opt-interval-bit-width interval)))
-    (when width
-      (1- (ash 1 width)))))
+  (when-let ((width (opt-interval-bit-width interval)))
+    (1- (ash 1 width))))
 
 (defun opt-interval-fits-fixnum-width-p
     (interval &optional (limit-width (integer-length +opt-range-positive-infinity+)))

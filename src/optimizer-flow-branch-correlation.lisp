@@ -71,16 +71,15 @@ incoming edges agree on the predicate outcome. The returned plist contains:
   :pred  instruction type
   :src   predicate source register
   :value replacement constant (1 on fallthrough, 0 on taken branch)."
-  (let ((preds (bb-predecessors block)))
-    (when preds
-      (let ((facts (mapcar (lambda (pred)
-                             (%opt-branch-predicate-fact-from-predecessor pred block))
-                           preds)))
-        (when (and (every #'identity facts)
-                   (every (lambda (fact)
-                            (%opt-same-branch-fact-p fact (first facts)))
-                          (rest facts)))
-          (first facts))))))
+  (when-let ((preds (bb-predecessors block)))
+    (let ((facts (mapcar (lambda (pred)
+                           (%opt-branch-predicate-fact-from-predecessor pred block))
+                         preds)))
+      (when (and (every #'identity facts)
+                 (every (lambda (fact)
+                          (%opt-same-branch-fact-p fact (first facts)))
+                        (rest facts)))
+        (first facts)))))
 
 (defun opt-pass-branch-correlation (instructions)
   "Propagate known predicate outcomes from a dominating conditional edge.

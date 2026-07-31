@@ -55,9 +55,8 @@ This intentionally models only straight-line versioning (no MemoryPhi)."
                        (remhash dst env)))
                  (remhash dst env)))))
         (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-             (remhash dst env))))))
+         (when-let ((dst (opt-inst-dst inst)))
+           (remhash dst env)))))
     (gethash reg env)))
 
 (defun %opt-memory-ssa-edge-feasible-p (pred succ)
@@ -168,8 +167,7 @@ for that BLOCK/location pair. Returns two values:
 
 (defun opt-memory-ssa-version-at (inst annotations &key (point :in))
   "Return memory version for INST in ANNOTATIONS at POINT (:in or :out)."
-  (let ((entry (gethash inst annotations)))
-    (when entry
-      (ecase point
-        (:in (getf entry :in))
-        (:out (getf entry :out))))))
+  (when-let ((entry (gethash inst annotations)))
+    (ecase point
+      (:in (getf entry :in))
+      (:out (getf entry :out)))))

@@ -104,12 +104,11 @@ returns the merged exit-state interval table for convenience callers."
 
 (defun %opt-narrow-state-reg (state reg constraint)
   "Intersect REG in STATE with CONSTRAINT. Return NIL if the edge is infeasible."
-  (let ((narrowed (%opt-interval-intersect
-                   (%opt-state-interval-or-top state reg)
-                   constraint)))
-    (when narrowed
-      (setf (gethash reg state) narrowed)
-      state)))
+  (when-let ((narrowed (%opt-interval-intersect
+    (%opt-state-interval-or-top state reg)
+    constraint)))
+    (setf (gethash reg state) narrowed)
+    state))
 
 (defun %opt-last-instruction-of-type (instructions type)
   (find-if (lambda (inst) (typep inst type)) (reverse instructions)))

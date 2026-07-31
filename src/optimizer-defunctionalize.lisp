@@ -47,10 +47,9 @@
               inst)))))
 
 (defun %opt-defunctionalize-call (inst constants)
-  (let ((known-fn (%opt-known-function-reg (vm-func-reg inst) constants)))
-    (if known-fn
-        (make-vm-call :dst (vm-dst inst) :func known-fn :args (vm-args inst))
-        inst)))
+  (if-let ((known-fn (%opt-known-function-reg (vm-func-reg inst) constants)))
+    (make-vm-call :dst (vm-dst inst) :func known-fn :args (vm-args inst))
+    inst))
 
 (defun opt-pass-defunctionalize (instructions)
   "FR-676: convert constant-proven higher-order calls to direct vm-call sites."

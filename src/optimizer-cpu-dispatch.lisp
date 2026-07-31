@@ -1,7 +1,6 @@
 ;;;; packages/optimize/src/optimizer-cpu-dispatch.lisp — FR-616 CPU Feature Dispatch
 ;;;; Multi-versioned functions selected at runtime via CPUID.
 ;;;; GCC -march=native / IFUNC / glibc multiarch equivalent.
-
 (in-package :cl-cc/optimize)
 
 ;;; ──── CPU feature detection ────
@@ -44,24 +43,24 @@ Returns a list of feature strings."
 Usage: (define-cpu-version matmul (:avx2 :fma) ...)"
   (let ((version-name (intern (format nil "~A-~{~A~^-~}" name features))))
     `(progn
-       (defun ,version-name ,@body)
-       (push (cons ',features (function ,version-name))
-             (gethash ',name *cpu-dispatched-functions*)))))
+      (defun ,version-name ,@body)
+      (push
+        (cons ',features (function ,version-name))
+        (gethash ',name *cpu-dispatched-functions*)))))
 
 (defun resolve-cpu-version (func-name)
   "Select the best available CPU version of FUNC-NAME.
 Returns the function object for the best matching feature set."
-  (let ((versions (gethash func-name *cpu-dispatched-functions*)))
-    (when versions
-      ;; Sort by feature set size (more features = better)
-      (let ((sorted (sort (copy-list versions) #'> :key (lambda (v) (length (car v))))))
-        (dolist (entry sorted)
-          (let ((features (car entry))
-                (fn (cdr entry)))
-            (when (every (lambda (f) (member f *cpu-features*)) features)
-              (return-from resolve-cpu-version fn)))))
-      ;; No version matches: fall back to last (baseline)
-      (cdr (first (last versions))))))
+  (when-let ((versions (gethash func-name *cpu-dispatched-functions*)))
+    ;; Sort by feature set size (more features = better)
+    (let ((sorted (sort (copy-list versions) #'> :key (lambda (v) (length (car v))))))
+      (dolist (entry sorted)
+        (let ((features (car entry))
+              (fn (cdr entry)))
+          (when (every (lambda (f) (member f *cpu-features*)) features)
+            (return-from resolve-cpu-version fn)))))
+    ;; No version matches: fall back to last (baseline)
+    (cdr (first (last versions)))))
 
 ;;; ──── IFUNC-style dispatch ────
 (defmacro define-dispatched (name &body versions)

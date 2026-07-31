@@ -126,18 +126,16 @@ analysis conservative and avoids treating nested function internals as roots."
                  (setf (gethash (vm-dst inst) reg-track) label)
                  (remhash (vm-dst inst) reg-track))))
           ((or vm-call vm-tail-call)
-           (let ((label (gethash (vm-func-reg inst) reg-track)))
-             (when label
-               (setf (gethash label roots) t)))
-           (let ((dst (opt-inst-dst inst)))
-             (when dst (remhash dst reg-track))))
+           (when-let ((label (gethash (vm-func-reg inst) reg-track)))
+             (setf (gethash label roots) t))
+           (when-let ((dst (opt-inst-dst inst)))
+             (remhash dst reg-track)))
           (vm-set-global
-           (let ((label (gethash (vm-src inst) reg-track)))
-             (when label
-               (setf (gethash label roots) t))))
+           (when-let ((label (gethash (vm-src inst) reg-track)))
+             (setf (gethash label roots) t)))
           (t
-           (let ((dst (opt-inst-dst inst)))
-             (when dst (remhash dst reg-track)))))))))
+           (when-let ((dst (opt-inst-dst inst)))
+             (remhash dst reg-track))))))))
 
 (defun opt-reachable-function-labels (graph roots)
   "Return an EQUAL hash-table of function labels reachable in GRAPH from ROOTS."

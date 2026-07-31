@@ -8,9 +8,8 @@
   (let ((def-sites (make-hash-table :test #'eq)))
     (loop for b across (cfg-blocks cfg)
           do (dolist (inst (bb-instructions b))
-               (let ((dst (opt-inst-dst inst)))
-                 (when dst
-                   (pushnew b (gethash dst def-sites) :test #'eq)))))
+               (when-let ((dst (opt-inst-dst inst)))
+                 (pushnew b (gethash dst def-sites) :test #'eq))))
     def-sites))
 
 ;;; ─── LICM helper: find loop headers ──────────────────────────────────────
@@ -43,8 +42,8 @@
   (let ((regs (make-hash-table :test #'eq)))
     (maphash (lambda (member _)
                (dolist (inst (bb-instructions member))
-                 (let ((dst (opt-inst-dst inst)))
-                   (when dst (setf (gethash dst regs) t)))))
+                 (when-let ((dst (opt-inst-dst inst)))
+                   (setf (gethash dst regs) t))))
              members)
     regs))
 

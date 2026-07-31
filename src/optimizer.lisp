@@ -117,12 +117,11 @@
 
 (defun opt-simplify-type-pred-with-producer (inst producer-facts)
   "Simplify unary type predicate INST using producer facts for its source register."
-  (let ((producer-type (gethash (vm-src inst) producer-facts)))
-    (when producer-type
-      (dolist (rule (gethash (type-of inst) *opt-algebraic-identity-rules*) nil)
-        (let ((producer-types (%opt-producer-condition-types (car rule))))
-          (when (member producer-type producer-types :test #'eq)
-            (return (%opt-apply-algebraic-action (cdr rule) (vm-dst inst) nil nil))))))))
+  (when-let ((producer-type (gethash (vm-src inst) producer-facts)))
+    (dolist (rule (gethash (type-of inst) *opt-algebraic-identity-rules*) nil)
+      (let ((producer-types (%opt-producer-condition-types (car rule))))
+        (when (member producer-type producer-types :test #'eq)
+          (return (%opt-apply-algebraic-action (cdr rule) (vm-dst inst) nil nil)))))))
 
 (defun %opt-clear-derived-facts (dst env low-bit-facts producer-facts)
   "Clear all non-structural derived facts for destination register DST."
@@ -133,13 +132,12 @@
 
 (defun %opt-record-producer-fact (inst env low-bit-facts producer-facts)
   "Record TYPE-OF INST as a producer fact for its destination when rule-relevant."
-  (let ((dst (opt-inst-dst inst)))
-    (when dst
-      (remhash dst env)
-      (remhash dst low-bit-facts)
-      (if (%opt-algebraic-producer-type-p (type-of inst))
-          (setf (gethash dst producer-facts) (type-of inst))
-          (remhash dst producer-facts)))))
+  (when-let ((dst (opt-inst-dst inst)))
+    (remhash dst env)
+    (remhash dst low-bit-facts)
+    (if (%opt-algebraic-producer-type-p (type-of inst))
+        (setf (gethash dst producer-facts) (type-of inst))
+        (remhash dst producer-facts))))
 
 (defun %opt-branch-target-labels (instructions)
   "Return a hash table of labels that are explicit branch targets."
@@ -248,10 +246,9 @@
   "Return T when unary INST can be safely folded for constant VALUE.
    Dispatch is data-driven via *opt-unary-fold-eligible-predicates*;
    absent types default to NUMBERP."
-  (let ((pred (gethash (type-of inst) *opt-unary-fold-eligible-predicates*)))
-    (if pred
-        (funcall pred value)
-        (numberp value))))
+  (if-let ((pred (gethash (type-of inst) *opt-unary-fold-eligible-predicates*)))
+    (funcall pred value)
+    (numberp value)))
 
 (defun %fold-vm-char (inst env low-bit-facts producer-facts emit emit-const clear)
   "Fold VM-CHAR only when both string and index operands are known constants."
@@ -298,23 +295,22 @@
          (pred-fn (gethash (type-of inst) *opt-type-pred-fold-table*)))
     (multiple-value-bind (sval found) (gethash src env)
       (if (and found pred-fn)
-           (progn
-             (remhash dst low-bit-facts)
-             (remhash dst producer-facts)
-              (funcall emit-const dst (if (funcall pred-fn sval) 1 0) inst))
-          (let ((simp (opt-simplify-type-pred-with-producer inst producer-facts)))
-            (if simp
-                (progn
-                  (remhash dst low-bit-facts)
-                  (remhash dst producer-facts)
-                  (setf (gethash dst env) (vm-const-value simp))
-                  (%opt-report :fold "original=~S result=~S"
-                               (instruction->sexp inst)
-                               (instruction->sexp simp))
-                  (funcall emit simp))
-                (progn
-                  (%opt-clear-derived-facts dst env low-bit-facts producer-facts)
-                  (funcall emit inst))))))))
+          (progn
+            (remhash dst low-bit-facts)
+            (remhash dst producer-facts)
+            (funcall emit-const dst (if (funcall pred-fn sval) 1 0) inst))
+          (if-let ((simp (opt-simplify-type-pred-with-producer inst producer-facts)))
+            (progn
+              (remhash dst low-bit-facts)
+              (remhash dst producer-facts)
+              (setf (gethash dst env) (vm-const-value simp))
+              (%opt-report :fold "original=~S result=~S"
+                           (instruction->sexp inst)
+                           (instruction->sexp simp))
+              (funcall emit simp))
+            (progn
+              (%opt-clear-derived-facts dst env low-bit-facts producer-facts)
+              (funcall emit inst)))))))
 
 (defun %fold-vm-jump-zero (inst env emit)
   "Constant branch folding: known-false → unconditional jump; known-true → drop."
@@ -328,9 +324,8 @@
 (defun %fold-default-inst (inst env low-bit-facts producer-facts emit clear)
   "Default: invalidate any written destination register, then emit."
   (declare (ignore clear))
-  (let ((dst (opt-inst-dst inst)))
-    (when dst
-      (%opt-record-producer-fact inst env low-bit-facts producer-facts)))
+  (when-let ((dst (opt-inst-dst inst)))
+    (%opt-record-producer-fact inst env low-bit-facts producer-facts))
   (funcall emit inst))
 
 (defun opt-pass-fold (instructions)

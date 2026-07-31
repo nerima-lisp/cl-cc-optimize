@@ -5,10 +5,9 @@
   "Record RECEIVER-KEY → TARGET in SITE and return SITE.
 State transitions follow uninitialized → monomorphic → polymorphic → megamorphic."
   (incf (opt-ic-site-misses site))
-  (let ((existing (assoc receiver-key (opt-ic-site-entries site) :test #'equal)))
-    (if existing
-        (setf (cdr existing) target)
-        (push (cons receiver-key target) (opt-ic-site-entries site))))
+  (if-let ((existing (assoc receiver-key (opt-ic-site-entries site) :test #'equal)))
+    (setf (cdr existing) target)
+    (push (cons receiver-key target) (opt-ic-site-entries site)))
   (let ((n (length (opt-ic-site-entries site))))
     (setf (opt-ic-site-state site)
           (cond ((= n 0) :uninitialized)
@@ -57,9 +56,8 @@ Lookup order:
 
 Returns (values target source-keyword), where source is one of
   :site-local, :megamorphic-shared, or :miss."
-  (let ((local (assoc receiver-key (opt-ic-site-entries site) :test #'equal)))
-    (when local
-      (return-from opt-ic-resolve-target (values (cdr local) :site-local))))
+  (when-let ((local (assoc receiver-key (opt-ic-site-entries site) :test #'equal)))
+    (return-from opt-ic-resolve-target (values (cdr local) :site-local)))
   (when (and megamorphic-cache
              (eq (opt-ic-site-state site) :megamorphic))
     (multiple-value-bind (target found-p)

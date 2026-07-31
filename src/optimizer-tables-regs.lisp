@@ -108,14 +108,13 @@ that returns the list of register keywords read by that instruction."
       ((member tp *opt-unary-src-types* :test #'eq)
        (list (vm-src inst)))
       ;; Per-type table lookup
-      (t (let ((handler (gethash tp *opt-read-regs-table*)))
-           (if handler
-               (funcall handler inst)
-               ;; Fallback: serialize to sexp and collect all register-shaped keywords
-               (let ((dst (opt-inst-dst inst)))
-                 (handler-case
-                     (%opt-collect-sexp-regs (instruction->sexp inst) dst nil)
-                   (error () nil)))))))))
+      (t (if-let ((handler (gethash tp *opt-read-regs-table*)))
+           (funcall handler inst)
+           ;; Fallback: serialize to sexp and collect all register-shaped keywords
+           (let ((dst (opt-inst-dst inst)))
+             (handler-case
+                 (%opt-collect-sexp-regs (instruction->sexp inst) dst nil)
+               (error () nil))))))))
 
 (defun %opt-commutative-inst-p (inst)
   "Return T if INST is a commutative binary instruction."

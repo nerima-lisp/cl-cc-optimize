@@ -13,15 +13,14 @@
                                          :separator '(#\Newline))
           for line-no from 1
           when (%opt-roadmap-heading-p line)
-            do (let ((feature-id (%opt-roadmap-fr-id-from-line line)))
-                 (when feature-id
-                    (push (make-opt-roadmap-feature
-                           :id feature-id
-                           :title (%opt-roadmap-title-from-line line)
-                           :line line-no
-                           :status (%opt-roadmap-status-from-line line)
-                           :marked-complete-p (not (null (search "✅" line))))
-                          features))))
+          do (when-let ((feature-id (%opt-roadmap-fr-id-from-line line)))
+               (push (make-opt-roadmap-feature
+                      :id feature-id
+                      :title (%opt-roadmap-title-from-line line)
+                      :line line-no
+                      :status (%opt-roadmap-status-from-line line)
+                      :marked-complete-p (not (null (search "✅" line))))
+                     features)))
     (nreverse features)))
 
 (defun optimize-roadmap-doc-fr-ids (&optional (pathname (%opt-roadmap-doc-pathname)))

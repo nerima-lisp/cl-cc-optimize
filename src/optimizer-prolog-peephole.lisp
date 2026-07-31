@@ -43,20 +43,18 @@
   "Try candidate peephole rules for CURRENT/NEXT and return the first replacement."
   (dolist (rule *peephole-rules*)
     (when (%peephole-rule-candidate-p rule current next)
-      (let ((replacements (%match-peephole-rule rule current next)))
-        (when replacements
-          (return replacements))))))
+      (when-let ((replacements (%match-peephole-rule rule current next)))
+        (return replacements)))))
 
 (defun %peephole-walk (rest out)
   "Scan REST left-to-right in pairs, accumulating rewritten instructions into OUT."
   (cond
-    ((null rest)       (nreverse out))
-    ((null (cdr rest)) (nreverse (cons (car rest) out)))
-    (t
-     (let ((replacements (%maybe-peephole-rewrite (car rest) (cadr rest))))
-       (if replacements
-           (%peephole-walk (cddr rest) (revappend replacements out))
-           (%peephole-walk (cdr rest)  (cons (car rest) out)))))))
+   ((null rest)       (nreverse out))
+   ((null (cdr rest)) (nreverse (cons (car rest) out)))
+   (t
+    (if-let ((replacements (%maybe-peephole-rewrite (car rest) (cadr rest))))
+      (%peephole-walk (cddr rest) (revappend replacements out))
+      (%peephole-walk (cdr rest)  (cons (car rest) out))))))
 
 (defun apply-prolog-peephole (instructions)
   "Apply Prolog-unification peephole rules over two-instruction windows.
