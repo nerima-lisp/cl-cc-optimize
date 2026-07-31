@@ -69,11 +69,32 @@ Returns modified instruction list or NIL if no changes."
       (nreverse result))))
 
 (defun energy-optimize-instruction (inst)
-  "Apply energy-saving rewrite to a single instruction.
-Detects mul-by-power-of-2 and converts to shift when possible."
-  (declare (ignore inst))
-  ;; Conservative pass-through: full implementation requires access to
-  ;; VM instruction constructor functions and value accessors.
+  "Apply an energy-specific rewrite to a single instruction, or return INST
+unchanged.
+
+This is a deliberate, verified pass-through, not an unfinished stub. The
+transform this hook's docstring originally described -- detecting a
+mul-by-power-of-2 and rewriting it to a shift -- is already performed
+unconditionally by the E-graph rewrite rules MUL-POW2/MUL-POW2-L in
+egraph-rules.lisp (run by %MAYBE-APPLY-PROLOG-REWRITE / the :PROLOG-REWRITE
+stage, which is first in *OPT-DEFAULT-CONVERGENCE-PASS-KEYS* and therefore
+runs before any other pass sees the instruction stream, independent of
+*ENERGY-AWARE-MODE*), and again, redundantly, by the explicit opt-in
+OPT-PASS-STRENGTH-REDUCE in optimizer-strength.lisp. By the time any
+instruction could reach this hook in the default pipeline, a VM-MUL by a
+constant power of two has already become a VM-ASH; re-implementing the same
+rewrite here would be dead code shadowed by an earlier pass, not a
+policy-specific behavior difference. Duplicating it under a distinct flag
+would also invite the two implementations to drift, and the miscompilation
+risk of a second, independently-maintained strength-reduction path outweighs
+the (nonexistent, since it never fires) benefit.
+
+*ENERGY-AWARE-MODE* remains the intended gate for genuinely energy-specific
+rewrites -- ones that trade speed for lower estimated energy cost under
+INSTRUCTION-ENERGY-COST in a way no speed-oriented pass would choose on its
+own (for example, preferring a scalar sequence over an energy-costlier SIMD
+op even when the SIMD op is faster). None have been identified and verified
+correct yet, so this hook stays a pass-through until one is."
   inst)
 
 (defun energy-optimize-function (function-instructions)

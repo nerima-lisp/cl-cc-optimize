@@ -82,11 +82,39 @@ Debugging-only pass: it never transforms INSTRUCTIONS, so leaving it disabled
       (opt-pass-verify-ir instructions)
       instructions))
 
-(defun %opt-run-pass-if-fbound (pass-symbol instructions)
-  "Run PASS-SYMBOL on INSTRUCTIONS when it is fbound, otherwise no-op."
-  (if (fboundp pass-symbol)
-      (funcall (symbol-function pass-symbol) instructions)
-      instructions))
+(progn
+  (defun %opt-run-pass-if-fbound (pass-symbol instructions)
+    "Run PASS-SYMBOL on INSTRUCTIONS when it is fbound, otherwise no-op."
+    (if (fboundp pass-symbol)
+        (funcall (symbol-function pass-symbol) instructions)
+        instructions))
+
+  (defvar *sroa-enabled* t
+    "When NIL, %MAYBE-RUN-SROA leaves instructions untouched regardless of
+whether FR-668's OPT-PASS-SROA is loaded.
+
+This is a forward declaration: the canonical DEFVAR lives in
+optimizer-sroa.lisp, which -- because :SROA needs a pipeline-policy gate
+function defined before OPTIMIZER-PIPELINE.LISP's *OPT-PASS-TABLE* builds --
+loads after this file in cl-cc-optimize.asd. DEFVAR only initializes a
+still-unbound variable, so declaring it here and again in optimizer-sroa.lisp
+is safe and idempotent; it just lets %MAYBE-RUN-SROA below reference the flag
+without a compile-time forward reference.")
+
+  (defun %maybe-run-sroa (instructions)
+    "Run FR-668 Scalar Replacement of Aggregates (OPT-PASS-SROA) only when
+*SROA-ENABLED* permits it.
+
+Written by hand, like %MAYBE-RUN-VERIFY-IR and
+%MAYBE-RUN-PURE-CALL-OPTIMIZATION above, because DEFINE-OPTIONAL-PASS's
+generated wrapper only checks FBOUNDP, not a policy flag. Dispatch still goes
+through %OPT-RUN-PASS-IF-FBOUND (by symbol, not a direct call) because
+OPT-PASS-SROA is defined in optimizer-sroa.lisp, which loads after this file;
+a direct `(opt-pass-sroa instructions)' call here would be a compile-time
+forward reference to a not-yet-defined function."
+    (if *sroa-enabled*
+        (%opt-run-pass-if-fbound 'opt-pass-sroa instructions)
+        instructions)))
 
 (defmacro define-optional-pass (name &key pass doc)
   "Define a %maybe-run-NAME wrapper that delegates to opt-pass-PASS (or opt-pass-NAME).

@@ -301,6 +301,7 @@
            (result (cl-cc/optimize:apply-prolog-peephole instructions)))
       (expect result :to-equal instructions))))
 
+(progn
 (describe-sequential "E-graph lowering convergence"
   (it "selects the first definition regardless of hash insertion order"
     (let* ((eg (cl-cc/optimize::make-e-graph))
@@ -335,3 +336,68 @@
       (expect (typep (first once) (quote cl-cc/vm:vm-const)) :to-be-truthy)
       (expect (cl-cc/vm:vm-dst (first once)) :to-be :zero)
       (expect (cl-cc/vm:vm-const-value (first once)) :to-equal 0))))
+
+(describe-sequential
+  "FR-668 Scalar Replacement of Aggregates (SROA)"
+  (it
+    "eliminates a non-escaping struct allocation, replacing slot accesses with moves"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :init :value 42)
+                   (cl-cc/vm:make-vm-make-obj :dst :obj :class-reg :class-x :initarg-regs nil)
+                   (cl-cc/vm:make-vm-slot-write :obj-reg :obj :slot-name :x :value-reg :init)
+                   (cl-cc/vm:make-vm-slot-read :dst :result :obj-reg :obj :slot-name :x)
+                   (cl-cc/vm:make-vm-ret :reg :result)))
+           (optimized (cl-cc/optimize::opt-pass-sroa instructions)))
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-make-obj)) optimized) :to-be-truthy)
+      (expect (notany (lambda (i) (typep i '(or cl-cc/vm:vm-slot-read cl-cc/vm:vm-slot-write)))
+                       optimized)
+              :to-be-truthy)
+      (expect (notany (lambda (i)
+                         (or (eq (cl-cc/optimize::opt-inst-dst i) :obj)
+                             (member :obj (cl-cc/optimize::opt-inst-read-regs i))))
+                       optimized)
+              :to-be-truthy)))
+  (it
+    "refuses to scalar-replace a struct whose register escapes via return"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :init :value 1)
+                   (cl-cc/vm:make-vm-make-obj :dst :obj :class-reg :class-x :initarg-regs nil)
+                   (cl-cc/vm:make-vm-slot-write :obj-reg :obj :slot-name :x :value-reg :init)
+                   (cl-cc/vm:make-vm-ret :reg :obj)))
+           (optimized (cl-cc/optimize::opt-pass-sroa instructions)))
+      (expect optimized :to-equal instructions)
+      (expect (some (lambda (i) (typep i 'cl-cc/vm:vm-make-obj)) optimized) :to-be-truthy)))
+  (it
+    "eliminates a non-escaping fixed-index array allocation"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :size :value 2)
+                   (cl-cc/vm:make-vm-const :dst :idx0 :value 0)
+                   (cl-cc/vm:make-vm-const :dst :val :value 99)
+                   (cl-cc/vm:make-vm-make-array :dst :arr :size-reg :size)
+                   (cl-cc/vm:make-vm-aset :array-reg :arr :index-reg :idx0 :val-reg :val)
+                   (cl-cc/vm:make-vm-aref :dst :result :array-reg :arr :index-reg :idx0)
+                   (cl-cc/vm:make-vm-ret :reg :result)))
+           (optimized (cl-cc/optimize::opt-pass-sroa instructions)))
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-make-array)) optimized) :to-be-truthy)
+      (expect (notany (lambda (i) (typep i '(or cl-cc/vm:vm-aref cl-cc/vm:vm-aset))) optimized)
+              :to-be-truthy)
+      (expect (notany (lambda (i)
+                         (or (eq (cl-cc/optimize::opt-inst-dst i) :arr)
+                             (member :arr (cl-cc/optimize::opt-inst-read-regs i))))
+                       optimized)
+              :to-be-truthy)))
+  (it
+    "refuses to scalar-replace an array access with a non-constant index"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :a :value 1)
+                   (cl-cc/vm:make-vm-const :dst :b :value 2)
+                   (cl-cc/vm:make-vm-add :dst :idx :lhs :a :rhs :b)
+                   (cl-cc/vm:make-vm-const :dst :val :value 7)
+                   (cl-cc/vm:make-vm-make-array :dst :arr :size-reg :a)
+                   (cl-cc/vm:make-vm-aset :array-reg :arr :index-reg :idx :val-reg :val)
+                   (cl-cc/vm:make-vm-aref :dst :result :array-reg :arr :index-reg :idx)
+                   (cl-cc/vm:make-vm-ret :reg :result)))
+           (optimized (cl-cc/optimize::opt-pass-sroa instructions)))
+      (expect optimized :to-equal instructions)
+      (expect (some (lambda (i) (typep i 'cl-cc/vm:vm-make-array)) optimized) :to-be-truthy))))
+)

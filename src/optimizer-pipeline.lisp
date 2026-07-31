@@ -94,6 +94,7 @@
       (:defunctionalize           . ,#'%maybe-run-defunctionalize)
       (:delimited-continuations   . ,#'%maybe-run-delimited-continuations)
       (:escape-analysis           . ,#'%maybe-run-escape-analysis)
+      (:sroa                      . ,#'%maybe-run-sroa)
         (:branch-weights            . ,#'opt-analyze-branch-weights)
         (:path-profiling            . ,#'%maybe-run-path-profiling)
         (:dce                       . ,#'opt-pass-dce)
@@ -208,7 +209,21 @@ pipeline that left every compiled program carrying a path-sum accumulator — th
 residual VM-ADD is what made the constant-folding and inlining tests report
 instructions they had asked to see eliminated. It stays available as an explicit
 pass (`opt-pass-path-profiling`, `:path-profiling` in `pass-pipeline`) for
-profile-guided builds.")
+profile-guided builds.
+
+`:sroa` (FR-668 Scalar Replacement of Aggregates, `opt-pass-sroa`) is also
+deliberately absent, unlike most passes here. It is opt-in, not merely
+policy-gated: `*sroa-enabled*` defaults to T, but the pass itself is never run
+unless `:sroa` is explicitly selected in a `pass-pipeline`, because its safety
+proof is intentionally narrow -- it only ever fires on a straight-line,
+label/branch-free span between an allocation and its accesses (see
+OPT-PASS-SROA / SROA-ELIGIBLE-P) -- and running it unconditionally on every
+default convergence iteration would mean re-deriving that proof, and finding
+it does not apply, for every VM-MAKE-OBJ/VM-MAKE-ARRAY in every function that
+does not happen to fit that shape. `:escape-analysis`, which runs immediately
+before it in `*opt-pass-table*` and is in the default list, answers a related
+but cheaper question (does this allocation escape at all) and stays on by
+default for that reason.")
 
 (defparameter *opt-convergence-passes*
   (mapcar (lambda (k) (gethash k *opt-pass-registry*))
