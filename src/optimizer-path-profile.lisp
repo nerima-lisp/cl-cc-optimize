@@ -78,8 +78,7 @@
 (defun %opt-bl-block-label-name (block)
   (and (bb-label block) (vm-name (bb-label block))))
 
-(defun %opt-bl-terminator-p (inst)
-  (typep inst '(or vm-jump vm-jump-zero vm-ret vm-halt)))
+(define-inst-type-predicate %opt-bl-terminator-p (or vm-jump vm-jump-zero vm-ret vm-halt))
 
 (defun %opt-bl-block-terminator (block)
   (find-if #'%opt-bl-terminator-p (reverse (bb-instructions block))))
@@ -213,10 +212,13 @@ and OPT-VM-PATH-PROFILE-RECORD increments the path counter at exits/backedges."
                       (fallthrough (or (and next-block (find next-block successors :test #'eq))
                                        (find-if-not (lambda (b) (eq b jump-target)) successors))))
                  (unless (and jump-target fallthrough)
-                   (error "Cannot resolve conditional Ball-Larus edges for block ~D" (bb-id block)))
-                 (%opt-bl-instrument-jump-zero block term jump-target fallthrough edge-table function-id)))
+                   (error "Cannot resolve conditional Ball-Larus edges for block ~D"
+                          (bb-id block)))
+                 (%opt-bl-instrument-jump-zero
+                  block term jump-target fallthrough edge-table function-id)))
               (t
-               (append (%opt-bl-instrument-linear-edge block (first successors) edge-table function-id)
+               (append (%opt-bl-instrument-linear-edge
+                        block (first successors) edge-table function-id)
                        (when (and term (not (typep term 'vm-jump-zero))) (list term))))))))
 
 (defun opt-instrument-path-profile (instructions &key (function-id :anonymous))
@@ -273,13 +275,11 @@ and OPT-VM-PATH-PROFILE-RECORD increments the path counter at exits/backedges."
 (defun opt-compute-path-profile (instructions &key (counts nil))
   "Compute Ball-Larus path metadata for INSTRUCTIONS.
 
-COUNTS may be keyed by block label/id for compatibility with older callers; path
-counter tables are consumed by OPT-BUILD-BLOCK-VERSION-PLAN."
+COUNTS is keyed by block label; the resulting counter tables are consumed by
+OPT-BUILD-BLOCK-VERSION-PLAN."
   (let ((profile (opt-build-ball-larus-profile instructions)))
     (loop for block in (opt-ball-larus-profile-blocks profile)
-          for count = (or (and counts
-                               (or (gethash (opt-path-profile-block-label block) counts)
-                                   (gethash (opt-path-profile-block-block-id block) counts)))
+          for count = (or (and counts (gethash (opt-path-profile-block-label block) counts))
                           0)
           do (setf (opt-path-profile-block-execution-count block) count)
           collect block)))
@@ -325,8 +325,9 @@ counter tables are consumed by OPT-BUILD-BLOCK-VERSION-PLAN."
                                       :hot-threshold hot-threshold
                                       :limit limit)))
      (t
-      ;; Compatibility path for older callers that pass OPT-COMPUTE-PATH-PROFILE's
-      ;; block list rather than a complete Ball-Larus profile.
+      ;; OPT-COMPUTE-PATH-PROFILE returns a bare block list rather than a
+      ;; complete Ball-Larus profile struct; this branch is that calling
+      ;; convention, not a Ball-Larus-profile fallback.
       (loop for block in path-profile
             when (>= (opt-path-profile-block-execution-count block) hot-threshold)
               collect (list :block-id (opt-path-profile-block-block-id block)

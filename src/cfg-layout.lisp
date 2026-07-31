@@ -76,15 +76,6 @@ stream."
     ((< (bb-loop-depth a) (bb-loop-depth b)) nil)
     (t (< (bb-rpo-index a) (bb-rpo-index b)))))
 
-(defun %cfg-block-hotter-p (a b)
-  "Return T when block A is hotter than B (loop-depth + RPO tie-break)."
-  (cond
-    ((and (%cfg-block-cold-p a) (not (%cfg-block-cold-p b))) nil)
-    ((and (%cfg-block-cold-p b) (not (%cfg-block-cold-p a))) t)
-    ((> (bb-loop-depth a) (bb-loop-depth b)) t)
-    ((< (bb-loop-depth a) (bb-loop-depth b)) nil)
-    (t (< (bb-rpo-index a) (bb-rpo-index b)))))
-
 (defun %cfg-emit-block (block result)
   "Prepend BLOCK's label and instructions to RESULT and return the new list."
   (when (bb-label block)

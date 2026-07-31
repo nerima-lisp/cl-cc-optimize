@@ -264,13 +264,6 @@ Returns a hash-table mapping (block . reg) to (lo . hi) interval."
     (%opt-record-block-local-ranges in-table)
     (%opt-path-sensitive-entry-table in-table)))
 
-(defun opt-compute-constant-intervals (instructions)
-  "Compute a conservative interval map from straight-line constant arithmetic.
-
-Handles vm-const and interval propagation through vm-add/vm-sub/vm-mul when
-both operands already have known intervals."
-  (opt-compute-value-ranges instructions))
-
 (defun opt-array-bounds-check-eliminable-p (index-reg length-reg intervals &optional block)
   "Return T when INTERVALS prove INDEX-REG is within LENGTH-REG bounds.
 

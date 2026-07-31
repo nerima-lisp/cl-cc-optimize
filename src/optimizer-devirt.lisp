@@ -38,16 +38,21 @@
          (setf (gethash (vm-dst inst) reg-label) (vm-label-name inst)))
         (vm-move
          (multiple-value-bind (sym found-p) (gethash (vm-src inst) reg-symbol)
-           (if found-p (setf (gethash (vm-dst inst) reg-symbol) sym) (remhash (vm-dst inst) reg-symbol)))
+           (if found-p
+               (setf (gethash (vm-dst inst) reg-symbol) sym)
+               (remhash (vm-dst inst) reg-symbol)))
          (multiple-value-bind (label found-p) (gethash (vm-src inst) reg-label)
-           (if found-p (setf (gethash (vm-dst inst) reg-label) label) (remhash (vm-dst inst) reg-label))))
+           (if found-p
+               (setf (gethash (vm-dst inst) reg-label) label)
+               (remhash (vm-dst inst) reg-label))))
         (vm-register-method
          (let ((gf (gethash (vm-gf-reg inst) reg-symbol))
                (label (gethash (vm-method-reg inst) reg-label)))
            (when (and gf label (null (vm-method-qualifier inst)))
              (push (list :specializer (vm-method-specializer inst) :label label)
                    (gethash gf gf-methods)))))))
-    (make-opt-cha :classes classes :subclasses subclasses :sealed-classes sealed :generic-methods gf-methods)))
+    (make-opt-cha :classes classes :subclasses subclasses
+                  :sealed-classes sealed :generic-methods gf-methods)))
 
 (defun %opt-cha-closed-concrete-class-p (cha class-name)
   "T when CLASS-NAME is sealed and has no visible subclasses in the merged unit."
@@ -77,11 +82,17 @@
            (remhash (vm-dst inst) reg-object-class))))
     (vm-move
      (multiple-value-bind (sym found-p) (gethash (vm-src inst) reg-symbol)
-       (if found-p (setf (gethash (vm-dst inst) reg-symbol) sym) (remhash (vm-dst inst) reg-symbol)))
+       (if found-p
+           (setf (gethash (vm-dst inst) reg-symbol) sym)
+           (remhash (vm-dst inst) reg-symbol)))
      (multiple-value-bind (class found-p) (gethash (vm-src inst) reg-object-class)
-       (if found-p (setf (gethash (vm-dst inst) reg-object-class) class) (remhash (vm-dst inst) reg-object-class)))
+       (if found-p
+           (setf (gethash (vm-dst inst) reg-object-class) class)
+           (remhash (vm-dst inst) reg-object-class)))
      (multiple-value-bind (gf found-p) (gethash (vm-src inst) reg-gf-name)
-       (if found-p (setf (gethash (vm-dst inst) reg-gf-name) gf) (remhash (vm-dst inst) reg-gf-name))))
+       (if found-p
+           (setf (gethash (vm-dst inst) reg-gf-name) gf)
+           (remhash (vm-dst inst) reg-gf-name))))
     (t
      (let ((dst (opt-inst-dst inst)))
        (when dst
@@ -111,7 +122,9 @@
             (if label
                 (let ((fn (funcall fresh)))
                   (push (make-vm-func-ref :dst fn :label label) result)
-                  (push (make-vm-call :dst (vm-dst inst) :func fn :args (copy-list (vm-args inst))) result))
+                  (push (make-vm-call :dst (vm-dst inst) :func fn
+                                       :args (copy-list (vm-args inst)))
+                        result))
                 (push inst result)))
           (progn
             (%opt-cha-track-call-facts inst reg-symbol reg-object-class reg-gf-name)

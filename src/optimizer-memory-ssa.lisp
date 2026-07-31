@@ -133,7 +133,8 @@ INCOMING is an alist of (pred-block . pred-version)."
   version
   incoming)
 
-(defun %opt-memory-ssa-synthesize-entry-phis (block predecessor-states phi-version-table next-version)
+(defun %opt-memory-ssa-synthesize-entry-phis
+    (block predecessor-states phi-version-table next-version)
   "Return synthetic MemoryPhi versions for BLOCK entry.
 
 When BLOCK has multiple predecessors and all predecessor states define a
@@ -164,138 +165,6 @@ for that BLOCK/location pair. Returns two values:
                            (setf (gethash loc phis) version)))))
                    first-state))))
     (values phis next-version)))
-
-(defun opt-memory-ssa-phi-nodes (annotations &optional block)
-  "Return explicit MemoryPhi nodes recorded in ANNOTATIONS.
-
-When BLOCK is provided, return only that block's phi node list.
-Otherwise return an EQ hash-table block -> list of `opt-memory-phi-node'."
-  (let ((phi-table (gethash :memory-phi-nodes annotations)))
-    (cond
-      (block (copy-list (or (and phi-table (gethash block phi-table)) nil)))
-      (phi-table
-       (let ((copy (make-hash-table :test #'eq)))
-         (maphash (lambda (b nodes)
-                    (setf (gethash b copy) (copy-list nodes)))
-                  phi-table)
-         copy))
-      (t (make-hash-table :test #'eq)))))
-
-(defun opt-compute-memory-ssa-cfg-snapshot (instructions)
-  "Compute a CFG-aware conservative Memory-SSA snapshot for INSTRUCTIONS.
-
-This helper assigns each memory-def instruction a stable monotonically
-increasing version id (by instruction order), then propagates location->version
-facts over CFG with a strict predecessor-agreement meet. At join points where
-all predecessor states define a location but disagree on its version, this
-helper synthesizes a fresh MemoryPhi-like version id for that location."
-  (let* ((cfg (cfg-build instructions))
-         (reachable (%opt-memory-ssa-reachable-blocks cfg))
-         (alias-roots (opt-compute-heap-aliases instructions))
-         (annotations (make-hash-table :test #'eq))
-         (phi-node-table (make-hash-table :test #'eq))
-         (def-version (make-hash-table :test #'eq))
-         (phi-version-table (make-hash-table :test #'equal))
-         (phi-aware-in (make-hash-table :test #'eq))
-         (phi-aware-out (make-hash-table :test #'eq))
-         (next-version 0)
-         (rpo (cfg-compute-rpo cfg)))
-    (dolist (inst instructions)
-      (let ((loc (%opt-memory-location-key inst alias-roots)))
-        (when (and loc (opt-memory-def-inst-p inst))
-          (incf next-version)
-          (setf (gethash inst def-version) next-version))))
-
-    (dolist (block rpo)
-      (setf (gethash block phi-aware-in) (make-hash-table :test #'equal)
-            (gethash block phi-aware-out) (make-hash-table :test #'equal)))
-
-    (loop with changed = t
-          while changed
-          do (setf changed nil)
-             (dolist (block rpo)
-               (let* ((preds (bb-predecessors block))
-                      (feasible-preds (remove-if-not (lambda (pred)
-                                                       (and (gethash pred reachable)
-                                                            (%opt-memory-ssa-edge-feasible-p pred block)))
-                                                     preds))
-                      (pred-states (mapcar (lambda (pred)
-                                             (or (gethash pred phi-aware-out)
-                                                 (make-hash-table :test #'equal)))
-                                           feasible-preds))
-                       (entry-base (if (eq block (cfg-entry cfg))
-                                       (make-hash-table :test #'equal)
-                                       (%opt-memory-ssa-merge-states pred-states)))
-                       (entry-state (%opt-memory-ssa-copy-state entry-base)))
-                 (multiple-value-bind (entry-phis updated-version)
-                     (%opt-memory-ssa-synthesize-entry-phis
-                      block pred-states phi-version-table next-version)
-                   (setf next-version updated-version)
-                   (when (> (hash-table-count entry-phis) 0)
-                      (let ((nodes nil))
-                        (maphash (lambda (loc version)
-                                   (let ((incoming nil))
-                                     (dolist (pred feasible-preds)
-                                       (let* ((pred-state (or (gethash pred phi-aware-out)
-                                                              (make-hash-table :test #'equal)))
-                                              (pred-version (or (gethash loc pred-state) 0)))
-                                         (push (cons pred pred-version) incoming)))
-                                    (push (make-opt-memory-phi-node :location loc
-                                                                    :version version
-                                                                    :incoming (nreverse incoming))
-                                          nodes)))
-                                entry-phis)
-                       (setf (gethash block phi-node-table) (nreverse nodes))))
-                   (maphash (lambda (loc version)
-                              (setf (gethash loc entry-state) version))
-                            entry-phis))
-                 (let ((out-state (%opt-memory-ssa-copy-state entry-state)))
-                   (dolist (inst (bb-instructions block))
-                     (let ((loc (%opt-memory-location-key inst alias-roots)))
-                       (when (and loc (opt-memory-def-inst-p inst))
-                         (setf (gethash loc out-state)
-                               (gethash inst def-version)))))
-                   (unless (and (%opt-memory-ssa-state-equal
-                                 (gethash block phi-aware-in) entry-state)
-                                (%opt-memory-ssa-state-equal
-                                 (gethash block phi-aware-out) out-state))
-                     (setf changed t
-                           (gethash block phi-aware-in) entry-state
-                           (gethash block phi-aware-out) out-state))))))
-
-      (loop for block across (cfg-blocks cfg)
-          when block
-          do (let* ((base-state (or (gethash block phi-aware-in)
-                                    (make-hash-table :test #'equal)))
-                    (state (%opt-memory-ssa-copy-state base-state))
-                    (entry-phis (make-hash-table :test #'equal)))
-               (maphash (lambda (phi-key version)
-                          (when (eq (first phi-key) block)
-                            (setf (gethash (second phi-key) entry-phis) version)))
-                        phi-version-table)
-               (dolist (inst (bb-instructions block))
-                 (let* ((loc (%opt-memory-location-key inst alias-roots))
-                        (incoming (and loc (gethash loc state)))
-                        (entry-phi-version (and loc (gethash loc entry-phis)))
-                        (incoming-phi-p (and entry-phi-version
-                                             (eql incoming entry-phi-version))))
-                   (cond
-                     ((and loc (opt-memory-def-inst-p inst))
-                      (let ((outgoing (gethash inst def-version)))
-                        (setf (gethash inst annotations)
-                              (list :kind :def :location loc
-                                    :in (or incoming 0)
-                                    :out outgoing
-                                    :incoming-from (if incoming-phi-p :phi :state)))
-                        (setf (gethash loc state) outgoing)))
-                      ((and loc (opt-memory-use-inst-p inst))
-                      (setf (gethash inst annotations)
-                            (list :kind :use :location loc
-                                  :in (or incoming 0)
-                                  :out (or incoming 0)
-                                  :incoming-from (if incoming-phi-p :phi :state)))))))))
-    (setf (gethash :memory-phi-nodes annotations) phi-node-table)
-    annotations))
 
 (defun opt-memory-ssa-version-at (inst annotations &key (point :in))
   "Return memory version for INST in ANNOTATIONS at POINT (:in or :out)."

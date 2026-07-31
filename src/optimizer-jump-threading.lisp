@@ -97,9 +97,7 @@ and never across CFG back-edges."
                       (push inst result))))
       (nreverse result))))
 
-(defun %opt-jump-comparison-p (inst)
-  "Return T when INST is a comparison supported by jump fact propagation."
-  (typep inst '(or vm-lt vm-le vm-gt vm-ge vm-eq vm-num-eq)))
+(define-inst-type-predicate %opt-jump-comparison-p (or vm-lt vm-le vm-gt vm-ge vm-eq vm-num-eq) "Return T when INST is a comparison supported by jump fact propagation.")
 
 (defun %opt-jump-fact-killed-p (fact dst)
   "Return T when a write to DST invalidates FACT's comparison operands."

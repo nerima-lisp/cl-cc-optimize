@@ -28,7 +28,8 @@
   (let ((ht (make-hash-table :test #'eq)))
     (flet ((reg (tp rules) (setf (gethash tp ht) rules))
            (reg-variants (types rules) (dolist (tp types) (setf (gethash tp ht) rules))))
-      ;; Arithmetic — variant groups share identical rules across generic/integer/float specializations
+      ;; Arithmetic — variant groups share identical rules across
+      ;; generic/integer/float specializations
       (reg-variants '(vm-add vm-integer-add vm-float-add)
                     '(((:rconst 0) . :move-lhs) ((:lconst 0) . :move-rhs)))
       (reg-variants '(vm-sub vm-integer-sub vm-float-sub)

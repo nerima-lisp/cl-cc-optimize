@@ -167,7 +167,8 @@ place by construction."
     (multiple-value-bind (body-inst-set body-inst-labels)
         (opt-function-body-instruction-tables func-defs)
       (let* ((graph (opt-build-call-graph instructions func-defs name-to-label))
-            (roots (opt-top-level-function-roots instructions func-defs name-to-label body-inst-set))
+            (roots (opt-top-level-function-roots
+                    instructions func-defs name-to-label body-inst-set))
             (reachable (opt-reachable-function-labels graph roots))
             (closure-reg->label (make-hash-table :test #'eq))
             (labels-to-drop (make-hash-table :test #'equal)))

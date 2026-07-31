@@ -69,8 +69,9 @@
                     (best-sexp nil))
                 (setf (gethash canon cache) (cons most-positive-fixnum nil))
                 (dolist (n (ec-nodes cls))
-                  (let* ((child-results (mapcar (lambda (c) (%egraph-extract-class c eg cache cost-fn))
-                                               (en-children n)))
+                  (let* ((child-results
+                           (mapcar (lambda (c) (%egraph-extract-class c eg cache cost-fn))
+                                   (en-children n)))
                          (child-costs   (mapcar (lambda (r) (if r (car r) most-positive-fixnum))
                                                child-results))
                          (child-sexps   (mapcar (lambda (r) (when r (cdr r))) child-results))

@@ -4,7 +4,8 @@
 (defparameter *opt-speculative-inline-dominance-threshold* 0.9
   "Minimum IC type-frequency dominance required for speculative inlining.")
 
-(defun opt-ic-dominant-type (counter-table &key (threshold *opt-speculative-inline-dominance-threshold*))
+(defun opt-ic-dominant-type
+    (counter-table &key (threshold *opt-speculative-inline-dominance-threshold*))
   "Return (values TYPE COUNT TOTAL RATIO) when one IC type dominates.
 
 Flat distributions deliberately return NIL so the optimizer does not speculate

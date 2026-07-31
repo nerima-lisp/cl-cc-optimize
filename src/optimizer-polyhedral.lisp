@@ -93,9 +93,7 @@
                   (< (opt-loop-exit-index inner) (opt-loop-back-index outer)))
           do (return inner)))
 
-(defun %poly-unsafe-side-effect-p (inst)
-  (typep inst '(or vm-call vm-tail-call vm-trampoline vm-generic-call vm-apply
-              vm-set-global vm-slot-write vm-aset vm-ret vm-halt vm-jump vm-jump-zero)))
+(define-inst-type-predicate %poly-unsafe-side-effect-p (or vm-call vm-tail-call vm-trampoline vm-generic-call vm-apply vm-set-global vm-slot-write vm-aset vm-ret vm-halt vm-jump vm-jump-zero))
 
 (defun %poly-affine-read-accesses (instructions inner outer)
   (multiple-value-bind (const-env def-env)
@@ -185,7 +183,8 @@
                (if (null outer)
                    (progn (push (aref vec i) out) (incf i))
                    (let ((inner (%poly-nested-loop-at vec outer)))
-                     (if (and inner (%poly-loop-interchange-candidate-p instructions vec outer inner))
+                     (if (and inner
+                              (%poly-loop-interchange-candidate-p instructions vec outer inner))
                          (progn
                            (setf out (%poly-emit-interchanged-loop vec outer inner out)
                                  changed t
@@ -281,7 +280,8 @@ shared schedule.  Non-descriptor or incompatible inputs are returned unchanged."
                (if (null outer)
                    (progn (push (aref vec i) out) (incf i))
                    (let ((inner (%poly-nested-loop-at vec outer)))
-                     (if (and inner (%poly-loop-interchange-candidate-p instructions vec outer inner))
+                     (if (and inner
+                              (%poly-loop-interchange-candidate-p instructions vec outer inner))
                          (progn
                            (setf out (%poly-emit-tile-metadata vec outer inner tile-size out)
                                  changed t

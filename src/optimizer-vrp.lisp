@@ -14,16 +14,6 @@
   "Return the unknown integer interval used by FR-610."
   (opt-make-interval *min-inf* *max-inf*))
 
-(defun opt-vrp-fixnum-interval ()
-  "Return the host fixnum interval used to seed typed fixnum facts."
-  (opt-make-interval +opt-range-negative-infinity+ +opt-range-positive-infinity+))
-
-(defun opt-vrp-constant-interval (value)
-  "Return VALUE's singleton interval when it is an integer, else top."
-  (if (integerp value)
-      (opt-make-interval value value)
-      (opt-vrp-top-interval)))
-
 (defun opt-vrp-range (block reg &optional (ranges *opt-vrp-ranges*))
   "Return REG's latest path-sensitive interval at BLOCK, or NIL if unknown."
   (gethash (cons block reg) ranges))

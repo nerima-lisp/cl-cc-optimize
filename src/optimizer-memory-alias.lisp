@@ -1,9 +1,7 @@
 (in-package :cl-cc/optimize)
 
 ;;; ─── Alias Analysis + Memory Passes ─────────────────────────────────────────
-(defun opt-heap-root-inst-p (inst)
-  "Return T when INST produces a fresh heap-like object identity."
-  (typep inst '(or vm-cons vm-make-array vm-closure vm-make-closure)))
+(define-inst-type-predicate opt-heap-root-inst-p (or vm-cons vm-make-array vm-closure vm-make-closure) "Return T when INST produces a fresh heap-like object identity.")
 
 (defparameter *opt-heap-root-kind-table* '((vm-cons . :cons)
     (vm-make-array . :array)
@@ -46,7 +44,9 @@ vm-move propagates the source root. Any other destination write kills the root f
                 (setf (gethash dst roots) dst))
               (dst (remhash dst roots)))))))))
 
-;;; FR-017: Alias Analysis / Memory Disambiguation — Type-Based Alias Analysis (TBAA) determines when two heap references cannot alias, enabling stronger LICM/DSE
+;;; FR-017: Alias Analysis / Memory Disambiguation — Type-Based Alias
+;;; Analysis (TBAA) determines when two heap references cannot alias,
+;;; enabling stronger LICM/DSE
 (defun opt-compute-heap-aliases (instructions)
   "Compute a conservative EQ hash-table reg -> canonical heap root.
 This is a small FR-115 style oracle intended for downstream passes."
@@ -107,13 +107,9 @@ field-sensitive object graphs remain out of scope for this helper."
     (not (opt-tbaa-must-not-alias-p reg-a reg-b type-facts))
     (opt-may-alias-p reg-a reg-b alias-roots)))
 
-(defun opt-memory-def-inst-p (inst)
-  "Return T when INST defines memory state for the conservative Memory-SSA model."
-  (typep inst '(or vm-set-global vm-slot-write vm-cons)))
+(define-inst-type-predicate opt-memory-def-inst-p (or vm-set-global vm-slot-write vm-cons) "Return T when INST defines memory state for the conservative Memory-SSA model.")
 
-(defun opt-memory-use-inst-p (inst)
-  "Return T when INST reads memory state for the conservative Memory-SSA model."
-  (typep inst '(or vm-get-global vm-slot-read)))
+(define-inst-type-predicate opt-memory-use-inst-p (or vm-get-global vm-slot-read) "Return T when INST reads memory state for the conservative Memory-SSA model.")
 
 (defun %opt-memory-location-key (inst alias-roots)
   "Return a canonical memory location key for INST, or NIL when not modeled."

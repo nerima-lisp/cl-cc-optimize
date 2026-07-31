@@ -10,8 +10,7 @@
     :arg-count -0.75)
   "Hardcoded linear-model weights for inline benefit prediction.")
 
-(defun %mlgo-call-instruction-p (inst)
-  (typep inst '(or vm-call vm-generic-call vm-tail-call vm-apply)))
+(define-inst-type-predicate %mlgo-call-instruction-p (or vm-call vm-generic-call vm-tail-call vm-apply))
 
 (defun %mlgo-loop-depth (instructions)
   "Return a coarse loop-depth feature from backward branches in INSTRUCTIONS."

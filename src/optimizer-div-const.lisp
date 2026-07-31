@@ -2,45 +2,6 @@
 
 (in-package :cl-cc/optimize)
 
-(defun opt-div-const-unsigned-magic (divisor &key (bits 64) (extra-bits bits))
-  "Return the ceil(2^(BITS+EXTRA-BITS)/DIVISOR) unsigned reciprocal magic."
-  (when (and (integerp divisor) (> divisor 1))
-    (ceiling (ash 1 (+ bits extra-bits)) divisor)))
-
-(defun opt-div-const-signed-magic (divisor &key (bits 64))
-  "Return Hacker's Delight style signed magic parameters for positive DIVISOR.
-
-Values are MAGIC, SHIFT, and ADD-P.  The optimizer only emits signed sequences
-when interval verification proves Common Lisp FLOOR semantics for the concrete
-range being optimized; this helper records the fixed-width parameters for tests
-and future native lowering hooks."
-  (when (and (integerp divisor) (> divisor 1) (not (opt-power-of-2-p divisor)))
-    (let* ((two-to-w-1 (ash 1 (1- bits)))
-           (anc (- (1- two-to-w-1)
-                   (mod (1- two-to-w-1) divisor)))
-           (p (1- bits))
-           (q1 (floor two-to-w-1 anc))
-           (r1 (- two-to-w-1 (* q1 anc)))
-           (q2 (floor two-to-w-1 divisor))
-           (r2 (- two-to-w-1 (* q2 divisor))))
-      (loop
-        (incf p)
-        (setf q1 (* 2 q1)
-              r1 (* 2 r1))
-        (when (>= r1 anc)
-          (incf q1)
-          (decf r1 anc))
-        (setf q2 (* 2 q2)
-              r2 (* 2 r2))
-        (when (>= r2 divisor)
-          (incf q2)
-          (decf r2 divisor))
-        (let ((delta (- divisor 1 r2)))
-          (unless (and (< p (* 2 bits))
-                       (or (< q1 delta)
-                           (and (= q1 delta) (zerop r1))))
-            (return (values (1+ q2) (- p bits) nil))))))))
-
 (defun %opt-div-const-quotient-seq (dst src divisor interval new-reg-fn)
   "Build a multiply+shift quotient sequence for SRC/DIVISOR when safe."
   (or (%opt-div-by-verified-reciprocal-seq dst src divisor interval new-reg-fn)

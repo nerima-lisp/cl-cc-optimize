@@ -73,6 +73,15 @@ enables it for SPEED >= 2.")
       (opt-pass-pure-call-optimization instructions)
       instructions))
 
+(defun %maybe-run-verify-ir (instructions)
+  "Run FR-642 IR/VM invariant verification only when *VERIFY-IR* is enabled.
+
+Debugging-only pass: it never transforms INSTRUCTIONS, so leaving it disabled
+(the default) costs nothing in the convergence loop."
+  (if *verify-ir*
+      (opt-pass-verify-ir instructions)
+      instructions))
+
 (defun %opt-run-pass-if-fbound (pass-symbol instructions)
   "Run PASS-SYMBOL on INSTRUCTIONS when it is fbound, otherwise no-op."
   (if (fboundp pass-symbol)

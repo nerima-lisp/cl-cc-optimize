@@ -8,10 +8,6 @@
   "Return bitwidth-reduction metadata for INST, or NIL."
   (gethash inst *opt-bitwidth-reduction-metadata*))
 
-(defun opt-bitwidth-reduced-p (inst)
-  "Return T when INST is proven safe to narrow."
-  (getf (opt-bitwidth-reduction-metadata inst) :bitwidth-reduced))
-
 (defun %opt-narrow-type-for-interval (interval)
   "Return the narrowest unsigned machine type proven for INTERVAL."
   (when (and interval (<= 0 (opt-interval-lo interval)))

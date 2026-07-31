@@ -31,7 +31,8 @@
     after))
 
 (defun tv-symbolic-execute-block (instructions)
-  "Return the legacy summary, support status, and a bounded observable summary."
+  "Return the basic outputs/control summary, support status, and a bounded
+observable summary."
   (let ((env (make-hash-table :test (function eq)))
         (outputs nil)
         (control nil)
@@ -51,7 +52,8 @@
           (vm-move
             (setf (gethash (vm-dst inst) env) (value-of (vm-src inst))))
           (vm-binop
-            (setf (gethash (vm-dst inst) env) (list (type-of inst) (value-of (vm-lhs inst)) (value-of (vm-rhs inst)))))
+            (setf (gethash (vm-dst inst) env)
+                  (list (type-of inst) (value-of (vm-lhs inst)) (value-of (vm-rhs inst)))))
           ((or vm-jump vm-jump-zero) (push (instruction->sexp inst) control))
           (vm-print
             (push (list :print (value-of (first (opt-inst-read-regs inst)))) effects))
@@ -64,9 +66,9 @@
               (push values outputs)
               (setf exit (list :halt (first values)))))
           (t (return-from tv-symbolic-execute-block (values nil nil nil)))))
-      (let ((legacy-summary (list :outputs (nreverse outputs) :control (nreverse control))))
+      (let ((basic-summary (list :outputs (nreverse outputs) :control (nreverse control))))
         (values
-          legacy-summary
+          basic-summary
           t
           (list
             :effects
@@ -74,7 +76,7 @@
             :exit
             exit
             :control
-            (getf legacy-summary :control)))))))
+            (getf basic-summary :control)))))))
 
 (defun %tv-label-set (instructions)
   (sort
@@ -105,9 +107,11 @@
 
 (defun translation-validation-equivalent-p (before after)
   "Conservatively check same observable outputs for same symbolic inputs."
-  (multiple-value-bind (before-legacy before-supported-p before-summary) (tv-symbolic-execute-block before)
+  (multiple-value-bind (before-legacy before-supported-p before-summary)
+      (tv-symbolic-execute-block before)
     (declare (ignore before-legacy))
-    (multiple-value-bind (after-legacy after-supported-p after-summary) (tv-symbolic-execute-block after)
+    (multiple-value-bind (after-legacy after-supported-p after-summary)
+        (tv-symbolic-execute-block after)
       (declare (ignore after-legacy))
       (and
         before-supported-p

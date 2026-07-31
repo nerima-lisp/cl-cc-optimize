@@ -88,7 +88,8 @@ If the first two accesses cannot be widened/coalesced, NIL is returned."
             (expected (1+ start-offset)))
         (loop for inst in (rest instructions)
               while (and (< (length raw) +opt-coalesce-max-lanes+)
-                         (%opt-lsc-compatible-access-p (first raw) inst kind family expected alias-roots))
+                         (%opt-lsc-compatible-access-p
+                          (first raw) inst kind family expected alias-roots))
               do (push inst raw)
                  (incf expected))
         (let* ((ordered (nreverse raw))
@@ -166,7 +167,8 @@ If the first two accesses cannot be widened/coalesced, NIL is returned."
                          (setf lane-reg shifted-reg)))
                      (if packed-reg
                          (let ((next-packed (funcall fresh)))
-                           (push (make-vm-logior :dst next-packed :lhs packed-reg :rhs lane-reg) out)
+                           (push (make-vm-logior :dst next-packed :lhs packed-reg :rhs lane-reg)
+                                 out)
                            (setf packed-reg next-packed))
                          (setf packed-reg lane-reg))))))
       (push (%opt-lsc-make-store family base start-offset packed-reg first-inst) out)

@@ -84,9 +84,7 @@ the original instruction objects/order."
 
 ;;; ─── Allocation sinking ───────────────────────────────────────────────────
 
-(defun %opt-sink-allocation-inst-p (inst)
-  "Return T for allocations currently safe to sink into a dominated branch."
-  (typep inst '(or vm-cons vm-make-array)))
+(define-inst-type-predicate %opt-sink-allocation-inst-p (or vm-cons vm-make-array) "Return T for allocations currently safe to sink into a dominated branch.")
 
 (defun %opt-sink-inst-blocks (cfg)
   (let ((table (make-hash-table :test #'eq)))

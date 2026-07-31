@@ -89,7 +89,8 @@
     invariants))
 
 ;;; ─── LICM: invariance predicate ───────────────────────────────────────────
-;;; FR-017 integration: LICM safety improved by TBAA alias analysis — loop-invariant loads proven not to alias stores can be hoisted
+;;; FR-017 integration: LICM safety improved by TBAA alias analysis —
+;;; loop-invariant loads proven not to alias stores can be hoisted
 
 (defun opt-inst-loop-invariant-p (inst loop-def-regs loop-members def-sites
                                   &optional loop-insts alias-roots type-facts)

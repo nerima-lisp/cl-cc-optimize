@@ -9,10 +9,6 @@
   "Return FR-516 escape metadata for allocation INST, or NIL."
   (gethash inst *opt-escape-analysis-metadata*))
 
-(defun opt-escape-stack-allocation-marked-p (inst)
-  "Return T when INST is proven non-escaping by FR-516."
-  (getf (opt-escape-analysis-metadata inst) :stack-allocation))
-
 (defun %opt-escape-allocation-p (inst)
   "Return T when INST allocates a heap object tracked by FR-516."
   (opt-heap-root-inst-p inst))
@@ -30,15 +26,11 @@
     (setf (gethash root escaped) t)
     (pushnew reason (gethash root escaped-reasons) :test #'eq)))
 
-(defun %opt-escape-call-inst-p (inst)
-  (typep inst '(or vm-call vm-tail-call vm-apply vm-generic-call)))
+(define-inst-type-predicate %opt-escape-call-inst-p (or vm-call vm-tail-call vm-apply vm-generic-call))
 
-(defun %opt-escape-return-inst-p (inst)
-  (typep inst '(or vm-ret vm-halt)))
+(define-inst-type-predicate %opt-escape-return-inst-p (or vm-ret vm-halt))
 
-(defun %opt-escape-store-inst-p (inst)
-  (typep inst '(or vm-set-global vm-slot-write vm-aset vm-register-function
-                   vm-rplaca vm-rplacd)))
+(define-inst-type-predicate %opt-escape-store-inst-p (or vm-set-global vm-slot-write vm-aset vm-register-function vm-rplaca vm-rplacd))
 
 (defun %opt-escape-value-regs-stored-by-inst (inst)
   "Return registers whose values are stored by INST."
@@ -58,7 +50,8 @@
     ((typep inst '(or vm-rplaca vm-rplacd)) (vm-cons-reg inst))
     (t nil)))
 
-(defun %opt-escape-direct-uses-mark-escapes (instructions alias-roots alloc-roots graph escaped reasons)
+(defun %opt-escape-direct-uses-mark-escapes
+    (instructions alias-roots alloc-roots graph escaped reasons)
   "Mark direct escaping uses and object connectivity edges."
   (dolist (inst instructions)
     (cond
@@ -127,7 +120,8 @@ chains are handled transitively."
         (setf (gethash (%opt-escape-root-for-reg (opt-inst-dst inst) alias-roots)
                        alloc-roots)
               inst)))
-    (%opt-escape-direct-uses-mark-escapes instructions alias-roots alloc-roots graph escaped reasons)
+    (%opt-escape-direct-uses-mark-escapes
+     instructions alias-roots alloc-roots graph escaped reasons)
     (%opt-escape-propagate graph escaped reasons)
     (values alloc-roots escaped graph reasons)))
 

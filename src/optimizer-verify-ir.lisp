@@ -34,8 +34,7 @@
          :detail detail
          :context context))
 
-(defun %opt-vm-terminator-p (inst)
-  (typep inst '(or vm-jump vm-jump-zero vm-ret vm-halt)))
+(define-inst-type-predicate %opt-vm-terminator-p (or vm-jump vm-jump-zero vm-ret vm-halt))
 
 (defun %opt-vm-blocks (instructions)
   "Split a flat VM instruction stream into label-delimited basic blocks."
@@ -149,9 +148,10 @@
                                            (format nil "IR value ~S used before definition" operand)
                                            (format nil "~S" inst)))
             (unless (%opt-dominates-block-p def-block block idom)
-              (%opt-signal-ir-verification pass-name :ssa-dominance
-                                           (format nil "definition of ~S does not dominate use" operand)
-                                           (format nil "~S" inst)))))))
+              (%opt-signal-ir-verification
+               pass-name :ssa-dominance
+               (format nil "definition of ~S does not dominate use" operand)
+               (format nil "~S" inst)))))))
     t))
 
 (defun %opt-mir-value-p (x)
@@ -177,9 +177,10 @@
             (let ((value (if (and (consp src) (%opt-mir-value-p (cdr src))) (cdr src) src)))
               (when (%opt-mir-value-p value)
                 (unless (gethash value defs)
-                  (%opt-signal-ir-verification pass-name :undefined-register-use
-                                               (format nil "MIR value ~S used before definition" value)
-                                               (format nil "~S" inst))))))
+                  (%opt-signal-ir-verification
+                   pass-name :undefined-register-use
+                   (format nil "MIR value ~S used before definition" value)
+                   (format nil "~S" inst))))))
           (let ((dst (%opt-call "CL-CC/MIR" "MIRI-DST" inst)))
             (when dst
               (when (gethash dst defs)

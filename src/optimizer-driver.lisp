@@ -1,26 +1,11 @@
 (in-package :cl-cc/optimize)
 ;;; ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-;;; Optimizer Driver — Reporting, Trace State, and Public Entry Point
+;;; Optimizer Driver — Convergence, Policy, and Public Entry Point
+;;;
+;;; Reporting/trace-state structs and emission are in optimizer-driver-trace.lisp;
+;;; pass-pipeline string parsing is in optimizer-driver-pipeline-spec.lisp
+;;; (both load before this file).
 ;;; ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-;;; ─── Reporting / Trace State ─────────────────────────────────────────────
-
-(defstruct (opt-reporting-options (:conc-name opt-report-))
-  "Read-only bundle of side-channel reporting flags for the optimizer pipeline."
-  (print-pass-timings nil)
-  (timing-stream      nil)
-  (print-pass-stats   nil)
-  (stats-stream       nil)
-  (print-opt-remarks  nil)
-  (opt-remarks-stream nil)
-  (opt-remarks-mode   :all))
-
-(defstruct (opt-trace-state (:conc-name opt-trace-))
-  "Mutable accumulator for Chrome-trace-compatible events."
-  (enabled     nil)
-  (json-stream nil)
-  (events      nil)
-  (ts-us        0))
 
 ;;; ─── Dynamic Variables ───────────────────────────────────────────────────
 
@@ -32,64 +17,12 @@
 NIL disables optimization bisection.")
 
 (defvar *opt-bisect-count* 0
-  "Number of optimization pass invocations that changed the instruction stream in the current dynamic scope.")
+  "Number of optimization pass invocations that changed the instruction
+   stream in the current dynamic scope.")
 
 (defvar *verify-optimizer-instructions* nil
   "When non-NIL, run opt-verify-instructions after every convergence pass to
 catch ill-formed sequences (duplicate labels, unknown jump targets, use-before-define).")
-
-;;; ─── Pass Pipeline Parsing ───────────────────────────────────────────────
-
-;;; The --pass-pipeline spec ("sccp,cse,dce") is tokenized and parsed with the
-;;; external cl-parser-kit library instead of a hand-rolled comma split: a
-;;; whitespace-skipping tokenizer emits pass-name and comma tokens, and a
-;;; sep-by combinator parses the comma-separated pass list.  This makes the
-;;; grammar explicit and whitespace-tolerant (" sccp , cse " parses cleanly).
-
-(defparameter *opt-pass-pipeline-tokenizer*
-  (cl-parser-kit:make-tokenizer
-   :rules (list (cl-parser-kit:make-whitespace-rule :skip-p t)
-                (cl-parser-kit:make-literal-rule :comma ",")
-                (cl-parser-kit:make-identifier-rule
-                 :type :pass
-                 :start-predicate (lambda (c) (or (alpha-char-p c) (char= c #\_)))
-                 :continue-predicate (lambda (c)
-                                       (or (alphanumericp c)
-                                           (char= c #\-)
-                                           (char= c #\_))))))
-  "cl-parser-kit tokenizer for optimizer pipeline specs: skips whitespace and
-emits :pass identifier tokens (letters/digits/-/_) separated by :comma.")
-
-(defparameter *opt-pass-pipeline-parser*
-  (cl-parser-kit:sep-by (cl-parser-kit:type-token-text :pass)
-                        (cl-parser-kit:literal "," :type :comma))
-  "cl-parser-kit parser: a comma-separated list of pass-name texts.")
-
-(defun opt-parse-pass-pipeline-string (text)
-  "Parse a comma-separated optimizer pipeline string into keyword pass names,
-tokenized and parsed with cl-parser-kit."
-  (multiple-value-bind (ok value)
-      (cl-parser-kit:parse-source *opt-pass-pipeline-parser*
-                                  text
-                                  *opt-pass-pipeline-tokenizer*)
-    (when ok
-      (remove nil
-              (mapcar (lambda (name)
-                        (and (plusp (length name))
-                             (intern (string-upcase name) :keyword)))
-                      value)))))
-
-(defun opt-resolve-pass-pipeline (pipeline)
-  "Resolve PIPELINE into a list of pass functions."
-  (cond
-    ((null pipeline) *opt-convergence-passes*)
-    ((stringp pipeline) (opt-resolve-pass-pipeline (opt-parse-pass-pipeline-string pipeline)))
-    ((every #'functionp pipeline) pipeline)
-    (t
-     (mapcar (lambda (entry)
-               (or (and (keywordp entry) (gethash entry *opt-pass-registry*))
-                   (error "Unknown optimizer pass ~S" entry)))
-             pipeline))))
 
 ;;; ─── Convergence and Verification ────────────────────────────────────────
 
@@ -112,7 +45,8 @@ short-circuits before the expensive sexp comparison."
     (800 . 8))
   "Instruction-count thresholds used by opt-adaptive-max-iterations.")
 
-(defun opt-adaptive-max-iterations (instructions &key (base-iterations 20) (min-iterations 6) (max-iterations 50))
+(defun opt-adaptive-max-iterations
+    (instructions &key (base-iterations 20) (min-iterations 6) (max-iterations 50))
   "Return a conservative adaptive convergence budget for INSTRUCTIONS."
   (let* ((n (length instructions))
          (delta (or (cdr (find-if (lambda (entry) (< n (car entry)))
@@ -123,29 +57,12 @@ short-circuits before the expensive sexp comparison."
               (+ base-iterations delta)))))
 
 (defun opt-verify-instructions (instructions &key pass-name)
-  "Conservative VM-level verifier for optimizer/debugging use."
-  (let ((labels  (make-hash-table :test #'equal))
-        (defined (make-hash-table :test #'eq))
-        (pass-name (or pass-name "<unknown-pass>")))
-    (dolist (inst instructions)
-      (when (typep inst 'vm-label)
-        (let ((name (vm-name inst)))
-          (when (gethash name labels)
-            (error "~A verifier: duplicate label ~A" pass-name name))
-          (setf (gethash name labels) t))))
-    (dolist (inst instructions)
-      (typecase inst
-        ((or vm-jump vm-jump-zero)
-         (unless (gethash (vm-label-name inst) labels)
-           (error "~A verifier: unknown label target ~A" pass-name (vm-label-name inst)))))
-      (dolist (reg (opt-inst-read-regs inst))
-        (unless (gethash reg defined)
-          (error "~A verifier: register ~A used before definition in ~S"
-                 pass-name reg (instruction->sexp inst))))
-      (let ((dst (opt-inst-dst inst)))
-        (when dst
-          (setf (gethash dst defined) t))))
-    t))
+  "Conservative VM-level verifier for optimizer/debugging use.
+
+Delegates to OPT-VERIFY-VM-INSTRUCTIONS (optimizer-verify-ir.lisp), the more
+complete VM-stream checker: duplicate labels, unknown jump targets, and
+use-before-define registers, plus block-terminator well-formedness."
+  (opt-verify-vm-instructions instructions :pass-name (or pass-name "<unknown-pass>")))
 
 ;;; ─── Bisection Helpers ───────────────────────────────────────────────────
 
@@ -159,75 +76,6 @@ short-circuits before the expensive sexp comparison."
   "Record one changed optimization pass for the bisection counter."
   (when (and changed (integerp *opt-bisect-limit*) (<= 0 *opt-bisect-limit*))
     (incf *opt-bisect-count*)))
-
-;;; ─── Chrome Trace / FR-703 Analytics ────────────────────────────────────
-
-(defun %opt-write-trace-json (stream events)
-  "Write Chrome-trace-compatible JSON EVENTS to STREAM."
-  (format stream "{\"traceEvents\":[")
-  (loop for event in events
-        for i from 0
-        do (when (> i 0) (format stream ","))
-           (format stream
-                   "{\"name\":~S,\"ph\":\"X\",\"pid\":1,\"tid\":1,\"ts\":~D,\"dur\":~D}"
-                   (getf event :name)
-                   (getf event :ts-us)
-                   (getf event :dur-us)))
-  (format stream "]}~%"))
-
-(defun compiler-self-profiling-capabilities ()
-  "Return FR-703 Compiler Self-Profiling / Build Analytics capabilities."
-  '(:fr-id :fr-703
-    :time-passes t
-    :stats t
-    :trace-emit :chrome-trace-json
-    :build-analytics t))
-
-(defun build-analytics-summary (&key pass-count instruction-count elapsed-us changed-count)
-  "Build a compact FR-703 build analytics summary plist."
-  (list :fr-id :fr-703
-        :pass-count (or pass-count 0)
-        :instruction-count (or instruction-count 0)
-        :elapsed-us (or elapsed-us 0)
-        :changed-count (or changed-count 0)
-        :capabilities (compiler-self-profiling-capabilities)))
-
-;;; ─── Per-Pass Reporting ──────────────────────────────────────────────────
-
-(defun %opt-pass-name-string (f)
-  (string-upcase (format nil "~A" f)))
-
-(defun %opt-remarks-applies-p (changed mode)
-  "T when a remarks entry should be emitted given CHANGED status and MODE."
-  (or (eq mode :all)
-      (and changed      (eq mode :changed))
-      (and (not changed)(eq mode :missed))))
-
-(defun %opt-emit-pass-report (f before next elapsed-s dur-us reporting trace)
-  "Emit timing, stats, remarks, and trace events for one pass application.
-Separated from the core loop so reporting concerns are independently extensible.
-F is the pass function; BEFORE/NEXT are instruction lists; ELAPSED-S is wall time
-in seconds; DUR-US is duration in microseconds; REPORTING is an opt-reporting-options;
-TRACE is an opt-trace-state (mutated in place)."
-  (let* ((before-count (length before))
-         (after-count  (length next))
-         (changed      (not (opt-converged-p before next)))
-         (name         (%opt-pass-name-string f)))
-    (when (opt-report-print-pass-timings reporting)
-      (format (opt-report-timing-stream reporting) "~A: ~,6Fs~%" f elapsed-s))
-    (when (opt-report-print-pass-stats reporting)
-      (format (opt-report-stats-stream reporting)
-              "~A: before=~D after=~D delta=~D changed=~A~%"
-              f before-count after-count (- after-count before-count)
-              (if changed "yes" "no")))
-    (when (and (opt-report-print-opt-remarks reporting)
-               (%opt-remarks-applies-p changed (opt-report-opt-remarks-mode reporting)))
-      (format (opt-report-opt-remarks-stream reporting)
-              "~A: ~A~%" f (if changed "changed" "missed")))
-    (when (opt-trace-enabled trace)
-      (push (list :name name :ts-us (opt-trace-ts-us trace) :dur-us dur-us)
-            (opt-trace-events trace))
-      (incf (opt-trace-ts-us trace) dur-us))))
 
 (defun %opt-run-passes-once (prog passes reporting trace)
   "Apply PASSES once, mutating TRACE in place and emitting via REPORTING.

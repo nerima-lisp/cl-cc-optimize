@@ -11,16 +11,6 @@
   (description "")
   (source-location nil))
 
-(defun opt-remark-type-applies-p (type mode)
-  "Return T when remark TYPE should be emitted for MODE."
-  (case mode
-    (:all t)
-    (:changed (eq type :applied))
-    (:applied (eq type :applied))
-    (:missed (eq type :missed))
-    (:analysis (eq type :analysis))
-    (otherwise nil)))
-
 (defun %opt-yaml-string (value)
   "Return VALUE rendered as a conservative double-quoted YAML scalar."
   (let ((text (format nil "~A" (or value ""))))

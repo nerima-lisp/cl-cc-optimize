@@ -85,7 +85,8 @@ edges."
   "Return the set of labels that are in a recursive SCC of GRAPH."
   (let ((recursive (make-hash-table :test #'equal)))
     (maphash (lambda (label _callees)
-               (when (%opt-call-graph-reaches-self-p graph label label (make-hash-table :test #'equal))
+               (when (%opt-call-graph-reaches-self-p
+                      graph label label (make-hash-table :test #'equal))
                  (setf (gethash label recursive) t)))
              graph)
     recursive))

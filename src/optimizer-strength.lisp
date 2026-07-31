@@ -336,9 +336,13 @@ Returns a list of vm instructions (may include vm-const, vm-ash, vm-add, vm-move
                       (integerp rv)
                       (> rv 1)
                       (not (opt-power-of-2-p rv)))
-                 (let ((seq (or (%opt-div-by-verified-reciprocal-seq dst lhs rv lhs-interval #'new-reg)
-                                (%opt-div-by-verified-reciprocal-seq-with-bias dst lhs rv lhs-interval #'new-reg)
-                                 (%opt-div-by-unsigned-magic-seq dst lhs rv lhs-interval #'new-reg))))
+                 (let ((seq
+                         (or (%opt-div-by-verified-reciprocal-seq
+                              dst lhs rv lhs-interval #'new-reg)
+                             (%opt-div-by-verified-reciprocal-seq-with-bias
+                              dst lhs rv lhs-interval #'new-reg)
+                             (%opt-div-by-unsigned-magic-seq
+                              dst lhs rv lhs-interval #'new-reg))))
                    (if seq
                        (progn
                          (remhash dst env)

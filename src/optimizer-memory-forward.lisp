@@ -20,7 +20,8 @@ single-block instruction streams so existing behavior stays intact."
                 (store (%mps-pending-store state key))
                 (dst   (cl-cc/vm:vm-get-global-dst inst)))
            (if store
-               (progn (%mps-emit state (make-vm-move :dst dst :src (cl-cc/vm:vm-set-global-src store)))
+               (progn (%mps-emit state
+                                 (make-vm-move :dst dst :src (cl-cc/vm:vm-set-global-src store)))
                       (when dst
                         (%mps-flush-dependent-on-reg state dst :exclude-key key)))
                (progn (when dst
@@ -34,7 +35,9 @@ single-block instruction streams so existing behavior stays intact."
                 (store (%mps-pending-store state key))
                 (dst   (cl-cc/vm:vm-slot-read-dst inst)))
            (if store
-               (progn (%mps-emit state (make-vm-move :dst dst :src (cl-cc/vm:vm-slot-write-value-reg store)))
+               (progn (%mps-emit
+                       state
+                       (make-vm-move :dst dst :src (cl-cc/vm:vm-slot-write-value-reg store)))
                       (when dst
                         (%mps-flush-dependent-on-reg state dst :exclude-key key)))
                (progn (when dst
@@ -141,9 +144,7 @@ CFG-aware forwarding models globals and slot accesses keyed by alias roots."
       (dolist (key dead)
         (remhash key state)))))
 
-(defun %available-store-control-inst-p (inst)
-  "Return T when INST is a CFG terminator handled by explicit graph edges."
-  (typep inst '(or vm-jump vm-jump-zero vm-ret vm-halt)))
+(define-inst-type-predicate %available-store-control-inst-p (or vm-jump vm-jump-zero vm-ret vm-halt) "Return T when INST is a CFG terminator handled by explicit graph edges.")
 
 (defun %available-store-clobber-inst-p (inst)
   "Return T when INST conservatively invalidates all available-store facts."
@@ -313,8 +314,10 @@ loads in-place."
          (flow        (opt-run-dataflow cfg
                                         :direction :forward
                                         :meet #'%available-store-merge-states
-                                        :transfer (lambda (block in-state)
-                                                    (%available-store-transfer block in-state alias-roots))
+                                        :transfer
+                                        (lambda (block in-state)
+                                          (%available-store-transfer
+                                           block in-state alias-roots))
                                         :state-equal #'%available-store-state-equal
                                         :initial-state initial
                                         :boundary-state initial

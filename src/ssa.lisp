@@ -245,4 +245,5 @@ the loop boundary instead of delaying the phi to a later outside-loop use."
       (%ssa-rename-block (cfg-entry cfg) state phi-map renamed))
     (values renamed phi-map)))
 
-;;; Trivial phi elimination (ssa-eliminate-trivial-phis) and ssa-rewrite-dst are in ssa-phi-elim.lisp.
+;;; Trivial phi elimination (ssa-eliminate-trivial-phis) and ssa-rewrite-dst
+;;; are in ssa-phi-elim.lisp.

@@ -95,8 +95,9 @@
          ((gethash tp *opt-type-pred-fold-table*)
           (multiple-value-bind (sval found) (gethash (vm-src inst) env)
             (if found
-                (make-vm-const :dst (vm-dst inst)
-                               :value (if (funcall (gethash tp *opt-type-pred-fold-table*) sval) 1 0))
+                (make-vm-const
+                 :dst (vm-dst inst)
+                 :value (if (funcall (gethash tp *opt-type-pred-fold-table*) sval) 1 0))
                 inst)))
          (t inst))))))
 

@@ -248,7 +248,8 @@ from L1/L2 tile sizes and preserves the original executable loop body."
                 do (let ((outer (%loop-fr514-parse-canonical-loop-at vec i)))
                      (if (null outer)
                          (progn (push (aref vec i) out) (incf i))
-                         (let ((inner (%loop-tile-candidate-p instructions vec outer l1-size l2-size)))
+                         (let ((inner (%loop-tile-candidate-p
+                                       instructions vec outer l1-size l2-size)))
                             (if (and inner (%loop-tile-safe-2d-p outer inner))
                                 (progn
                                   (setf out (%loop-tile-emit-strip-mined-2d vec outer inner

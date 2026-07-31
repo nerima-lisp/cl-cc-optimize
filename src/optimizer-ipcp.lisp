@@ -8,12 +8,6 @@
 ;;; merge).  Constants are materialized at the clone entry, which makes ordinary
 ;;; fold/SCCP/DCE passes eliminate now-constant branches and dead paths.
 
-(defun %ipcp-safe-token-string (object)
-  (let ((s (write-to-string object :escape t :readably nil)))
-    (with-output-to-string (out)
-      (loop for ch across s
-            do (write-char (if (alphanumericp ch) ch #\-) out)))))
-
 (defun %ipcp-specialized-label (label constants)
   (format nil "~A-ipcp-~X" label (sxhash (list label constants))))
 
@@ -27,9 +21,13 @@
      (remhash (vm-dst inst) reg-const))
     (vm-move
      (multiple-value-bind (value found-p) (gethash (vm-src inst) reg-const)
-       (if found-p (setf (gethash (vm-dst inst) reg-const) value) (remhash (vm-dst inst) reg-const)))
+       (if found-p
+           (setf (gethash (vm-dst inst) reg-const) value)
+           (remhash (vm-dst inst) reg-const)))
      (multiple-value-bind (label found-p) (gethash (vm-src inst) reg-label)
-       (if found-p (setf (gethash (vm-dst inst) reg-label) label) (remhash (vm-dst inst) reg-label))))
+       (if found-p
+           (setf (gethash (vm-dst inst) reg-label) label)
+           (remhash (vm-dst inst) reg-label))))
     (t
      (let ((dst (opt-inst-dst inst)))
        (when dst
@@ -64,12 +62,12 @@
                 when folded collect folded)))
     (append (list (make-vm-label :name label)) constant-insts rewritten)))
 
-(defun %ipcp-call-p (inst)
-  (typep inst '(or vm-call vm-tail-call)))
+(define-inst-type-predicate %ipcp-call-p (or vm-call vm-tail-call))
 
 (defun %ipcp-copy-call-with-func (inst func-reg)
   (typecase inst
-    (vm-tail-call (make-vm-tail-call :dst (vm-dst inst) :func func-reg :args (copy-list (vm-args inst))))
+    (vm-tail-call
+     (make-vm-tail-call :dst (vm-dst inst) :func func-reg :args (copy-list (vm-args inst))))
     (t (make-vm-call :dst (vm-dst inst) :func func-reg :args (copy-list (vm-args inst))))))
 
 (defun opt-pass-ipcp (instructions)
@@ -97,7 +95,8 @@ target or constant argument is known, it leaves the stream unchanged."
                        (special-label (or (gethash key clone-cache)
                                           (setf (gethash key clone-cache)
                                                 (%ipcp-specialized-label label constants)))))
-                  (unless (member special-label clones :key (lambda (entry) (first entry)) :test #'string=)
+                  (unless (member special-label clones
+                                  :key (lambda (entry) (first entry)) :test #'string=)
                     (push (list special-label body constants) clones))
                   (let ((fresh (funcall fresh-reg)))
                     (push (make-vm-func-ref :dst fresh :label special-label :params params) result)

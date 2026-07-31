@@ -100,6 +100,7 @@
        (:optimization-remarks      . ,#'%maybe-run-optimization-remarks)
        (:abstract-interpretation   . ,#'%maybe-run-abstract-interpretation)
        (:translation-validation    . ,#'%maybe-run-translation-validation)
+       (:verify-ir                 . ,#'%maybe-run-verify-ir)
        (:schedule-local            . ,#'opt-pass-schedule-local))
   "Ordered (keyword . function) pairs — single source for pipeline and registry.")
 
@@ -192,6 +193,7 @@
        :optimization-remarks
        :abstract-interpretation
        :translation-validation
+       :verify-ir
        :schedule-local)
   "Default convergence pipeline keys.
 `:egraph` remains available as an explicit pass, but the default rewrite stage is

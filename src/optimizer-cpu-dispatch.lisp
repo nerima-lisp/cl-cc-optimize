@@ -74,12 +74,6 @@ Usage: (define-dispatched matmul
   `(progn ,@(loop for (features def) in versions collect def)))
 
 ;;; ──── Compiler support for multi-versioning ────
-(defun emit-cpu-dispatch (stream func-name)
-  "Emit code that selects the right function version at startup."
-  ;; Pattern: if (cpuid_has_avx2) call avx2_version else call baseline
-  (declare (ignore stream func-name))
-  (values))
-
 ;;; ──── Initialization ────
 (eval-when (:load-toplevel :execute)
   (setf *cpu-features* (detect-cpu-features)))

@@ -107,9 +107,10 @@ the entry block for forward analyses and exit block for backward analyses."
                                                (:backward (gethash other in-map))))))
                (ecase direction
                  (:forward
-                  (let* ((new-in (if (eq block boundary-block)
-                                     (%opt-dataflow-copy-state boundary-state copy-state)
-                                     (%opt-dataflow-merge-states state-in meet initial-state copy-state)))
+                  (let* ((new-in
+                           (if (eq block boundary-block)
+                               (%opt-dataflow-copy-state boundary-state copy-state)
+                               (%opt-dataflow-merge-states state-in meet initial-state copy-state)))
                          (old-out (gethash block out-map))
                          (new-out (funcall transfer block new-in)))
                     (setf (gethash block in-map) new-in)
@@ -118,9 +119,10 @@ the entry block for forward analyses and exit block for backward analyses."
                       (dolist (user (%opt-dataflow-users block direction))
                         (pushnew user worklist :test #'eq)))))
                  (:backward
-                  (let* ((new-out (if (eq block boundary-block)
-                                      (%opt-dataflow-copy-state boundary-state copy-state)
-                                      (%opt-dataflow-merge-states state-in meet initial-state copy-state)))
+                  (let* ((new-out
+                           (if (eq block boundary-block)
+                               (%opt-dataflow-copy-state boundary-state copy-state)
+                               (%opt-dataflow-merge-states state-in meet initial-state copy-state)))
                          (old-in (gethash block in-map))
                          (new-in (funcall transfer block new-out)))
                     (setf (gethash block out-map) new-out)
@@ -182,7 +184,8 @@ iterations to accelerate convergence on growing lattices."
                       :meet (lambda (states)
                               (cond
                                 ((null states) (%opt-dataflow-copy-state boundary copy-state))
-                                ((null (cdr states)) (%opt-dataflow-copy-state (car states) copy-state))
+                                ((null (cdr states))
+                                 (%opt-dataflow-copy-state (car states) copy-state))
                                 (t
                                  (let ((acc (%opt-dataflow-copy-state (car states) copy-state)))
                                    (dolist (state (cdr states) acc)
@@ -256,22 +259,6 @@ iterations to accelerate convergence on growing lattices."
          (let ((dst (opt-inst-dst inst)))
            (when dst
              (remhash dst state))))))))
-
-(defun opt-run-integer-interval-abstract-interpretation (cfg-or-instructions)
-  "Run a concrete integer-interval abstract interpretation over CFG-OR-INSTRUCTIONS.
-
-Intervals are represented as cons cells (LO . HI) per virtual register."
-  (let ((domain (make-opt-abstract-domain
-                 :name :integer-interval
-                 :top (make-hash-table :test #'eq)
-                 :bottom (make-hash-table :test #'eq)
-                 :join #'%opt-interval-domain-join
-                 :leq #'%opt-interval-env-equal
-                 :widen #'%opt-interval-domain-join
-                 :transfer #'%opt-interval-domain-transfer)))
-    (opt-run-abstract-interpretation cfg-or-instructions domain
-                                     :direction :forward
-                                     :copy-state #'%opt-interval-env-copy)))
 
 ;;; ─── Available Expressions ────────────────────────────────────────────────
 

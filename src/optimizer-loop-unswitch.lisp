@@ -2,9 +2,6 @@
 
 (in-package :cl-cc/optimize)
 
-(defvar *opt-enable-loop-unswitch* nil
-  "When true, enable FR-602 loop unswitching in the default pipeline.")
-
 (defun %loop-unswitch-label-table (instructions)
   "Return a hash table of label names used in INSTRUCTIONS."
   (let ((used (make-hash-table :test #'equal)))
@@ -137,7 +134,8 @@ condition computations are rejected to avoid changing side-effect behavior."
     ((equal target exit-name) exit-name)
     (t target)))
 
-(defun %loop-unswitch-copy-loop-version (vec start back-pos branch-info rename exit-name true-version-p)
+(defun %loop-unswitch-copy-loop-version
+    (vec start back-pos branch-info rename exit-name true-version-p)
   "Copy one specialized loop version."
   (let ((branch-index (+ start 3 (getf branch-info :branch-index)))
         (condition-index (let ((idx (getf branch-info :condition-index)))

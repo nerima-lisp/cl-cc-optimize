@@ -148,7 +148,8 @@
 
 (defun %opt-copy-prop-rewrite-inst (inst copies)
   (let* ((sexp    (instruction->sexp inst))
-         (rewrite (lambda (x) (if (opt-register-keyword-p x) (%opt-copy-prop-canonical x copies) x))))
+         (rewrite (lambda (x)
+                    (if (opt-register-keyword-p x) (%opt-copy-prop-canonical x copies) x))))
     (handler-case
         (let* ((has-dst  (not (null (opt-inst-dst inst))))
                (new-sexp (if has-dst

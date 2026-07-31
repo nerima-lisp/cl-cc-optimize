@@ -100,15 +100,18 @@ NRECONC rather than growing the host/control stack.")
         ((and (consp form) (eq (car form) 'progn))
          (append '(progn)
                  (butlast (cdr form))
-                 (list (opt-trmc-transform-tail-form (car (last (cdr form))) function-name worker acc-var))))
+                 (list (opt-trmc-transform-tail-form
+                        (car (last (cdr form))) function-name worker acc-var))))
         ((and (consp form) (member (car form) '(let let*) :test #'eq))
          (append (list (car form) (second form))
                  (butlast (cddr form))
-                 (list (opt-trmc-transform-tail-form (car (last (cddr form))) function-name worker acc-var))))
+                 (list (opt-trmc-transform-tail-form
+                        (car (last (cddr form))) function-name worker acc-var))))
         ((and (consp form) (eq (car form) 'block))
          (append (list 'block (second form))
                  (butlast (cddr form))
-                 (list (opt-trmc-transform-tail-form (car (last (cddr form))) function-name worker acc-var))))
+                 (list (opt-trmc-transform-tail-form
+                        (car (last (cddr form))) function-name worker acc-var))))
         (t (%opt-trmc-base-return form acc-var)))))
 
 (defun opt-trmc-transform-defun-form (form &key force)

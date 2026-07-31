@@ -6,9 +6,16 @@
   "Register pool used by the FR-753 random valid IR generator.")
 
 (defun %opt-fuzz-random-state (seed)
-  (let ((state (make-random-state nil)))
-    (dotimes (_ (mod (abs (or seed 0)) 997) state)
-      (random 1000003 state))))
+  "Return a random-state genuinely determined by SEED alone.
+
+(MAKE-RANDOM-STATE NIL) copies the ambient *RANDOM-STATE*, which any prior
+random draw in the same Lisp image has already advanced -- perturbing that
+copy a SEED-derived number of steps does not make two calls with the same
+SEED produce the same sequence unless nothing else in the process has
+touched *RANDOM-STATE* first. CL-CC/VM:MAKE-RANDOM-STATE accepts an integer
+seed directly (an MT19937 reseed, independent of ambient state), so the
+same SEED always reproduces the same trials."
+  (make-random-state (abs (or seed 0))))
 
 (defun %opt-fuzz-reg (index)
   (nth (mod index (length *opt-fuzz-registers*)) *opt-fuzz-registers*))

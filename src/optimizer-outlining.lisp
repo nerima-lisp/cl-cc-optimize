@@ -29,9 +29,7 @@
 ;;; %opt-fresh-register-generator is defined in optimizer-inline.lisp.
 ;;; No local copies needed here.
 
-(defun %opt-control-or-label-p (inst)
-  "Return T when INST should not be part of a straight-line outlined sequence."
-  (typep inst 'opt-control-or-label))
+(define-inst-type-predicate %opt-control-or-label-p opt-control-or-label "Return T when INST should not be part of a straight-line outlined sequence.")
 
 (defun %opt-outlinable-subseq-p (seq)
   "Return T when SEQ can be outlined as a nullary helper returning one value."
@@ -99,7 +97,8 @@
       (multiple-value-bind (start len seq) (%opt-find-outline-candidate instructions)
         (declare (ignore start len))
         (if seq
-            (let* ((label (format nil "~A~D" *opt-outlined-label-prefix* (sxhash (%opt-subseq-key seq))))
+            (let* ((label (format nil "~A~D" *opt-outlined-label-prefix*
+                                  (sxhash (%opt-subseq-key seq))))
                    (fresh-reg (%opt-fresh-register-generator instructions))
                    (rewritten (%opt-replace-outline-occurrences instructions seq label fresh-reg)))
               (append rewritten
@@ -150,7 +149,9 @@
                      (or (not entry-seen-p)
                          (gethash (vm-name inst) backedges)))
             (let ((skip-label (format nil "~A~D" *opt-safepoint-prefix* counter)))
-              (push (make-vm-label :name (format nil "~Asite_~D" *opt-safepoint-prefix* counter)) result)
+              (push (make-vm-label
+                     :name (format nil "~Asite_~D" *opt-safepoint-prefix* counter))
+                    result)
               (dolist (poll (reverse (%opt-safepoint-poll fresh-reg skip-label)))
                 (push poll result)))
             (incf counter)

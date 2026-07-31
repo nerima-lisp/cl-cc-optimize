@@ -113,11 +113,7 @@ The IV registers may differ; fusion rewrites RIGHT's IV uses to LEFT's IV."
               (some (lambda (a) (%loop-fr514-inst-depends-on-p b a)) left-core))
             right-core)))
 
-(defun %loop-fr514-memory-inst-p (inst)
-  (typep inst '(or vm-aref vm-aset vm-slot-read vm-slot-write vm-get-global vm-set-global)))
-
-(defun %loop-fr514-write-inst-p (inst)
-  (typep inst '(or vm-aset vm-slot-write vm-set-global)))
+(define-inst-type-predicate %loop-fr514-memory-inst-p (or vm-aref vm-aset vm-slot-read vm-slot-write vm-get-global vm-set-global))
 
 (defun %loop-fr514-affine-access (inst iv const-env def-env)
   "Return (:array A :write-p P :stride S :offset O) for simple affine accesses.
@@ -264,7 +260,9 @@ legality is proven by register checks plus conservative GCD/Banerjee memory test
                                  (emit (aref vec (opt-loop-cmp-index lp)))
                                  (emit (aref vec (opt-loop-jz-index lp)))
                                  (dolist (inst core-a) (emit inst))
-                                 (dolist (inst core-b) (emit (opt-rewrite-inst-regs (%loop-fr514-copy-inst inst) copies)))
+                                 (dolist (inst core-b)
+                                   (emit (opt-rewrite-inst-regs
+                                          (%loop-fr514-copy-inst inst) copies)))
                                  (emit step-a)
                                  (emit (aref vec (opt-loop-back-index lp)))
                                  (emit (make-vm-label :name (opt-loop-exit-label lp2)))
