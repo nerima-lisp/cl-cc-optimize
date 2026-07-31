@@ -97,75 +97,84 @@ FACTS is an opt-devirt-facts struct bundling all 6 per-register hash tables."
         (reg-const         (opt-devirt-facts-reg-const facts))
         (reg-closure-label (opt-devirt-facts-reg-closure-label facts))
         (reg-gf-literal    (opt-devirt-facts-reg-gf-literal facts)))
-    (typecase inst
-      (vm-class-def
-       (%opt-set-reg-fact (vm-dst inst) reg-class (vm-class-name-sym inst)
-                           reg-name reg-object-class reg-const reg-closure-label reg-gf-literal))
-      (vm-get-global
-       (%opt-set-reg-fact (vm-dst inst) reg-name (vm-global-name inst)
-                           reg-class reg-object-class reg-const reg-closure-label reg-gf-literal))
-      (vm-const
-       (%opt-set-reg-fact (vm-dst inst) reg-const (vm-value inst)
-                           reg-name reg-class reg-object-class reg-closure-label reg-gf-literal)
-       (let ((literal-info (%opt-hash-gf-info (vm-value inst))))
-         (when literal-info
-           (setf (gethash (vm-dst inst) reg-gf-literal) literal-info))))
-      ((or vm-closure vm-func-ref)
-       (%opt-set-reg-fact (vm-dst inst) reg-closure-label (vm-label-name inst)
-                           reg-name reg-class reg-object-class reg-const reg-gf-literal))
-      (vm-move
-       (let ((move-dst (vm-dst inst))
-             (src (vm-move-src inst)))
-         (%opt-clear-reg-facts move-dst reg-name reg-class reg-object-class
-                               reg-const reg-closure-label reg-gf-literal)
-         (dolist (accessor *devirt-fact-slot-accessors*)
-           (let ((table (funcall accessor facts)))
-             (multiple-value-bind (value found-p) (gethash src table)
-               (when found-p
-                 (setf (gethash move-dst table) value)))))))
-      (vm-make-obj
-       (let ((class-name (or (gethash (vm-class-reg inst) reg-name)
-                             (gethash (vm-class-reg inst) reg-class))))
-         (%opt-clear-reg-facts dst reg-name reg-class reg-object-class
-                               reg-const reg-closure-label reg-gf-literal)
-         (when (and class-name (gethash class-name class-sealed))
-           (setf (gethash dst reg-object-class) class-name))))
-      (vm-register-method
-       (let ((gf-name (gethash (vm-gf-reg inst) reg-name))
-             (label (gethash (vm-method-reg inst) reg-closure-label)))
-         (when gf-name
-           (let ((info (%opt-gf-info gf-name gf-infos)))
-             ;; Runtime registration re-opens a satiated GF.  The optimizer only
-             ;; treats a later explicit :__satiated__ write as a closed-world seal.
-             (setf (getf info :satiated) nil)
-             (if (vm-method-qualifier inst)
-                 (setf (getf info :unsafe) t)
-                 (push (list :specializer (vm-method-specializer inst)
-                             :qualifier nil
-                             :label label)
-                       (getf info :methods)))))))
-      (vm-sethash
-       (let ((table-name (gethash (vm-hash-table-reg inst) reg-name)))
-         (when table-name
-           (multiple-value-bind (key key-known-p)
-               (gethash (vm-hash-key inst) reg-const)
-             (multiple-value-bind (value value-known-p)
-                 (gethash (vm-hash-value inst) reg-const)
-               (let ((info (%opt-gf-info table-name gf-infos)))
-                 (cond
-                   ((and key-known-p (eq key :__satiated__))
-                    (if value-known-p
-                        (setf (getf info :satiated) (not (opt-falsep value)))
-                        (setf (getf info :unsafe) t)))
-                   ((and key-known-p (eq key :__method-combination__))
-                    (if value-known-p
-                        (setf (getf info :combination) value)
-                        (setf (getf info :unsafe) t)))
-                   ((not key-known-p)
-                    (setf (getf info :unsafe) t)))))))))
-      (t
-       (%opt-clear-reg-facts dst reg-name reg-class reg-object-class
-                             reg-const reg-closure-label reg-gf-literal)))))
+    (flet ((track-class-def ()
+             (%opt-set-reg-fact (vm-dst inst) reg-class (vm-class-name-sym inst)
+                                 reg-name reg-object-class reg-const reg-closure-label reg-gf-literal))
+           (track-get-global ()
+             (%opt-set-reg-fact (vm-dst inst) reg-name (vm-global-name inst)
+                                 reg-class reg-object-class reg-const reg-closure-label reg-gf-literal))
+           (track-const ()
+             (%opt-set-reg-fact (vm-dst inst) reg-const (vm-value inst)
+                                 reg-name reg-class reg-object-class reg-closure-label reg-gf-literal)
+             (let ((literal-info (%opt-hash-gf-info (vm-value inst))))
+               (when literal-info
+                 (setf (gethash (vm-dst inst) reg-gf-literal) literal-info))))
+           (track-closure-source ()
+             (%opt-set-reg-fact (vm-dst inst) reg-closure-label (vm-label-name inst)
+                                 reg-name reg-class reg-object-class reg-const reg-gf-literal))
+           (track-move ()
+             (let ((move-dst (vm-dst inst))
+                   (src (vm-move-src inst)))
+               (%opt-clear-reg-facts move-dst reg-name reg-class reg-object-class
+                                     reg-const reg-closure-label reg-gf-literal)
+               (dolist (accessor *devirt-fact-slot-accessors*)
+                 (let ((table (funcall accessor facts)))
+                   (multiple-value-bind (value found-p) (gethash src table)
+                     (when found-p
+                       (setf (gethash move-dst table) value)))))))
+           (track-make-obj ()
+             (let ((class-name (or (gethash (vm-class-reg inst) reg-name)
+                                   (gethash (vm-class-reg inst) reg-class))))
+               (%opt-clear-reg-facts dst reg-name reg-class reg-object-class
+                                     reg-const reg-closure-label reg-gf-literal)
+               (when (and class-name (gethash class-name class-sealed))
+                 (setf (gethash dst reg-object-class) class-name))))
+           (track-register-method ()
+             (let ((gf-name (gethash (vm-gf-reg inst) reg-name))
+                   (label (gethash (vm-method-reg inst) reg-closure-label)))
+               (when gf-name
+                 (let ((info (%opt-gf-info gf-name gf-infos)))
+                   ;; Runtime registration re-opens a satiated GF.  The optimizer only
+                   ;; treats a later explicit :__satiated__ write as a closed-world seal.
+                   (setf (getf info :satiated) nil)
+                   (if (vm-method-qualifier inst)
+                       (setf (getf info :unsafe) t)
+                       (push (list :specializer (vm-method-specializer inst)
+                                   :qualifier nil
+                                   :label label)
+                             (getf info :methods)))))))
+           (track-sethash ()
+             (let ((table-name (gethash (vm-hash-table-reg inst) reg-name)))
+               (when table-name
+                 (multiple-value-bind (key key-known-p)
+                     (gethash (vm-hash-key inst) reg-const)
+                   (multiple-value-bind (value value-known-p)
+                       (gethash (vm-hash-value inst) reg-const)
+                     (let ((info (%opt-gf-info table-name gf-infos)))
+                       (cond
+                         ((and key-known-p (eq key :__satiated__))
+                          (if value-known-p
+                              (setf (getf info :satiated) (not (opt-falsep value)))
+                              (setf (getf info :unsafe) t)))
+                         ((and key-known-p (eq key :__method-combination__))
+                          (if value-known-p
+                              (setf (getf info :combination) value)
+                              (setf (getf info :unsafe) t)))
+                         ((not key-known-p)
+                          (setf (getf info :unsafe) t)))))))))
+           (track-fallback ()
+             (%opt-clear-reg-facts dst reg-name reg-class reg-object-class
+                                   reg-const reg-closure-label reg-gf-literal)))
+      (typecase inst
+        (vm-class-def (track-class-def))
+        (vm-get-global (track-get-global))
+        (vm-const (track-const))
+        ((or vm-closure vm-func-ref) (track-closure-source))
+        (vm-move (track-move))
+        (vm-make-obj (track-make-obj))
+        (vm-register-method (track-register-method))
+        (vm-sethash (track-sethash))
+        (t (track-fallback))))))
 
 (defun %opt-single-sealed-primary-method-label (inst class-sealed facts gf-infos)
   "Return direct method label for safe sealed+satiated generic call INST, or NIL.

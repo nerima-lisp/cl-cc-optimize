@@ -142,6 +142,24 @@ values produced by the original loop on normal exit."
                    (incf i 1))))
         finally (return (nreverse result))))
 
+(defun %opt-copy-window-shape-valid-p (init header cmp exit-jump load store one inc step back-jump exit-label)
+  "T when the fixed-role instructions in a candidate copy-loop window have the
+   expected vm instruction types and immediate values for the canonical
+   zero-based array copy idiom."
+  (and (typep init 'vm-const)
+       (eql (vm-value init) 0)
+       (typep header 'vm-label)
+       (typep cmp 'vm-lt)
+       (typep exit-jump 'vm-jump-zero)
+       (typep load 'vm-aref)
+       (typep store 'vm-aset)
+       (typep one 'vm-const)
+       (eql (vm-value one) 1)
+       (typep inc 'vm-add)
+       (typep step 'vm-move)
+       (typep back-jump 'vm-jump)
+       (typep exit-label 'vm-label)))
+
 (defun opt-copy-recognition-match-at (instructions pos alias-roots)
   "Recognize a canonical full-vector copy loop and replace it with a bulk copy.
 
@@ -155,34 +173,12 @@ values produced by the original loop on normal exit."
   (let ((end (+ pos 11)))
     (when (and (> pos 0)
                (<= end (length instructions)))
-      (let* ((len-inst   (nth (1- pos) instructions))
-             (init       (nth (+ pos 0) instructions))
-             (header     (nth (+ pos 1) instructions))
-             (cmp        (nth (+ pos 2) instructions))
-             (exit-jump  (nth (+ pos 3) instructions))
-             (load       (nth (+ pos 4) instructions))
-             (store      (nth (+ pos 5) instructions))
-             (one        (nth (+ pos 6) instructions))
-             (inc        (nth (+ pos 7) instructions))
-             (step       (nth (+ pos 8) instructions))
-             (back-jump  (nth (+ pos 9) instructions))
-             (exit-label (nth (+ pos 10) instructions)))
-        (when (and (typep init 'vm-const)
-                   (eql (vm-value init) 0)
-                   (typep header 'vm-label)
-                   (typep cmp 'vm-lt)
-                   (typep exit-jump 'vm-jump-zero)
-                   (typep load 'vm-aref)
-                   (typep store 'vm-aset)
-                   (typep one 'vm-const)
-                   (eql (vm-value one) 1)
-                   (typep inc 'vm-add)
-                   (typep step 'vm-move)
-                   (typep back-jump 'vm-jump)
-                   (typep exit-label 'vm-label))
+      (destructuring-bind (len-inst init header cmp exit-jump load store one inc step back-jump exit-label)
+          (subseq instructions (1- pos) end)
+        (when (%opt-copy-window-shape-valid-p init header cmp exit-jump load store one inc step back-jump exit-label)
           (let* ((src-array-reg (vm-array-reg load))
                  (dst-array-reg (vm-array-reg store))
-                  (len-reg       (vm-rhs cmp))
+                 (len-reg       (vm-rhs cmp))
                  (idx-reg       (vm-dst init))
                  (cond-reg      (vm-dst cmp))
                  (one-reg       (vm-dst one))
@@ -191,39 +187,52 @@ values produced by the original loop on normal exit."
                  (header-name   (vm-name header))
                  (exit-name     (vm-name exit-label))
                  (target-counts (%opt-branch-target-counts instructions)))
-             (when (and (or (not (typep len-inst 'vm-array-length))
-                            (and (eq (vm-dst len-inst) len-reg)
-                                 (member (vm-src len-inst)
-                                         (list src-array-reg dst-array-reg)
-                                         :test #'eq)))
-                        (eq (vm-lhs cmp) idx-reg)
-                       (eq (vm-rhs cmp) len-reg)
-                       (eq (vm-reg exit-jump) cond-reg)
-                       (equal (vm-label-name exit-jump) exit-name)
-                       (eq (vm-index-reg load) idx-reg)
-                       (eq (vm-index-reg store) idx-reg)
-                       (eq (vm-val-reg store) load-reg)
-                       (or (and (eq (vm-lhs inc) idx-reg)
-                                (eq (vm-rhs inc) one-reg))
-                           (and (eq (vm-lhs inc) one-reg)
-                                (eq (vm-rhs inc) idx-reg)))
-                       (eq (vm-dst step) idx-reg)
-                       (eq (vm-src step) next-reg)
-                       (equal (vm-label-name back-jump) header-name)
-                       (= (gethash header-name target-counts 0) 1)
-                       (= (gethash exit-name target-counts 0) 1)
-                       (%opt-distinct-registers-p
-                        len-reg idx-reg cond-reg one-reg next-reg load-reg)
-                       (not (member src-array-reg
-                                    (list idx-reg cond-reg one-reg next-reg load-reg) :test #'eq))
-                       (not (member dst-array-reg
-                                    (list idx-reg cond-reg one-reg next-reg load-reg) :test #'eq))
-                       (%opt-copy-arrays-provably-distinct-p
-                        dst-array-reg src-array-reg alias-roots)
-                       (not (%opt-register-read-after-p load-reg instructions end)))
-              (values (%opt-copy-loop-replacement dst-array-reg src-array-reg len-reg idx-reg
-                                                  next-reg cond-reg one-reg load-reg)
-                      11))))))))
+            (labels ((length-source-consistent-p ()
+                       ;; The optional ARRAY-LENGTH may be absent (bound elsewhere) or,
+                       ;; when present, must feed LEN-REG from one of the two arrays.
+                       (or (not (typep len-inst 'vm-array-length))
+                           (and (eq (vm-dst len-inst) len-reg)
+                                (member (vm-src len-inst)
+                                        (list src-array-reg dst-array-reg)
+                                        :test #'eq))))
+                     (wiring-consistent-p ()
+                       ;; Every instruction in the window must reference the same
+                       ;; induction/condition registers and jump to the same labels.
+                       (and (eq (vm-lhs cmp) idx-reg)
+                            (eq (vm-rhs cmp) len-reg)
+                            (eq (vm-reg exit-jump) cond-reg)
+                            (equal (vm-label-name exit-jump) exit-name)
+                            (eq (vm-index-reg load) idx-reg)
+                            (eq (vm-index-reg store) idx-reg)
+                            (eq (vm-val-reg store) load-reg)
+                            (or (and (eq (vm-lhs inc) idx-reg)
+                                     (eq (vm-rhs inc) one-reg))
+                                (and (eq (vm-lhs inc) one-reg)
+                                     (eq (vm-rhs inc) idx-reg)))
+                            (eq (vm-dst step) idx-reg)
+                            (eq (vm-src step) next-reg)
+                            (equal (vm-label-name back-jump) header-name)
+                            (= (gethash header-name target-counts 0) 1)
+                            (= (gethash exit-name target-counts 0) 1)))
+                     (registers-safe-p ()
+                       ;; The rewrite is only sound when the temporaries are mutually
+                       ;; distinct, the arrays are provably non-aliasing, and the load
+                       ;; result is not observed again after the loop.
+                       (and (%opt-distinct-registers-p
+                             len-reg idx-reg cond-reg one-reg next-reg load-reg)
+                            (not (member src-array-reg
+                                         (list idx-reg cond-reg one-reg next-reg load-reg) :test #'eq))
+                            (not (member dst-array-reg
+                                         (list idx-reg cond-reg one-reg next-reg load-reg) :test #'eq))
+                            (%opt-copy-arrays-provably-distinct-p
+                             dst-array-reg src-array-reg alias-roots)
+                            (not (%opt-register-read-after-p load-reg instructions end)))))
+              (when (and (length-source-consistent-p)
+                         (wiring-consistent-p)
+                         (registers-safe-p))
+                (values (%opt-copy-loop-replacement dst-array-reg src-array-reg len-reg idx-reg
+                                                    next-reg cond-reg one-reg load-reg)
+                        11)))))))))
 
 (defun opt-pass-copy-recognition (instructions)
   "Collapse a canonical zero-based array copy loop into a bounded bulk copy.
@@ -248,3 +257,4 @@ values produced by the original loop on normal exit."
                      (push (nth i instructions) result)
                      (incf i 1))))
           finally (return (nreverse result)))))
+

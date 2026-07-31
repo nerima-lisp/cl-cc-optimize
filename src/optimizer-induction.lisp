@@ -89,42 +89,38 @@
   (let ((constants (%opt-copy-constant-table constants))
         (inductions (make-hash-table :test #'eq))
         (exprs (make-hash-table :test #'eq)))
-    (dolist (inst instructions inductions)
-      (cond
-        ((typep inst 'vm-const)
-         (remhash (vm-dst inst) inductions)
-         (remhash (vm-dst inst) exprs)
-         (if (integerp (vm-value inst))
-             (setf (gethash (vm-dst inst) constants) (vm-value inst))
-             (remhash (vm-dst inst) constants)))
-        ((typep inst 'vm-move)
-         (remhash (vm-dst inst) inductions)
-         (remhash (vm-dst inst) exprs)
-         (%opt-copy-constant-fact inst constants))
-        (t
-         (let ((dst (opt-inst-dst inst))
-               (handled nil))
-           (multiple-value-bind (reg step ok)
-               (%opt-simple-induction-step inst constants)
-             (when ok
-               (setf handled t)
-               (multiple-value-bind (init found-p) (gethash reg constants)
-                 (if found-p
-                     (setf (gethash reg inductions)
-                           (make-opt-induction-var :reg reg
-                                                   :init init
-                                                   :step step
-                                                   :update-inst inst
-                                                   :kind :affine
-                                                   :offset step))
-                     (remhash reg inductions))
-                 (remhash reg constants)
-                 (remhash reg exprs))))
-           (unless handled
-             (multiple-value-bind (base multiplier ok)
-                 (%opt-simple-scaled-expr inst constants)
+    (flet ((handle-const (inst)
+             (remhash (vm-dst inst) inductions)
+             (remhash (vm-dst inst) exprs)
+             (if (integerp (vm-value inst))
+                 (setf (gethash (vm-dst inst) constants) (vm-value inst))
+                 (remhash (vm-dst inst) constants)))
+           (handle-move (inst)
+             (remhash (vm-dst inst) inductions)
+             (remhash (vm-dst inst) exprs)
+             (%opt-copy-constant-fact inst constants))
+           (try-induction-step (inst)
+             ;; dst = dst + step, where dst already has a known constant init.
+             (multiple-value-bind (reg step ok) (%opt-simple-induction-step inst constants)
                (when ok
-                 (setf handled t)
+                 (multiple-value-bind (init found-p) (gethash reg constants)
+                   (if found-p
+                       (setf (gethash reg inductions)
+                             (make-opt-induction-var :reg reg
+                                                     :init init
+                                                     :step step
+                                                     :update-inst inst
+                                                     :kind :affine
+                                                     :offset step))
+                       (remhash reg inductions)))
+                 (remhash reg constants)
+                 (remhash reg exprs))
+               ok))
+           (try-scaled-expr (inst dst)
+             ;; dst = base * multiplier: a geometric self-update when dst = base,
+             ;; otherwise a scaled-expression fact recorded for later derivation.
+             (multiple-value-bind (base multiplier ok) (%opt-simple-scaled-expr inst constants)
+               (when ok
                  (if (eq dst base)
                      (multiple-value-bind (init found-p) (gethash base constants)
                        (if found-p
@@ -141,51 +137,65 @@
                      (progn
                        (setf (gethash dst exprs) (list :mul base multiplier))
                        (remhash dst constants)
-                       (remhash dst inductions))))))
-           (unless handled
-             (multiple-value-bind (base offset ok)
-                 (%opt-simple-add-expr inst constants)
-               (when ok
-                 (let ((base-iv (gethash base inductions))
-                       (base-expr (gethash base exprs)))
-                   (cond
-                     (base-iv
-                      (setf handled t)
-                      (setf (gethash dst inductions)
-                            (make-opt-induction-var :reg dst
-                                                    :init (+ (opt-iv-init base-iv) offset)
-                                                    :step (opt-iv-step base-iv)
-                                                    :update-inst inst
-                                                    :kind :derived
-                                                    :offset offset
-                                                    :base-reg base))
-                      (remhash dst constants)
-                      (remhash dst exprs))
-                     ((and base-expr (eq (second base-expr) dst))
-                      (setf handled t)
-                      (multiple-value-bind (init found-p) (gethash dst constants)
-                        (if found-p
-                            (setf (gethash dst inductions)
-                                  (make-opt-induction-var :reg dst
-                                                          :init init
-                                                          :step nil
-                                                          :update-inst inst
-                                                          :kind :affine-recurrence
-                                                          :multiplier (third base-expr)
-                                                          :offset offset))
-                            (remhash dst inductions))
-                        (remhash dst constants)
-                        (remhash dst exprs)))
-                     ((and dst (not (eq dst base)))
-                      (setf handled t)
-                      (setf (gethash dst exprs) (list :add base offset))
-                      (remhash dst constants)
-                      (remhash dst inductions)))))))
-           (unless handled
+                       (remhash dst inductions))))
+               ok))
+           (try-add-expr (inst dst)
+             ;; dst = base + offset: derived from an existing induction variable,
+             ;; an affine recurrence closing a prior scaled-expression fact, or a
+             ;; fresh add-expression fact.  Unlike the two checks above, a
+             ;; recognized add-expr can still fail to match any of these shapes,
+             ;; in which case the instruction remains unhandled.
+             (multiple-value-bind (base offset ok) (%opt-simple-add-expr inst constants)
+               (and ok
+                    (let ((base-iv (gethash base inductions))
+                          (base-expr (gethash base exprs)))
+                      (cond
+                        (base-iv
+                         (setf (gethash dst inductions)
+                               (make-opt-induction-var :reg dst
+                                                       :init (+ (opt-iv-init base-iv) offset)
+                                                       :step (opt-iv-step base-iv)
+                                                       :update-inst inst
+                                                       :kind :derived
+                                                       :offset offset
+                                                       :base-reg base))
+                         (remhash dst constants)
+                         (remhash dst exprs)
+                         t)
+                        ((and base-expr (eq (second base-expr) dst))
+                         (multiple-value-bind (init found-p) (gethash dst constants)
+                           (if found-p
+                               (setf (gethash dst inductions)
+                                     (make-opt-induction-var :reg dst
+                                                             :init init
+                                                             :step nil
+                                                             :update-inst inst
+                                                             :kind :affine-recurrence
+                                                             :multiplier (third base-expr)
+                                                             :offset offset))
+                               (remhash dst inductions)))
+                         (remhash dst constants)
+                         (remhash dst exprs)
+                         t)
+                        ((and dst (not (eq dst base)))
+                         (setf (gethash dst exprs) (list :add base offset))
+                         (remhash dst constants)
+                         (remhash dst inductions)
+                         t))))))
+           (clear-facts (dst)
              (when dst
                (remhash dst constants)
                (remhash dst inductions)
-               (remhash dst exprs)))))))))
+               (remhash dst exprs))))
+      (dolist (inst instructions inductions)
+        (cond
+          ((typep inst 'vm-const) (handle-const inst))
+          ((typep inst 'vm-move) (handle-move inst))
+          (t (let ((dst (opt-inst-dst inst)))
+               (or (try-induction-step inst)
+                   (try-scaled-expr inst dst)
+                   (try-add-expr inst dst)
+                   (clear-facts dst)))))))))
 
 (defun opt-compute-simple-inductions (instructions)
   "Return reg -> opt-induction-var summaries for simple affine updates.
