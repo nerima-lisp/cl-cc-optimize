@@ -125,6 +125,25 @@ later closure sites become vm-move aliases to the first closure register."
           for index from 0
           collect (or (gethash index rewrites) inst))))
 
+(defun %opt-thunk-sharing-record-rewrite (instructions root-desc desc rewrites)
+  "Record a vm-move rewrite in REWRITES aliasing DESC's closure register to
+ROOT-DESC's closure register."
+  (let* ((dup-index (getf desc :index))
+         (dup-dst (vm-dst (nth dup-index instructions)))
+         (root-dst (vm-dst (getf root-desc :inst)))
+         (move (make-vm-move :dst dup-dst :src root-dst)))
+    (setf (gethash dup-index rewrites) move)))
+
+(defun %opt-thunk-sharing-record-group-rewrites (instructions group rewrites)
+  "Record FR-079 thunk-sharing rewrites for one closure descriptor GROUP into
+REWRITES: later shareable closure allocations in GROUP become vm-move
+aliases to the first (root) closure register."
+  (when (>= (length group) 2)
+    (let ((root-desc (first group)))
+      (dolist (desc (rest group))
+        (when (%opt-shareable-closure-use-p instructions root-desc desc)
+          (%opt-thunk-sharing-record-rewrite instructions root-desc desc rewrites))))))
+
 (defun opt-pass-closure-thunk-sharing (instructions)
   "FR-079 closure thunk sharing: eliminate redundant closure allocations.
 
@@ -139,16 +158,8 @@ support for separate code-pointer + environment-record (FR-079 extension)."
          (rewrites (make-hash-table)))
     (maphash (lambda (_key group)
                (declare (ignore _key))
-               (when (>= (length group) 2)
-                 (let ((root-desc (first group)))
-                   (dolist (desc (rest group))
-                     (when (%opt-shareable-closure-use-p instructions root-desc desc)
-                       (let* ((dup-index (getf desc :index))
-                              (dup-dst (vm-dst (nth dup-index instructions)))
-                              (root-dst (vm-dst (getf root-desc :inst)))
-                              (move (make-vm-move :dst dup-dst :src root-dst)))
-                         (setf (gethash dup-index rewrites) move)))))))
-              groups)
+               (%opt-thunk-sharing-record-group-rewrites instructions group rewrites))
+             groups)
     (loop for inst in instructions
           for index from 0
           collect (or (gethash index rewrites) inst))))

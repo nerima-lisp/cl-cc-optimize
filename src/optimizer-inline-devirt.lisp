@@ -173,6 +173,33 @@ FACTS is an opt-devirt-facts struct bundling all 6 per-register hash tables."
         (vm-sethash (track-sethash))
         (t (track-fallback))))))
 
+(defun %opt-devirt-eligible-info-p (info)
+  "Return T when INFO (a GF/table fact plist) is sealed-satiated and safe
+to devirtualize: satiated, not marked unsafe, and using the standard
+method combination."
+  (and info
+       (getf info :satiated)
+       (not (getf info :unsafe))
+       (%opt-standard-combination-p (getf info :combination))))
+
+(defun %opt-devirt-primary-methods (info)
+  "Return INFO's methods with qualifiers or EQL specializers removed."
+  (remove-if (lambda (method)
+               (or (getf method :qualifier)
+                   (%opt-eql-specializer-p (getf method :specializer))))
+             (copy-list (getf info :methods))))
+
+(defun %opt-devirt-unique-primary-method-label (info arg-class)
+  "Return the label of INFO's sole unambiguous primary method applicable to
+ARG-CLASS, or NIL when dispatch is not statically unique."
+  (let ((primary-methods (%opt-devirt-primary-methods info)))
+    (when (and (= (length primary-methods) 1)
+               (notany (lambda (method) (%opt-eql-specializer-p (getf method :specializer)))
+                       (getf info :methods)))
+      (let ((method (first primary-methods)))
+        (when (equal (getf method :specializer) arg-class)
+          (getf method :label))))))
+
 (defun %opt-single-sealed-primary-method-label (inst class-sealed facts gf-infos)
   "Return direct method label for safe sealed+satiated generic call INST, or NIL.
 FACTS is an opt-devirt-facts struct bundling all per-register fact tables."
@@ -184,24 +211,8 @@ FACTS is an opt-devirt-facts struct bundling all per-register fact tables."
            (gf-name          (gethash (vm-gf-reg inst) reg-name))
            (info             (or (and gf-name (gethash gf-name gf-infos))
                                  (gethash (vm-gf-reg inst) reg-gf-literal))))
-      (when (and arg-class
-                 (gethash arg-class class-sealed)
-                 info
-                 (getf info :satiated)
-                 (not (getf info :unsafe))
-                 (%opt-standard-combination-p (getf info :combination)))
-        (let ((primary-methods
-                (remove-if (lambda (method)
-                             (or (getf method :qualifier)
-                                 (%opt-eql-specializer-p (getf method :specializer))))
-                           (copy-list (getf info :methods)))))
-          (when (and (= (length primary-methods) 1)
-                     (notany (lambda (method)
-                               (%opt-eql-specializer-p (getf method :specializer)))
-                             (getf info :methods)))
-            (let ((method (first primary-methods)))
-              (when (equal (getf method :specializer) arg-class)
-                (getf method :label)))))))))
+      (when (and arg-class (gethash arg-class class-sealed) (%opt-devirt-eligible-info-p info))
+        (%opt-devirt-unique-primary-method-label info arg-class)))))
 
 (defun %opt-fresh-register-generator (instructions)
   "Return a closure producing fresh VM register keywords for INSTRUCTIONS."

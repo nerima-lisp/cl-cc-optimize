@@ -67,6 +67,46 @@
      (make-vm-tail-call :dst (vm-dst inst) :func func-reg :args (copy-list (vm-args inst))))
     (t (make-vm-call :dst (vm-dst inst) :func func-reg :args (copy-list (vm-args inst))))))
 
+(defun %ipcp-specialize-call (inst label def reg-const clone-cache clones result fresh-reg)
+  "Return (values NEW-CLONES NEW-RESULT) after specializing INST's call to
+LABEL using DEF's known-constant arguments, or copying INST through
+unchanged when no constant arguments are known. A new clone body is
+registered in CLONES/CLONE-CACHE the first time a given specialization key
+is seen."
+  (let* ((params (getf def :params))
+         (body (getf def :body))
+         (constants (%ipcp-constant-arg-map params (vm-args inst) reg-const)))
+    (if (and body constants)
+        (let* ((key (list label constants))
+               (special-label (or (gethash key clone-cache)
+                                  (setf (gethash key clone-cache)
+                                        (%ipcp-specialized-label label constants))))
+               (new-clones (if (member special-label clones :key #'first :test #'string=)
+                                clones
+                                (cons (list special-label body constants) clones)))
+               (fresh (funcall fresh-reg))
+               (new-result (list* (%ipcp-copy-call-with-func inst fresh)
+                                   (make-vm-func-ref :dst fresh :label special-label :params params)
+                                   result)))
+          (values new-clones new-result))
+        (values clones (cons inst result)))))
+
+(defun %ipcp-process-instruction (inst defs reg-const reg-label fresh-reg clone-cache clones result)
+  "Return (values NEW-CLONES NEW-RESULT) after processing one instruction:
+call sites with a known direct target are specialized when constant
+arguments are known, everything else is copied through unchanged. Fact
+tracking (REG-CONST/REG-LABEL) always runs afterward."
+  (multiple-value-bind (new-clones new-result)
+      (if (%ipcp-call-p inst)
+          (let* ((label (gethash (vm-func-reg inst) reg-label))
+                 (def (and label (gethash label defs))))
+            (if def
+                (%ipcp-specialize-call inst label def reg-const clone-cache clones result fresh-reg)
+                (values clones (cons inst result))))
+          (values clones (cons inst result)))
+    (%ipcp-track-facts inst reg-const reg-label)
+    (values new-clones new-result)))
+
 (defun opt-pass-ipcp (instructions)
   "Create constant-specialized function versions for direct call sites.
 
@@ -81,28 +121,9 @@ target or constant argument is known, it leaves the stream unchanged."
         (clones nil)
         (result nil))
     (dolist (inst instructions)
-      (if (%ipcp-call-p inst)
-          (let* ((label (gethash (vm-func-reg inst) reg-label))
-                 (def (and label (gethash label defs)))
-                 (params (getf def :params))
-                 (body (getf def :body))
-                 (constants (and def (%ipcp-constant-arg-map params (vm-args inst) reg-const))))
-            (if (and label body constants)
-                (let* ((key (list label constants))
-                       (special-label (or (gethash key clone-cache)
-                                          (setf (gethash key clone-cache)
-                                                (%ipcp-specialized-label label constants)))))
-                  (unless (member special-label clones
-                                  :key (lambda (entry) (first entry)) :test #'string=)
-                    (push (list special-label body constants) clones))
-                  (let ((fresh (funcall fresh-reg)))
-                    (push (make-vm-func-ref :dst fresh :label special-label :params params) result)
-                    (push (%ipcp-copy-call-with-func inst fresh) result)))
-                (push inst result))
-            (%ipcp-track-facts inst reg-const reg-label))
-          (progn
-            (%ipcp-track-facts inst reg-const reg-label)
-            (push inst result))))
+      (multiple-value-bind (new-clones new-result)
+          (%ipcp-process-instruction inst defs reg-const reg-label fresh-reg clone-cache clones result)
+        (setf clones new-clones result new-result)))
     (append (nreverse result)
             (loop for (label body constants) in (nreverse clones)
                   append (%ipcp-clone-body label body constants)))))

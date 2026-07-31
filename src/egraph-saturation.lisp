@@ -121,30 +121,38 @@
         (intern (subseq type-name 3) :cl-cc/optimize)
         (type-of inst))))
 
+(defun %egraph-class-for-reg (eg r reg->class)
+  "Return the e-class id for register R in REG->CLASS, creating and
+recording a fresh reg-ref e-class when R has not been seen before."
+  (or (gethash r reg->class)
+      (let ((id (egraph-add eg 'reg-ref r)))
+        (setf (gethash r reg->class) id)
+        id)))
+
+(defun %egraph-record-instruction (eg inst reg->class)
+  "Add INST to EG, updating REG->CLASS with its destination register (if
+any) and recording constant instruction values on their e-class."
+  (let* ((op        (vm-inst-to-enode-op inst))
+         (reads     (opt-inst-read-regs inst))
+         (dst       (ignore-errors (vm-dst inst)))
+         ;; Map source registers to e-class IDs (create fresh if unseen)
+         (child-ids (mapcar (lambda (r) (%egraph-class-for-reg eg r reg->class)) reads))
+         (class-id  (apply #'egraph-add eg op child-ids)))
+    ;; Handle constant values specially
+    (when (vm-const-p inst)
+      (when-let ((cls (gethash class-id (eg-classes eg))))
+        (setf (ec-data cls) (vm-value inst))))
+    ;; Map destination register to this e-class
+    (when dst
+      (setf (gethash dst reg->class) class-id))))
+
 (defun egraph-add-instructions (eg instructions)
   "Add all instructions in the list to the e-graph.
    Returns a hash-table: register → e-class-id mapping the VM registers
    to their e-class IDs in the graph."
   (let ((reg->class (make-hash-table :test #'eq)))
     (dolist (inst instructions)
-      (let* ((op       (vm-inst-to-enode-op inst))
-             (reads    (opt-inst-read-regs inst))
-             (dst      (ignore-errors (vm-dst inst)))
-             ;; Map source registers to e-class IDs (create fresh if unseen)
-             (child-ids (mapcar (lambda (r)
-                                  (or (gethash r reg->class)
-                                      (let ((id (egraph-add eg 'reg-ref r)))
-                                        (setf (gethash r reg->class) id)
-                                        id)))
-                                reads))
-             (class-id  (apply #'egraph-add eg op child-ids)))
-        ;; Handle constant values specially
-        (when (vm-const-p inst)
-          (when-let ((cls (gethash class-id (eg-classes eg))))
-            (setf (ec-data cls) (vm-value inst))))
-        ;; Map destination register to this e-class
-        (when dst
-          (setf (gethash dst reg->class) class-id))))
+      (%egraph-record-instruction eg inst reg->class))
     reg->class))
 
 (defun egraph-class-has-op-p (eg class-id op)

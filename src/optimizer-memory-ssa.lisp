@@ -132,6 +132,30 @@ INCOMING is an alist of (pred-block . pred-version)."
   version
   incoming)
 
+(defun %opt-memory-ssa-loc-disagrees-p (loc first-version rest-states)
+  "Return T when every state in REST-STATES defines an integer version for
+LOC (making it a valid phi candidate) but at least one disagrees with
+FIRST-VERSION."
+  (and (every (lambda (state)
+                (multiple-value-bind (version found-p)
+                    (gethash loc state)
+                  (and found-p (integerp version))))
+              rest-states)
+       (not (every (lambda (state)
+                      (eql first-version (gethash loc state)))
+                    rest-states))))
+
+(defun %opt-memory-ssa-phi-version-for (block loc phi-version-table next-version)
+  "Return (values VERSION NEW-NEXT-VERSION): the existing or freshly
+allocated synthetic MemoryPhi version for BLOCK/LOC in PHI-VERSION-TABLE."
+  (let* ((phi-key (list block loc))
+         (version (gethash phi-key phi-version-table)))
+    (if version
+        (values version next-version)
+        (let ((fresh (1+ next-version)))
+          (setf (gethash phi-key phi-version-table) fresh)
+          (values fresh fresh)))))
+
 (defun %opt-memory-ssa-synthesize-entry-phis
     (block predecessor-states phi-version-table next-version)
   "Return synthetic MemoryPhi versions for BLOCK entry.
@@ -146,23 +170,12 @@ for that BLOCK/location pair. Returns two values:
       (let* ((first-state (car predecessor-states))
              (rest-states (cdr predecessor-states)))
         (when first-state
-          (maphash (lambda (loc first-version)
-                     (when (every (lambda (state)
-                                    (multiple-value-bind (version found-p)
-                                        (gethash loc state)
-                                      (and found-p (integerp version))))
-                                   rest-states)
-                       (unless (every (lambda (state)
-                                        (eql first-version (gethash loc state)))
-                                      rest-states)
-                         (let* ((phi-key (list block loc))
-                                (version (gethash phi-key phi-version-table)))
-                           (unless version
-                             (incf next-version)
-                             (setf version next-version
-                                   (gethash phi-key phi-version-table) version))
-                           (setf (gethash loc phis) version)))))
-                   first-state))))
+          (loop for loc being the hash-keys of first-state using (hash-value first-version)
+                when (%opt-memory-ssa-loc-disagrees-p loc first-version rest-states)
+                do (multiple-value-bind (version new-next)
+                       (%opt-memory-ssa-phi-version-for block loc phi-version-table next-version)
+                     (setf next-version new-next)
+                     (setf (gethash loc phis) version))))))
     (values phis next-version)))
 
 (defun opt-memory-ssa-version-at (inst annotations &key (point :in))

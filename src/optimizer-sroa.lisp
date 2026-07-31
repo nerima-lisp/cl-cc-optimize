@@ -301,6 +301,33 @@ purely for the initial-value check by passing an explicit list."
          (every (lambda (group) (%sroa-initial-value-ok-p aggregate group))
                 (%sroa-group-accesses-by-field accesses)))))
 
+(defun %sroa-build-index-of (instructions)
+  "Return an EQ hash-table mapping each instruction in INSTRUCTIONS to its
+position, for straight-line span checks."
+  (let ((ht (make-hash-table :test #'eq)))
+    (loop for inst in instructions
+          for i from 0
+          do (setf (gethash inst ht) i))
+    ht))
+
+(defun %sroa-process-candidate (alloc-inst accesses instructions index-of new-reg-fn replacements)
+  "When ALLOC-INST/ACCESSES is SROA-eligible, merge its promotion plan into
+REPLACEMENTS and return T. Return NIL (no change) otherwise."
+  (when (sroa-eligible-p alloc-inst accesses instructions index-of)
+    (let ((plan (sroa-promote alloc-inst accesses new-reg-fn)))
+      (maphash (lambda (k v) (setf (gethash k replacements) v)) plan))
+    t))
+
+(defun %sroa-apply-replacements (instructions replacements)
+  "Return INSTRUCTIONS with every instruction present in REPLACEMENTS
+substituted for its (possibly list-valued) replacement."
+  (loop for inst in instructions
+        append (multiple-value-bind (value found-p) (gethash inst replacements)
+                 (cond
+                   ((not found-p) (list inst))
+                   ((listp value) value)
+                   (t (list value))))))
+
 (defun opt-pass-sroa (instructions)
   "FR-668: Scalar Replacement of Aggregates.
 
@@ -323,12 +350,10 @@ INSTRUCTIONS is the flat instruction list of a single basic block or an
 entire function, matching every other OPT-PASS-* pass in this file's
 signature. Returns INSTRUCTIONS unchanged (same list, not a copy) when
 *SROA-ENABLED* is NIL or nothing qualifies."
-  (if *sroa-enabled* (let* ((candidates (sroa-analyze instructions))
-             (index-of (let ((ht (make-hash-table :test #'eq)))
-                         (loop for inst in instructions
-                               for i from 0
-                               do (setf (gethash inst ht) i))
-                         ht))
+  (if (not *sroa-enabled*)
+      instructions
+      (let* ((candidates (sroa-analyze instructions))
+             (index-of (%sroa-build-index-of instructions))
              (counter (1+ (opt-max-reg-index instructions)))
              (replacements (make-hash-table :test #'eq))
              (changed nil))
@@ -336,15 +361,8 @@ signature. Returns INSTRUCTIONS unchanged (same list, not a copy) when
                  (prog1 (intern (format nil "R~A" counter) :keyword)
                    (incf counter))))
           (dolist (pair candidates)
-            (let ((alloc-inst (car pair))
-                  (accesses (cdr pair)))
-              (when (sroa-eligible-p alloc-inst accesses instructions index-of)
-                (setf changed t)
-                (let ((plan (sroa-promote alloc-inst accesses #'new-reg)))
-                  (maphash (lambda (k v) (setf (gethash k replacements) v)) plan))))))
-        (if changed (loop for inst in instructions
-                  append (multiple-value-bind (value found-p) (gethash inst replacements)
-                           (cond
-                             ((not found-p) (list inst))
-                             ((listp value) value)
-                             (t (list value))))) instructions)) instructions))
+            (when (%sroa-process-candidate (car pair) (cdr pair) instructions index-of #'new-reg replacements)
+              (setf changed t))))
+        (if changed
+            (%sroa-apply-replacements instructions replacements)
+            instructions))))

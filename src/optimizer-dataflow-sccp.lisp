@@ -156,6 +156,32 @@ appears in, or return INST unchanged when none applies."
     (setf (bb-instructions block) (nreverse new-insts))
     env))
 
+(defun %sccp-merge-in-env (block out-envs)
+  "Return the merged in-env for BLOCK from its predecessors' OUT-ENVS."
+  (%sccp-env-merge
+   (loop for p in (bb-predecessors block)
+         for e = (gethash p out-envs)
+         when e collect e)))
+
+(defun %sccp-process-worklist-block (block in-envs out-envs worklist)
+  "Fold BLOCK under its merged predecessor state when that state changed
+since the last visit, propagating to successors on further change. Return
+the updated WORKLIST."
+  (let* ((new-in (%sccp-merge-in-env block out-envs))
+         (old-in (gethash block in-envs)))
+    (if (and old-in (gethash block out-envs) (%sccp-env-equal-p old-in new-in))
+        worklist
+        (progn
+          (setf (gethash block in-envs) new-in)
+          (let ((new-out (%sccp-process-block block new-in))
+                (old-out (gethash block out-envs)))
+            (if (and old-out (%sccp-env-equal-p old-out new-out))
+                worklist
+                (progn
+                  (setf (gethash block out-envs) new-out)
+                  (dolist (succ (bb-successors block) worklist)
+                    (pushnew succ worklist :test #'eq)))))))))
+
 (defun opt-pass-sccp (instructions)
   "Sparse conditional constant propagation over the CFG.
    Propagates constants across blocks and folds constant branches."
@@ -165,21 +191,9 @@ appears in, or return INST unchanged when none applies."
             (out-envs (make-hash-table :test #'eq))
             (worklist (list (cfg-entry cfg))))
         (setf (gethash (cfg-entry cfg) in-envs) (make-hash-table :test #'eq))
-        (loop while worklist do
-          (let* ((block   (pop worklist))
-                 (new-in  (%sccp-env-merge
-                           (loop for p in (bb-predecessors block)
-                                 for e = (gethash p out-envs)
-                                 when e collect e)))
-                 (old-in  (gethash block in-envs)))
-            (unless (and old-in (gethash block out-envs) (%sccp-env-equal-p old-in new-in))
-              (setf (gethash block in-envs) new-in)
-              (let ((new-out (%sccp-process-block block new-in))
-                    (old-out (gethash block out-envs)))
-                (unless (and old-out (%sccp-env-equal-p old-out new-out))
-                  (setf (gethash block out-envs) new-out)
-                  (dolist (succ (bb-successors block))
-                    (pushnew succ worklist :test #'eq)))))))))
+        (loop while worklist
+              do (let ((block (pop worklist)))
+                   (setf worklist (%sccp-process-worklist-block block in-envs out-envs worklist))))))
     (let ((linear (loop for b across (cfg-blocks cfg)
                         when b append (append (when (bb-label b) (list (bb-label b)))
                                               (copy-list (bb-instructions b))))))

@@ -47,41 +47,62 @@
     (dolist (inst body)
       (push (%loop-unroll-copy-inst inst) result))))
 
+(defun %loop-unroll-header-shape (vec index n)
+  "Return (values HEADER CMP-INST JZ-INST HEADER-NAME) when VEC at INDEX
+begins with a label, a recognized counted-loop comparison, and a matching
+jump-zero branch, else NIL."
+  (when (and (<= (+ index 5) (1- n))
+             (vm-label-p (aref vec index)))
+    (let* ((header (aref vec index))
+           (cmp-inst (aref vec (1+ index)))
+           (jz-inst (aref vec (+ index 2)))
+           (header-name (vm-name header)))
+      (when (and (%opt-loop-unroll-cmp-inst-p cmp-inst)
+                 (typep jz-inst 'vm-jump-zero)
+                 (eq (vm-reg jz-inst) (vm-dst cmp-inst)))
+        (values header cmp-inst jz-inst header-name)))))
+
+(defun %loop-unroll-back-edge-exit-pos (vec n index header-name jz-inst)
+  "Return the exit position for JZ-INST when the instruction just before it
+jumps back to HEADER-NAME and no external jump reaches into the loop body,
+else NIL."
+  (let* ((exit-name (vm-label-name jz-inst))
+         (exit-pos (cfg-find-label-position vec n exit-name))
+         (back-pos (and exit-pos (1- exit-pos)))
+         (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
+    (when (and exit-pos
+               (> exit-pos (+ index 4))
+               (typep back-inst 'vm-jump)
+               (equal (vm-label-name back-inst) header-name)
+               (not (%opt-has-external-jump-to-label-p vec header-name index exit-pos)))
+      exit-pos)))
+
+(defun %loop-unroll-candidate-plist (vec index header cmp-inst jz-inst exit-pos)
+  "Return the candidate plist for the counted loop ending at EXIT-POS, or
+NIL when its body is unsafe to unroll."
+  (let* ((body (loop for j from (+ index 3) below (1- exit-pos) collect (aref vec j)))
+         (step-inst (car (last body))))
+    (when (and body
+               (%loop-unroll-safe-body-p body)
+               (%loop-unroll-final-step-p step-inst cmp-inst))
+      (list :header header
+            :cmp cmp-inst
+            :jump-zero jz-inst
+            :body body
+            :exit-pos exit-pos
+            :iv-reg (vm-lhs cmp-inst)
+            :limit-reg (vm-rhs cmp-inst)
+            :step-reg (vm-rhs step-inst)))))
+
 (defun %loop-unroll-candidate-at (vec index)
   "Return a conservative counted-loop candidate beginning at VEC[INDEX]."
   (let ((n (length vec)))
-    (when (and (<= (+ index 5) (1- n))
-               (vm-label-p (aref vec index)))
-      (let* ((header (aref vec index))
-             (cmp-inst (aref vec (1+ index)))
-             (jz-inst (aref vec (+ index 2)))
-             (header-name (vm-name header)))
-        (when (and (%opt-loop-unroll-cmp-inst-p cmp-inst)
-                   (typep jz-inst 'vm-jump-zero)
-                   (eq (vm-reg jz-inst) (vm-dst cmp-inst)))
-          (let* ((exit-name (vm-label-name jz-inst))
-                 (exit-pos (cfg-find-label-position vec n exit-name))
-                 (back-pos (and exit-pos (1- exit-pos)))
-                 (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
-            (when (and exit-pos
-                       (> exit-pos (+ index 4))
-                       (typep back-inst 'vm-jump)
-                       (equal (vm-label-name back-inst) header-name)
-                       (not (%opt-has-external-jump-to-label-p vec header-name index exit-pos)))
-              (let* ((body (loop for j from (+ index 3) below back-pos
-                                 collect (aref vec j)))
-                     (step-inst (car (last body))))
-                (when (and body
-                           (%loop-unroll-safe-body-p body)
-                           (%loop-unroll-final-step-p step-inst cmp-inst))
-                  (list :header header
-                        :cmp cmp-inst
-                        :jump-zero jz-inst
-                        :body body
-                        :exit-pos exit-pos
-                        :iv-reg (vm-lhs cmp-inst)
-                        :limit-reg (vm-rhs cmp-inst)
-                        :step-reg (vm-rhs step-inst)))))))))))
+    (multiple-value-bind (header cmp-inst jz-inst header-name)
+        (%loop-unroll-header-shape vec index n)
+      (when header
+        (let ((exit-pos (%loop-unroll-back-edge-exit-pos vec n index header-name jz-inst)))
+          (when exit-pos
+            (%loop-unroll-candidate-plist vec index header cmp-inst jz-inst exit-pos)))))))
 
 (defun opt-pass-loop-unroll (instructions)
   "FR-601: unroll conservative counted loops.

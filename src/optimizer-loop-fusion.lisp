@@ -199,33 +199,47 @@ when STRIDE/OFFSET are known constants."
         (and init limit step (plusp step)
              (ceiling (max 0 (- limit init)) step))))))
 
+(defun %loop-fr514-loop-accesses (lp core const-env def-env)
+  "Return (values MEM ACC) where MEM is CORE's memory instructions and ACC is
+their affine-access facts relative to LP's induction register (NIL entries
+from unrecognized accesses are dropped, so a length mismatch signals one)."
+  (let* ((mem (remove-if-not #'%loop-fr514-memory-inst-p core))
+         (acc (remove nil (mapcar (lambda (inst)
+                                     (%loop-fr514-affine-access inst (opt-loop-iv-reg lp)
+                                                                 const-env def-env))
+                                   mem))))
+    (values mem acc)))
+
+(defun %loop-fr514-accesses-conflict-p (a b trip)
+  "Return T when accesses A and B (plists from %loop-fr514-affine-access)
+touch the same array, at least one writes, and neither the GCD nor the
+Banerjee test can disprove cross-iteration overlap within TRIP iterations."
+  (and (eql (getf a :array) (getf b :array))
+       (or (getf a :write-p) (getf b :write-p))
+       (not (or (%loop-fr514-gcd-test-safe-p a b)
+                (and trip (%loop-fr514-banerjee-safe-p a b trip))))))
+
+(defun %loop-fr514-any-access-conflict-p (acc-a acc-b trip)
+  "Return T when any pairing across ACC-A x ACC-B conflicts, per TRIP-bounded
+GCD/Banerjee analysis."
+  (some (lambda (a)
+          (some (lambda (b) (%loop-fr514-accesses-conflict-p a b trip)) acc-b))
+        acc-a))
+
 (defun %loop-fr514-memory-dependencies-p (instructions lp-a core-a lp-b core-b)
   "Return T when memory dependence cannot be disproved by GCD/Banerjee tests."
   (multiple-value-bind (const-env def-env)
       (%loop-fr514-build-envs instructions (min (opt-loop-head-index lp-a)
                                                 (opt-loop-head-index lp-b)))
-    (let* ((trip (or (%loop-fr514-trip-count (coerce instructions 'vector) lp-a)
-                     (%loop-fr514-trip-count (coerce instructions 'vector) lp-b)))
-           (mem-a (remove-if-not #'%loop-fr514-memory-inst-p core-a))
-           (mem-b (remove-if-not #'%loop-fr514-memory-inst-p core-b))
-           (acc-a (remove nil (mapcar (lambda (inst)
-                                        (%loop-fr514-affine-access inst (opt-loop-iv-reg lp-a)
-                                                                  const-env def-env))
-                                      mem-a)))
-           (acc-b (remove nil (mapcar (lambda (inst)
-                                        (%loop-fr514-affine-access inst (opt-loop-iv-reg lp-b)
-                                                                  const-env def-env))
-                                      mem-b))))
-      (or (/= (length mem-a) (length acc-a))
-          (/= (length mem-b) (length acc-b))
-          (some (lambda (a)
-                  (some (lambda (b)
-                          (and (eql (getf a :array) (getf b :array))
-                               (or (getf a :write-p) (getf b :write-p))
-                               (not (or (%loop-fr514-gcd-test-safe-p a b)
-                                        (and trip (%loop-fr514-banerjee-safe-p a b trip))))))
-                        acc-b))
-                acc-a)))))
+    (let ((trip (or (%loop-fr514-trip-count (coerce instructions 'vector) lp-a)
+                     (%loop-fr514-trip-count (coerce instructions 'vector) lp-b))))
+      (multiple-value-bind (mem-a acc-a)
+          (%loop-fr514-loop-accesses lp-a core-a const-env def-env)
+        (multiple-value-bind (mem-b acc-b)
+            (%loop-fr514-loop-accesses lp-b core-b const-env def-env)
+          (or (/= (length mem-a) (length acc-a))
+              (/= (length mem-b) (length acc-b))
+              (%loop-fr514-any-access-conflict-p acc-a acc-b trip)))))))
 
 (defun %loop-fr514-fusion-legal-p (instructions vec left right)
   (multiple-value-bind (core-a _step-a) (%loop-fr514-core-and-step left)

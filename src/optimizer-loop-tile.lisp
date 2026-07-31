@@ -231,6 +231,34 @@ tile end, so non-multiple remainders execute naturally."
     (push (make-vm-label :name (opt-loop-exit-label outer)) out)
     out))
 
+(defun %loop-tile-copy-through (vec out start end)
+  "Push VEC[START..END] (inclusive) onto OUT in order; return the updated OUT."
+  (loop for k from start to end
+        do (push (aref vec k) out))
+  out)
+
+(defun %loop-tile-emit-for-outer (instructions vec outer l1-size l2-size out)
+  "Return (values NEW-OUT EMITTED-P) after handling the OUTER loop
+candidate: a strip-mined 2D tile is emitted when a safe INNER loop is
+found, otherwise OUTER's body is copied through unchanged."
+  (let ((inner (%loop-tile-candidate-p instructions vec outer l1-size l2-size)))
+    (if (and inner (%loop-tile-safe-2d-p outer inner))
+        (values (%loop-tile-emit-strip-mined-2d vec outer inner l1-size l2-size out) t)
+        (values (%loop-tile-copy-through vec out (opt-loop-head-index outer) (opt-loop-exit-index outer))
+                nil))))
+
+(defun %loop-tile-process-at (instructions vec i l1-size l2-size out changed)
+  "Return (values NEW-OUT NEW-I NEW-CHANGED) after handling position I: a
+recognized canonical loop is tiled (or copied through when unsafe) and the
+position skips past it, otherwise the single instruction at I is copied
+through and the position advances by one."
+  (let ((outer (%loop-fr514-parse-canonical-loop-at vec i)))
+    (if outer
+        (multiple-value-bind (new-out emitted-p)
+            (%loop-tile-emit-for-outer instructions vec outer l1-size l2-size out)
+          (values new-out (1+ (opt-loop-exit-index outer)) (or changed emitted-p)))
+        (values (cons (aref vec i) out) (1+ i) changed))))
+
 (defun opt-pass-loop-tile (instructions)
   "FR-515: cache-size adaptive loop tiling/blocking for affine nested loops.
 
@@ -239,7 +267,9 @@ unknown this pass is a no-op.  For recognized 2D/3D canonical nested loops with
 affine aref/aset-style access patterns, the pass emits tile-plan labels derived
 from L1/L2 tile sizes and preserves the original executable loop body."
   (multiple-value-bind (l1-size l2-size) (opt-loop-tile-sizes)
-    (if (and l1-size l2-size) (let* ((vec (coerce instructions 'vector))
+    (if (not (and l1-size l2-size))
+        instructions
+        (let* ((vec (coerce instructions 'vector))
                (n (length vec))
                (out nil)
                (changed nil)
@@ -247,17 +277,7 @@ from L1/L2 tile sizes and preserves the original executable loop body."
                (speed3-p (%loop-tile-speed3-policy-p instructions)))
           (declare (ignore speed3-p))
           (loop while (< i n)
-                do (let ((outer (%loop-fr514-parse-canonical-loop-at vec i)))
-                     (if outer (let ((inner (%loop-tile-candidate-p
-                                       instructions vec outer l1-size l2-size)))
-                            (if (and inner (%loop-tile-safe-2d-p outer inner))
-                                (setf out (%loop-tile-emit-strip-mined-2d vec outer inner
-                                                                                l1-size l2-size out)
-                                        changed t
-                                        i (1+ (opt-loop-exit-index outer)))
-                               (progn
-                                 (loop for k from (opt-loop-head-index outer)
-                                       to (opt-loop-exit-index outer)
-                                       do (push (aref vec k) out))
-                                 (setf i (1+ (opt-loop-exit-index outer)))))) (progn (push (aref vec i) out) (incf i)))))
-          (if changed (nreverse out) instructions)) instructions)))
+                do (multiple-value-bind (new-out new-i new-changed)
+                       (%loop-tile-process-at instructions vec i l1-size l2-size out changed)
+                     (setf out new-out i new-i changed new-changed)))
+          (if changed (nreverse out) instructions)))))

@@ -35,21 +35,32 @@ Handles both vm-jump (unconditional) and vm-jump-zero (conditional)."
   (list (mapcar #'instruction->sexp (bb-instructions block))
         (%tail-merge-succ-labels block)))
 
+(defun %tail-merge-redirect-predecessors (block canon label canon-label)
+  "Redirect every predecessor of BLOCK to CANON instead, rewriting each
+predecessor's terminator from LABEL to CANON-LABEL."
+  (dolist (pred (copy-list (bb-predecessors block)))
+    (%cfg-replace-successor pred block canon)
+    (%opt-rewrite-block-terminator pred label canon-label)
+    (pushnew pred (bb-predecessors canon) :test #'eq))
+  (setf (bb-predecessors block) nil))
+
+(defun %tail-merge-process-block (block canonical-by-sig)
+  "Merge BLOCK into its structural twin recorded in CANONICAL-BY-SIG, or
+register BLOCK as the canonical block for its signature when it is first."
+  (when-let ((label (and (bb-label block) (vm-name (bb-label block)))))
+    (let* ((sig   (%tail-merge-block-signature block))
+           (canon (gethash sig canonical-by-sig)))
+      (if (and canon (not (eq canon block)))
+          (let ((canon-label (and (bb-label canon) (vm-name (bb-label canon)))))
+            (when (and canon-label label)
+              (%tail-merge-redirect-predecessors block canon label canon-label)))
+          (setf (gethash sig canonical-by-sig) block)))))
+
 (defun %tail-merge-merge-duplicates (cfg)
   "Merge duplicate labeled blocks in CFG in-place, rewiring predecessors."
   (let ((canonical-by-sig (make-hash-table :test #'equal)))
     (dolist (block (coerce (cfg-blocks cfg) 'list))
-      (when-let ((label (and (bb-label block) (vm-name (bb-label block)))))
-        (let* ((sig   (%tail-merge-block-signature block))
-               (canon (gethash sig canonical-by-sig)))
-          (if canon (unless (eq canon block)
-                (let ((canon-label (and (bb-label canon) (vm-name (bb-label canon)))))
-                  (when (and canon-label label)
-                    (dolist (pred (copy-list (bb-predecessors block)))
-                      (%cfg-replace-successor pred block canon)
-                      (%opt-rewrite-block-terminator pred label canon-label)
-                      (pushnew pred (bb-predecessors canon) :test #'eq))
-                    (setf (bb-predecessors block) nil)))) (setf (gethash sig canonical-by-sig) block)))))))
+      (%tail-merge-process-block block canonical-by-sig))))
 
 (defun opt-pass-tail-merge (instructions)
   "Merge CFG blocks with identical bodies and identical successor labels.

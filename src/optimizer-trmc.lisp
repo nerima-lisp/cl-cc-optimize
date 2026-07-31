@@ -12,22 +12,28 @@ which is equivalent to the forward-pointer technique used by native backends:
 the list spine is produced in O(1) stack space and the final cdr is patched by
 NRECONC rather than growing the host/control stack.")
 
+(defun %opt-trmc-quality-enabled-p (quality)
+  "Return T when QUALITY is (TAIL-RECURSION-MODULO-CONS <true-value>)."
+  (and (consp quality)
+       (string= (symbol-name (car quality)) "TAIL-RECURSION-MODULO-CONS")
+       (second quality)))
+
+(defun %opt-trmc-optimize-decl-p (decl)
+  "Return T when DECL is an (OPTIMIZE ...) declaration enabling TRMC."
+  (and (consp decl)
+       (eq (car decl) 'optimize)
+       (some #'%opt-trmc-quality-enabled-p (cdr decl))))
+
+(defun %opt-trmc-declare-form-p (form)
+  "Return T when FORM is a (DECLARE ...) form containing a TRMC-enabling
+OPTIMIZE declaration."
+  (and (consp form)
+       (eq (car form) 'declare)
+       (some #'%opt-trmc-optimize-decl-p (cdr form))))
+
 (defun opt-trmc-enabled-declaration-p (declarations)
   "Return true when DECLARATIONS enable `(optimize (tail-recursion-modulo-cons t))`."
-  (some (lambda (form)
-          (and (consp form)
-               (eq (car form) 'declare)
-               (some (lambda (decl)
-                       (and (consp decl)
-                             (eq (car decl) 'optimize)
-                             (some (lambda (quality)
-                                     (and (consp quality)
-                                          (string= (symbol-name (car quality))
-                                                   "TAIL-RECURSION-MODULO-CONS")
-                                          (second quality)))
-                                   (cdr decl))))
-                      (cdr form))))
-        declarations))
+  (some #'%opt-trmc-declare-form-p declarations))
 
 (defun %opt-trmc-self-call-p (form function-name)
   (and (consp form) (eq (car form) function-name)))

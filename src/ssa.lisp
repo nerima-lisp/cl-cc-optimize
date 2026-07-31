@@ -76,38 +76,57 @@
         (pushnew dst defs :test #'eq)))
     (values uses defs)))
 
-(defun %ssa-compute-live-in (cfg)
-  "Compute block live-in sets for pruned SSA phi placement."
+(defun %ssa-init-live-maps (cfg)
+  "Return (values USE-MAP DEF-MAP LIVE-IN LIVE-OUT), each an EQ hash-table
+keyed by CFG block, with USE-MAP/DEF-MAP seeded from each block's local
+use/def sets and LIVE-IN/LIVE-OUT initialized empty."
   (let ((use-map (make-hash-table :test #'eq))
         (def-map (make-hash-table :test #'eq))
         (live-in (make-hash-table :test #'eq))
         (live-out (make-hash-table :test #'eq)))
     (loop for b across (cfg-blocks cfg)
-          do (multiple-value-bind (uses defs)
-                 (%ssa-block-use-def b)
+          do (multiple-value-bind (uses defs) (%ssa-block-use-def b)
                (setf (gethash b use-map) uses
                      (gethash b def-map) defs
                      (gethash b live-in) nil
                      (gethash b live-out) nil)))
+    (values use-map def-map live-in live-out)))
+
+(defun %ssa-live-sets-differ-p (old-in new-in old-out new-out)
+  "Return T when either the in-set or the out-set changed from the
+previous fixed-point iteration."
+  (or (set-difference old-in new-in :test #'eq)
+      (set-difference new-in old-in :test #'eq)
+      (set-difference old-out new-out :test #'eq)
+      (set-difference new-out old-out :test #'eq)))
+
+(defun %ssa-recompute-block-live (b live-in live-out use-map def-map)
+  "Recompute block B's live-in/live-out sets from its successors' live-in
+sets. Updates LIVE-IN/LIVE-OUT in place and returns T when either set
+changed."
+  (let* ((old-in (gethash b live-in))
+         (old-out (gethash b live-out))
+         (new-out nil))
+    (dolist (succ (bb-successors b))
+      (setf new-out (union new-out (gethash succ live-in) :test #'eq)))
+    (let ((new-in (union (gethash b use-map)
+                         (set-difference new-out (gethash b def-map) :test #'eq)
+                         :test #'eq)))
+      (when (%ssa-live-sets-differ-p old-in new-in old-out new-out)
+        (setf (gethash b live-in) new-in
+              (gethash b live-out) new-out)
+        t))))
+
+(defun %ssa-compute-live-in (cfg)
+  "Compute block live-in sets for pruned SSA phi placement."
+  (multiple-value-bind (use-map def-map live-in live-out) (%ssa-init-live-maps cfg)
     (let ((changed t)
           (order (reverse (cfg-compute-rpo cfg))))
       (loop while changed
             do (setf changed nil)
                (dolist (b order)
-                 (let* ((old-in (gethash b live-in))
-                        (old-out (gethash b live-out))
-                        (new-out nil))
-                   (dolist (succ (bb-successors b))
-                     (setf new-out (union new-out (gethash succ live-in)
-                                          :test #'eq)))
-                   (let ((new-in (union (gethash b use-map)
-                                        (set-difference new-out (gethash b def-map)
-                                                        :test #'eq)
-                                        :test #'eq)))
-                     (when (or (set-difference old-in new-in :test #'eq) (set-difference new-in old-in :test #'eq) (set-difference old-out new-out :test #'eq) (set-difference new-out old-out :test #'eq))
-                       (setf (gethash b live-in) new-in
-                             (gethash b live-out) new-out
-                             changed t)))))))
+                 (when (%ssa-recompute-block-live b live-in live-out use-map def-map)
+                   (setf changed t)))))
     live-in))
 
 ;;; ─── Phi Placement (Cytron Algorithm) ───────────────────────────────────
@@ -204,37 +223,67 @@ the loop boundary instead of delaying the phi to a later outside-loop use."
 
 ;;; ─── SSA Renaming (DFS over dominator tree) ──────────────────────────────
 
-(defun %ssa-rename-block (b state phi-map renamed)
-  "DFS rename pass for one block B, mutating STATE, PHI-MAP, and RENAMED."
+(defun %ssa-rename-block-phis (b state phi-map)
+  "Push a fresh SSA version for every phi at block B, setting its PHI-DST.
+Return the list of original phi registers pushed (most-recently-pushed
+first), for later popping."
   (let ((pushed-regs nil))
-    (dolist (phi (gethash b phi-map))
+    (dolist (phi (gethash b phi-map) pushed-regs)
       (let ((new-dst (ssr-push-new-version state (phi-reg phi))))
         (setf (phi-dst phi) new-dst)
-        (push (phi-reg phi) pushed-regs)))
-    (let ((new-insts nil))
-      (dolist (inst (bb-instructions b))
-        (let* ((reads (opt-inst-read-regs inst))
-               (renamed-inst
-                (if reads
-                    (let ((subst (make-hash-table :test #'eq)))
-                      (dolist (r reads)
-                        (setf (gethash r subst) (ssr-current-version state r)))
-                      (opt-rewrite-inst-regs inst subst))
-                    inst))
-               (dst (ignore-errors (vm-dst inst))))
-          (when dst
-            (let ((new-dst (ssr-push-new-version state dst)))
-              (push dst pushed-regs)
-              (setf renamed-inst (ssa-rewrite-dst renamed-inst dst new-dst))))
-          (push renamed-inst new-insts)))
-      (setf (gethash b renamed) (nreverse new-insts)))
-    (dolist (succ (bb-successors b))
-      (dolist (phi (gethash succ phi-map))
-        (push (cons b (ssr-current-version state (phi-reg phi))) (phi-args phi))))
-    (dolist (child (bb-dom-children b))
-      (%ssa-rename-block child state phi-map renamed))
-    (dolist (r pushed-regs)
-      (ssr-pop-version state r))))
+        (push (phi-reg phi) pushed-regs)))))
+
+(defun %ssa-rename-instruction (inst state)
+  "Return (values RENAMED-INST PUSHED-REG): INST with its read registers
+substituted for their current SSA versions and its destination register (if
+any) renamed to a fresh version. PUSHED-REG is that destination's original
+register, or NIL when INST has no destination."
+  (let* ((reads (opt-inst-read-regs inst))
+         (renamed-inst
+           (if reads
+               (let ((subst (make-hash-table :test #'eq)))
+                 (dolist (r reads)
+                   (setf (gethash r subst) (ssr-current-version state r)))
+                 (opt-rewrite-inst-regs inst subst))
+               inst))
+         (dst (ignore-errors (vm-dst inst))))
+    (if dst
+        (let ((new-dst (ssr-push-new-version state dst)))
+          (values (ssa-rewrite-dst renamed-inst dst new-dst) dst))
+        (values renamed-inst nil))))
+
+(defun %ssa-rename-block-instructions (b state)
+  "Rename every instruction in block B. Return (values NEW-INSTS
+PUSHED-REGS): the renamed instructions in order, and the destination
+registers pushed during renaming (most-recently-pushed first), for later
+popping."
+  (let ((new-insts nil)
+        (pushed-regs nil))
+    (dolist (inst (bb-instructions b))
+      (multiple-value-bind (renamed-inst pushed-reg) (%ssa-rename-instruction inst state)
+        (when pushed-reg (push pushed-reg pushed-regs))
+        (push renamed-inst new-insts)))
+    (values (nreverse new-insts) pushed-regs)))
+
+(defun %ssa-rename-fill-successor-phi-args (b state phi-map)
+  "For each phi in each successor of B, record B's current SSA version of
+the phi's register as an incoming argument."
+  (dolist (succ (bb-successors b))
+    (dolist (phi (gethash succ phi-map))
+      (push (cons b (ssr-current-version state (phi-reg phi))) (phi-args phi)))))
+
+(defun %ssa-rename-block (b state phi-map renamed)
+  "DFS rename pass for one block B, mutating STATE, PHI-MAP, and RENAMED."
+  (let ((phi-pushed (%ssa-rename-block-phis b state phi-map)))
+    (multiple-value-bind (new-insts inst-pushed) (%ssa-rename-block-instructions b state)
+      (setf (gethash b renamed) new-insts)
+      (%ssa-rename-fill-successor-phi-args b state phi-map)
+      (dolist (child (bb-dom-children b))
+        (%ssa-rename-block child state phi-map renamed))
+      ;; Pop in reverse push order: instruction destinations were pushed
+      ;; after the block's phis, so they must be popped first.
+      (dolist (r (append inst-pushed phi-pushed))
+        (ssr-pop-version state r)))))
 
 (defun ssa-rename (cfg phi-map)
   "Rename all register references in CFG to SSA form.

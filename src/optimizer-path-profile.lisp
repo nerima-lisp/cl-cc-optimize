@@ -192,6 +192,33 @@ and OPT-VM-PATH-PROFILE-RECORD increments the path counter at exits/backedges."
             (%opt-bl-instrument-linear-edge block target edge-table function-id)
             (list (make-vm-jump :label target-label)))))
 
+(defun %opt-bl-instrument-conditional-jump (block next-block term successors edge-table function-id)
+  "Resolve TERM's taken/fallthrough successors among SUCCESSORS (preferring
+NEXT-BLOCK as the fallthrough) and emit their Ball-Larus edge
+instrumentation."
+  (let* ((jump-target (find (vm-label-name term) successors
+                            :key #'%opt-bl-block-label-name :test #'equal))
+         (fallthrough (or (and next-block (find next-block successors :test #'eq))
+                          (find-if-not (lambda (b) (eq b jump-target)) successors))))
+    (unless (and jump-target fallthrough)
+      (error "Cannot resolve conditional Ball-Larus edges for block ~D" (bb-id block)))
+    (%opt-bl-instrument-jump-zero block term jump-target fallthrough edge-table function-id)))
+
+(defun %opt-bl-instrument-terminator (block next-block term successors edge-table function-id)
+  "Return the Ball-Larus instrumented tail instructions for BLOCK's
+outgoing edge(s), dispatching on the shape of its terminator TERM."
+  (cond
+    ((null successors)
+     (append (%opt-bl-exit-instrumentation block :function-id function-id)
+             (when term (list term))))
+    ((typep term 'vm-jump)
+     (%opt-bl-instrument-jump block (first successors) edge-table function-id))
+    ((typep term 'vm-jump-zero)
+     (%opt-bl-instrument-conditional-jump block next-block term successors edge-table function-id))
+    (t
+     (append (%opt-bl-instrument-linear-edge block (first successors) edge-table function-id)
+             (when (and term (not (typep term 'vm-jump-zero))) (list term))))))
+
 (defun %opt-bl-instrument-block (block next-block edge-table function-id &key entry-p)
   "Emit one CFG block plus Ball-Larus instrumentation for its outgoing edge(s)."
   (let* ((label (bb-label block))
@@ -203,26 +230,7 @@ and OPT-VM-PATH-PROFILE-RECORD increments the path counter at exits/backedges."
     (append (list label)
             (when entry-p (list (make-vm-const :dst +opt-bl-path-acc-reg+ :value 0)))
             body
-            (cond
-              ((null successors)
-               (append (%opt-bl-exit-instrumentation block :function-id function-id)
-                       (when term (list term))))
-              ((typep term 'vm-jump)
-               (%opt-bl-instrument-jump block (first successors) edge-table function-id))
-              ((typep term 'vm-jump-zero)
-               (let* ((jump-target (find (vm-label-name term) successors
-                                         :key #'%opt-bl-block-label-name :test #'equal))
-                      (fallthrough (or (and next-block (find next-block successors :test #'eq))
-                                       (find-if-not (lambda (b) (eq b jump-target)) successors))))
-                 (unless (and jump-target fallthrough)
-                   (error "Cannot resolve conditional Ball-Larus edges for block ~D"
-                          (bb-id block)))
-                 (%opt-bl-instrument-jump-zero
-                  block term jump-target fallthrough edge-table function-id)))
-              (t
-               (append (%opt-bl-instrument-linear-edge
-                        block (first successors) edge-table function-id)
-                       (when (and term (not (typep term 'vm-jump-zero))) (list term))))))))
+            (%opt-bl-instrument-terminator block next-block term successors edge-table function-id))))
 
 (defun opt-instrument-path-profile (instructions &key (function-id :anonymous))
   "Return INSTRUCTIONS instrumented with real Ball-Larus path profiling code."

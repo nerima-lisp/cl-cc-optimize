@@ -224,32 +224,48 @@ fact."
                               (setf ordered (rest ordered))))))
       (nreverse groups))))
 
+(defun %opt-slp-group-anchor (group insts)
+  "Return (values MEMBERS ANCHOR): GROUP's constituent instructions and the
+earliest of them to occur in INSTS, used as the insertion point for its
+replacement SIMD op."
+  (let ((members (loop for lane in group append
+                        (list (getf lane :lhs-load)
+                              (getf lane :rhs-load)
+                              (getf lane :op-inst)
+                              (getf lane :store)))))
+    (values members
+            (reduce (lambda (a b)
+                      (if (< (position a insts :test #'eq)
+                             (position b insts :test #'eq))
+                          a b))
+                    members))))
+
+(defun %opt-slp-mark-group (group insts remove insert)
+  "Mark GROUP's member instructions for removal in REMOVE and register its
+replacement SIMD op at the earliest member's position in INSERT."
+  (multiple-value-bind (members anchor) (%opt-slp-group-anchor group insts)
+    (dolist (inst members) (setf (gethash inst remove) t))
+    (setf (gethash anchor insert) (%opt-slp-simd-inst group))))
+
+(defun %opt-slp-splice-groups (insts remove insert)
+  "Return INSTS with each REMOVE-marked instruction dropped and each
+INSERT-marked position's SIMD replacement spliced in."
+  (loop for inst in insts
+        append (cond
+                 ((gethash inst insert) (list (gethash inst insert)))
+                 ((gethash inst remove) nil)
+                 (t (list inst)))))
+
 (defun %opt-slp-rewrite-block (insts)
   "Rewrite one basic block's scalar superwords into SIMD vector operations."
   (let ((groups (%opt-slp-find-groups insts)))
-    (if groups (let ((remove (make-hash-table :test #'eq))
+    (if (not groups)
+        (values insts nil)
+        (let ((remove (make-hash-table :test #'eq))
               (insert (make-hash-table :test #'eq)))
           (dolist (group groups)
-            (let* ((simd (%opt-slp-simd-inst group))
-                   (members (loop for lane in group append
-                                  (list (getf lane :lhs-load)
-                                        (getf lane :rhs-load)
-                                        (getf lane :op-inst)
-                                        (getf lane :store))))
-                   (anchor (reduce (lambda (a b)
-                                     (if (< (position a insts :test #'eq)
-                                            (position b insts :test #'eq))
-                                         a b))
-                                   members)))
-              (dolist (inst members) (setf (gethash inst remove) t))
-              (setf (gethash anchor insert) simd)))
-          (values (loop for inst in insts
-                        append (cond
-                                 ((gethash inst insert)
-                                  (list (gethash inst insert)))
-                                 ((gethash inst remove) nil)
-                                 (t (list inst))))
-                  t)) (values insts nil))))
+            (%opt-slp-mark-group group insts remove insert))
+          (values (%opt-slp-splice-groups insts remove insert) t)))))
 
 (defun opt-pass-slp-vectorize (instructions)
   "FR-227: pack straight-line scalar array-map lanes into SIMD vector ops.

@@ -57,6 +57,38 @@
           (values (opt-copy-commutative-binop prev dst (second sorted) (third sorted))
                   (opt-copy-commutative-binop cur (vm-dst cur) (first sorted) dst)))))))
 
+(defun %opt-reassociate-process-label (inst result env)
+  "Handle a vm-label INST: clear the constant ENV and cons INST onto RESULT."
+  (clrhash env)
+  (cons inst result))
+
+(defun %opt-reassociate-process-const (inst result env)
+  "Handle a vm-const INST: record its value in ENV and cons it onto RESULT."
+  (setf (gethash (vm-dst inst) env) (vm-value inst))
+  (cons inst result))
+
+(defun %opt-reassociate-process-other (inst result env use-counts)
+  "Try reassociating INST with the instruction atop RESULT; return the
+updated RESULT (with INST, or its reassociated replacement, consed on)."
+  (if (and result
+           (opt-reassociate-commutative-p inst)
+           (opt-reassociate-commutative-p (car result)))
+      (multiple-value-bind (new-prev new-cur)
+          (%opt-maybe-reassociate (car result) inst env use-counts)
+        (if new-prev
+            (progn
+              (remhash (vm-dst new-prev) env)
+              (remhash (vm-dst new-cur) env)
+              (list* new-cur new-prev (cdr result)))
+            (progn
+              (when (opt-inst-dst inst)
+                (remhash (opt-inst-dst inst) env))
+              (cons inst result))))
+      (progn
+        (when (opt-inst-dst inst)
+          (remhash (opt-inst-dst inst) env))
+        (cons inst result))))
+
 (defun opt-pass-reassociate (instructions)
   "Reassociate commutative associative ops to move constants inward.
 
@@ -70,34 +102,11 @@
       (dolist (reg (opt-inst-read-regs inst))
         (incf (gethash reg use-counts 0))))
     (dolist (inst instructions)
-        (typecase inst
-          (vm-label
-           (clrhash env)
-           (push inst result))
-          (vm-const
-           (setf (gethash (vm-dst inst) env) (vm-value inst))
-           (push inst result))
-          (t
-           (cond
-             ((and result
-                   (opt-reassociate-commutative-p inst)
-                   (opt-reassociate-commutative-p (car result)))
-              (multiple-value-bind (new-prev new-cur)
-                  (%opt-maybe-reassociate (car result) inst env use-counts)
-                (if new-prev
-                    (progn
-                      (setf (car result) new-prev)
-                      (push new-cur result)
-                      (remhash (vm-dst new-prev) env)
-                      (remhash (vm-dst new-cur) env))
-                    (progn
-                      (when (opt-inst-dst inst)
-                        (remhash (opt-inst-dst inst) env))
-                      (push inst result)))))
-             (t
-              (when (opt-inst-dst inst)
-                (remhash (opt-inst-dst inst) env))
-              (push inst result))))))
+      (setf result
+            (typecase inst
+              (vm-label (%opt-reassociate-process-label inst result env))
+              (vm-const (%opt-reassociate-process-const inst result env))
+              (t (%opt-reassociate-process-other inst result env use-counts)))))
     (nreverse result)))
 
 ;;; ─── Pass: Batch Concatenation Packing ───────────────────────────────────

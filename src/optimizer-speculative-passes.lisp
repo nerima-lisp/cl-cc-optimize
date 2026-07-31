@@ -119,25 +119,27 @@ Returns OPT-CANONICAL-LOOP or NIL."
                  (setf changed t))))
     (values (coerce vec 'list) changed)))
 
+(defun %opt-affine-loop-access (inst)
+  "Return an access descriptor plist for INST when it is a recognized
+global/slot read or write, else NIL."
+  (let ((kind (%opt-access-kind inst)))
+    (and kind (list :kind kind :inst inst))))
+
+(defun %opt-affine-loop-summary-for (lp)
+  "Build an affine-loop summary for canonical loop LP."
+  (let ((accesses (remove nil (mapcar #'%opt-affine-loop-access (opt-loop-body lp)))))
+    (opt-build-affine-loop-summary
+     :induction-vars (list (opt-loop-iv-reg lp))
+     :bounds (list (list :lt (opt-loop-iv-reg lp) (opt-loop-limit-reg lp)))
+     :accesses accesses)))
+
 (defun opt-pass-affine-loop-analysis (instructions)
   "Analyze canonical loops and cache affine summaries for later passes.
 
 This pass preserves instructions but computes real summaries from detected loop
 regions (not from caller-provided payload lists)."
-  (let ((loops (%opt-find-canonical-loops instructions))
-        (summaries nil))
-    (dolist (lp loops)
-      (let* ((accesses (remove nil
-                               (mapcar (lambda (inst)
-                                         (let ((kind (%opt-access-kind inst)))
-                                           (and kind (list :kind kind :inst inst))))
-                                       (opt-loop-body lp))))
-             (summary (opt-build-affine-loop-summary
-                       :induction-vars (list (opt-loop-iv-reg lp))
-                       :bounds (list (list :lt (opt-loop-iv-reg lp) (opt-loop-limit-reg lp)))
-                       :accesses accesses)))
-        (push summary summaries)))
-    (setf *opt-last-affine-loop-summaries* (nreverse summaries))
+  (let ((loops (%opt-find-canonical-loops instructions)))
+    (setf *opt-last-affine-loop-summaries* (mapcar #'%opt-affine-loop-summary-for loops))
     instructions))
 
 (defun opt-loop-interchange-plan (&key loops cache-locality-score dependence-safe-p)

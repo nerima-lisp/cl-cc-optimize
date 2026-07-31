@@ -101,6 +101,47 @@ inst->label:   EQ hash-table, maps each such instruction to its owning label."
              func-defs)
     (values body-inst-set inst->label)))
 
+(defun %opt-troot-track-closure-or-func-ref (inst func-defs reg-track)
+  "Record INST's destination register as label-carrying in REG-TRACK when
+its label is a known function definition."
+  (let ((label (vm-label-name inst)))
+    (when (gethash label func-defs)
+      (setf (gethash (vm-dst inst) reg-track) label))))
+
+(defun %opt-troot-track-const (inst func-defs name-to-label reg-track)
+  "Record INST's destination register as label-carrying in REG-TRACK when
+its constant value names a known function."
+  (let ((label (and (symbolp (vm-value inst))
+                     (gethash (vm-value inst) name-to-label))))
+    (when (and label (gethash label func-defs))
+      (setf (gethash (vm-dst inst) reg-track) label))))
+
+(defun %opt-troot-track-move (inst reg-track)
+  "Propagate REG-TRACK's label tag through a register move, or clear it."
+  (multiple-value-bind (label present-p)
+      (gethash (vm-src inst) reg-track)
+    (if present-p
+        (setf (gethash (vm-dst inst) reg-track) label)
+        (remhash (vm-dst inst) reg-track))))
+
+(defun %opt-troot-track-call (inst reg-track roots)
+  "Mark the called label (if tracked) as a root, then clear any label tag
+on the call's destination register."
+  (when-let ((label (gethash (vm-func-reg inst) reg-track)))
+    (setf (gethash label roots) t))
+  (when-let ((dst (opt-inst-dst inst)))
+    (remhash dst reg-track)))
+
+(defun %opt-troot-track-set-global (inst reg-track roots)
+  "Mark the stored-to-global label (if tracked) as a root."
+  (when-let ((label (gethash (vm-src inst) reg-track)))
+    (setf (gethash label roots) t)))
+
+(defun %opt-troot-track-default (inst reg-track)
+  "Clear any label tag on a generic instruction's destination register."
+  (when-let ((dst (opt-inst-dst inst)))
+    (remhash dst reg-track)))
+
 (defun opt-top-level-function-roots (instructions func-defs name-to-label body-inst-set)
   "Return an EQUAL hash-table of function labels reachable from top-level code.
 Only instructions outside collected function bodies are scanned. This keeps the
@@ -110,32 +151,12 @@ analysis conservative and avoids treating nested function internals as roots."
     (dolist (inst instructions roots)
       (unless (gethash inst body-inst-set)
         (typecase inst
-          ((or vm-closure vm-func-ref)
-           (let ((label (vm-label-name inst)))
-             (when (gethash label func-defs)
-               (setf (gethash (vm-dst inst) reg-track) label))))
-          (vm-const
-           (let ((label (and (symbolp (vm-value inst))
-                             (gethash (vm-value inst) name-to-label))))
-             (when (and label (gethash label func-defs))
-               (setf (gethash (vm-dst inst) reg-track) label))))
-          (vm-move
-           (multiple-value-bind (label present-p)
-               (gethash (vm-src inst) reg-track)
-             (if present-p
-                 (setf (gethash (vm-dst inst) reg-track) label)
-                 (remhash (vm-dst inst) reg-track))))
-          ((or vm-call vm-tail-call)
-           (when-let ((label (gethash (vm-func-reg inst) reg-track)))
-             (setf (gethash label roots) t))
-           (when-let ((dst (opt-inst-dst inst)))
-             (remhash dst reg-track)))
-          (vm-set-global
-           (when-let ((label (gethash (vm-src inst) reg-track)))
-             (setf (gethash label roots) t)))
-          (t
-           (when-let ((dst (opt-inst-dst inst)))
-             (remhash dst reg-track))))))))
+          ((or vm-closure vm-func-ref) (%opt-troot-track-closure-or-func-ref inst func-defs reg-track))
+          (vm-const (%opt-troot-track-const inst func-defs name-to-label reg-track))
+          (vm-move (%opt-troot-track-move inst reg-track))
+          ((or vm-call vm-tail-call) (%opt-troot-track-call inst reg-track roots))
+          (vm-set-global (%opt-troot-track-set-global inst reg-track roots))
+          (t (%opt-troot-track-default inst reg-track)))))))
 
 (defun opt-reachable-function-labels (graph roots)
   "Return an EQUAL hash-table of function labels reachable in GRAPH from ROOTS."

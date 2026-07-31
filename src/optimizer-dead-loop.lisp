@@ -50,36 +50,56 @@ hard barriers so volatile loops are never deleted."
   "Return T when every instruction in INSTS is removable and non-volatile."
   (every #'%dead-loop-removable-inst-p insts))
 
+(defun %dead-loop-header-shape (vec i n)
+  "Return (values HEADER-NAME COND-INST BRANCH-INST) when VEC at I begins
+with a label, a removable cond-inst, and a jump-zero branch, else NIL."
+  (when (and (< (+ i 4) n)
+             (vm-label-p (aref vec i)))
+    (let* ((header-name (vm-name (aref vec i)))
+           (cond-inst (aref vec (1+ i)))
+           (branch-inst (aref vec (+ i 2))))
+      (when (and (%dead-loop-removable-inst-p cond-inst)
+                 (typep branch-inst 'vm-jump-zero))
+        (values header-name cond-inst branch-inst)))))
+
+(defun %dead-loop-back-edge-exit-pos (vec n i header-name branch-inst)
+  "Return the exit position for BRANCH-INST when the instruction just
+before it jumps back to HEADER-NAME, forming a loop back edge, else NIL."
+  (let* ((exit-name (vm-label-name branch-inst))
+         (exit-pos (cfg-find-label-position vec n exit-name))
+         (back-pos (and exit-pos (1- exit-pos)))
+         (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
+    (when (and exit-pos
+               (> exit-pos (+ i 3))
+               (typep back-inst 'vm-jump)
+               (equal (vm-label-name back-inst) header-name))
+      exit-pos)))
+
+(defun %dead-loop-body-removable-p (vec i exit-pos cond-inst)
+  "Return T when the loop body between I and EXIT-POS, including
+COND-INST, is pure and none of its defined registers are read after
+EXIT-POS."
+  (let ((loop-work (cons cond-inst
+                          (loop for j from (+ i 3) below (1- exit-pos)
+                                collect (aref vec j)))))
+    (and (%dead-loop-body-pure-p loop-work)
+         (%dead-loop-defs-unused-after-p
+          loop-work
+          (%dead-loop-read-regs-after vec exit-pos)))))
+
 (defun %dead-loop-linear-candidate-at (vec i)
   "Return a removable loop plist beginning at I, or NIL.
 
 Matches:
   label, pure-cond-inst, jump-zero exit, pure-body*, jump header, exit-label"
   (let ((n (length vec)))
-    (when (and (< (+ i 4) n)
-               (vm-label-p (aref vec i)))
-      (let* ((header (aref vec i))
-             (header-name (vm-name header))
-             (cond-inst (aref vec (1+ i)))
-             (branch-inst (aref vec (+ i 2))))
-        (when (and (%dead-loop-removable-inst-p cond-inst)
-                   (typep branch-inst 'vm-jump-zero))
-          (let* ((exit-name (vm-label-name branch-inst))
-                 (exit-pos (cfg-find-label-position vec n exit-name))
-                 (back-pos (and exit-pos (1- exit-pos)))
-                 (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
-            (when (and exit-pos
-                       (> exit-pos (+ i 3))
-                       (typep back-inst 'vm-jump)
-                       (equal (vm-label-name back-inst) header-name))
-              (let ((loop-work (cons cond-inst
-                                     (loop for j from (+ i 3) below back-pos
-                                           collect (aref vec j)))))
-                (when (and (%dead-loop-body-pure-p loop-work)
-                           (%dead-loop-defs-unused-after-p
-                            loop-work
-                            (%dead-loop-read-regs-after vec exit-pos)))
-                  (list :start i :exit-pos exit-pos))))))))))
+    (multiple-value-bind (header-name cond-inst branch-inst)
+        (%dead-loop-header-shape vec i n)
+      (when header-name
+        (let ((exit-pos (%dead-loop-back-edge-exit-pos vec n i header-name branch-inst)))
+          (when (and exit-pos
+                     (%dead-loop-body-removable-p vec i exit-pos cond-inst))
+            (list :start i :exit-pos exit-pos)))))))
 
 (defun %dead-loop-remove-linear (instructions)
   "Remove all conservative dead loops found by linear matching."
