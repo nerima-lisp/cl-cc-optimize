@@ -37,6 +37,22 @@ fixed machine-word formula. Only non-negative bounded intervals are eligible."
                  when (%opt-verified-reciprocal-div-exact-p divisor multiplier shift lo hi)
                    return (list multiplier shift)))))))
 
+(defun %opt-verified-reciprocal-bias-window (multiplier scale divisor lo hi)
+  "Return the BIAS making floor(x/DIVISOR) == floor((x*MULTIPLIER+BIAS)/SCALE)
+hold for every X in [LO, HI], or NIL when no such BIAS exists."
+  (let (b-lo b-hi)
+    (loop for x from lo to hi do
+      (let* ((q (floor x divisor))
+             (lower (- (* q scale) (* x multiplier)))
+             (upper (1- (- (* (1+ q) scale) (* x multiplier)))))
+        (when (> lower upper)
+          (return-from %opt-verified-reciprocal-bias-window nil))
+        (setf b-lo (if b-lo (max b-lo lower) lower)
+              b-hi (if b-hi (min b-hi upper) upper))
+        (when (> b-lo b-hi)
+          (return-from %opt-verified-reciprocal-bias-window nil))))
+    b-lo))
+
 (defun %opt-find-verified-reciprocal-div-params-with-bias (divisor interval)
   "Return (MULTIPLIER SHIFT BIAS) when exact affine reciprocal exists, else NIL.
 
@@ -65,23 +81,10 @@ supports intervals that include negative dividends."
                    (m-ceil (ceiling scale divisor)))
               (loop for multiplier in (remove-duplicates
                                        (list m-floor m-ceil (1- m-ceil) (1+ m-floor))) do
-                (let ((b-lo nil)
-                      (b-hi nil)
-                      (ok t))
-                  (loop for x from lo to hi while ok do
-                    (let* ((q (floor x divisor))
-                           (lower (- (* q scale) (* x multiplier)))
-                           (upper (1- (- (* (1+ q) scale) (* x multiplier)))))
-                      (when (> lower upper)
-                        (setf ok nil))
-                      (when ok
-                        (setf b-lo (if b-lo (max b-lo lower) lower)
-                              b-hi (if b-hi (min b-hi upper) upper))
-                        (when (> b-lo b-hi)
-                          (setf ok nil)))))
-                  (when (and ok b-lo b-hi (<= b-lo b-hi))
+                (let ((bias (%opt-verified-reciprocal-bias-window multiplier scale divisor lo hi)))
+                  (when bias
                     (return-from %opt-find-verified-reciprocal-div-params-with-bias
-                      (list multiplier shift b-lo))))))))))))
+                      (list multiplier shift bias))))))))))))
 
 (defun %opt-div-by-verified-reciprocal-seq (dst src divisor interval new-reg-fn)
   "Build a verified reciprocal multiply/shift sequence for DST ← floor(SRC / DIVISOR).
