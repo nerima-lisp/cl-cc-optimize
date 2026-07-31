@@ -180,6 +180,74 @@
                  (%opt-copy-derived-fact src dst producer-facts)
                  (funcall emit inst))))))))
 
+(defun %fold-binary-inst-full-fold (inst dst lval rval env low-bit-facts producer-facts emit emit-const)
+  "Both operands of INST are known numeric constants: fold via
+   OPT-FOLD-BINOP-VALUE, emitting a constant on success or clearing
+   derived facts and re-emitting INST unchanged otherwise."
+  (multiple-value-bind (folded ok)
+      (opt-fold-binop-value inst lval rval)
+    (if ok
+        (progn
+          (remhash dst low-bit-facts)
+          (remhash dst producer-facts)
+          (funcall emit-const dst folded inst))
+        (progn
+          (%opt-clear-derived-facts dst env low-bit-facts producer-facts)
+          (funcall emit inst)))))
+
+(defun %fold-binary-inst-apply-simp (dst simp inst env low-bit-facts producer-facts emit clear)
+  "Apply a non-NIL algebraic simplification SIMP for INST: refresh ENV
+   and the derived-fact tables per the shape of SIMP, report the fold,
+   and emit the simplified instruction."
+  (when (vm-const-p simp)
+    (setf (gethash dst env) (vm-const-value simp)))
+  (cond
+    ((vm-const-p simp)
+     (remhash dst low-bit-facts)
+     (remhash dst producer-facts))
+    ((typep simp 'vm-move)
+     (funcall clear dst)
+     (%opt-copy-derived-fact (vm-src simp) dst low-bit-facts)
+     (%opt-copy-derived-fact (vm-src simp) dst producer-facts))
+    (t
+     (%opt-clear-derived-facts dst env low-bit-facts producer-facts)))
+  (when (vm-const-p simp)
+    (%opt-report :fold "original=~S result=~S"
+                 (instruction->sexp inst)
+                 (instruction->sexp simp)))
+  (funcall emit simp))
+
+(defun %fold-binary-inst-no-simp (inst dst lhs rhs lval lfound rval rfound low-bit-facts producer-facts emit clear)
+  "Neither a parity rewrite nor an algebraic simplification applies:
+   clear derived facts, refresh the low-bit-facts entry when INST is a
+   LOGAND whose source can still be tracked, and re-emit INST unchanged."
+  (funcall clear dst)
+  (remhash dst producer-facts)
+  (let ((source (%opt-logand-low-bit-source lhs rhs lval lfound rval rfound)))
+    (if (and (typep inst 'vm-logand) source)
+        (setf (gethash dst low-bit-facts) source)
+        (remhash dst low-bit-facts)))
+  (funcall emit inst))
+
+(defun %fold-binary-inst-simplify (inst dst lhs rhs lval lfound rval rfound env low-bit-facts producer-facts emit clear)
+  "No full numeric fold applies: try a parity/low-bit rewrite, then a
+   general algebraic simplification, falling back to re-emitting INST."
+  (let ((parity-rewrite
+          (and (typep inst '(or vm-num-eq vm-eq))
+               (%opt-rewrite-logand-low-bit-test
+                inst lhs rhs lval lfound rval rfound low-bit-facts)))
+        (simp (opt-simplify-binop inst dst lhs rhs
+                                  (if lfound lval :unknown)
+                                  (if rfound rval :unknown))))
+    (cond
+      (parity-rewrite
+       (%opt-clear-derived-facts dst env low-bit-facts producer-facts)
+       (funcall emit parity-rewrite))
+      (simp
+       (%fold-binary-inst-apply-simp dst simp inst env low-bit-facts producer-facts emit clear))
+      (t
+       (%fold-binary-inst-no-simp inst dst lhs rhs lval lfound rval rfound low-bit-facts producer-facts emit clear)))))
+
 (defun %fold-binary-inst (inst env low-bit-facts producer-facts emit emit-const clear)
   "Binary arithmetic/comparison: full fold or algebraic simplification.
    Dispatch derived from opt-binary-lhs-rhs-p (covers *opt-binary-lhs-rhs-types*).
@@ -192,55 +260,10 @@
         (cond
           ;; Both operands are known numeric constants → full fold
           ((and lfound rfound (numberp lval) (numberp rval))
-           (multiple-value-bind (folded ok)
-               (opt-fold-binop-value inst lval rval)
-              (if ok
-                   (progn
-                     (remhash dst low-bit-facts)
-                     (remhash dst producer-facts)
-                      (funcall emit-const dst folded inst))
-                   (progn
-                    (%opt-clear-derived-facts dst env low-bit-facts producer-facts)
-                     (funcall emit inst)))))
+           (%fold-binary-inst-full-fold inst dst lval rval env low-bit-facts producer-facts emit emit-const))
           ;; Try algebraic identity simplification
           (t
-           (let ((parity-rewrite
-                   (and (typep inst '(or vm-num-eq vm-eq))
-                        (%opt-rewrite-logand-low-bit-test
-                         inst lhs rhs lval lfound rval rfound low-bit-facts)))
-                 (simp (opt-simplify-binop inst dst lhs rhs
-                                           (if lfound lval :unknown)
-                                           (if rfound rval :unknown))))
-             (cond
-                (parity-rewrite
-                 (%opt-clear-derived-facts dst env low-bit-facts producer-facts)
-                 (funcall emit parity-rewrite))
-                (simp
-                 (when (vm-const-p simp)
-                   (setf (gethash dst env) (vm-const-value simp)))
-                 (cond
-                   ((vm-const-p simp)
-                    (remhash dst low-bit-facts)
-                    (remhash dst producer-facts))
-                   ((typep simp 'vm-move)
-                    (funcall clear dst)
-                    (%opt-copy-derived-fact (vm-src simp) dst low-bit-facts)
-                    (%opt-copy-derived-fact (vm-src simp) dst producer-facts))
-                   (t
-                    (%opt-clear-derived-facts dst env low-bit-facts producer-facts)))
-                  (when (vm-const-p simp)
-                    (%opt-report :fold "original=~S result=~S"
-                                 (instruction->sexp inst)
-                                 (instruction->sexp simp)))
-                  (funcall emit simp))
-                (t
-                 (funcall clear dst)
-                 (remhash dst producer-facts)
-                 (let ((source (%opt-logand-low-bit-source lhs rhs lval lfound rval rfound)))
-                   (if (and (typep inst 'vm-logand) source)
-                       (setf (gethash dst low-bit-facts) source)
-                      (remhash dst low-bit-facts)))
-                (funcall emit inst))))))))))
+           (%fold-binary-inst-simplify inst dst lhs rhs lval lfound rval rfound env low-bit-facts producer-facts emit clear)))))))
 
 (defun %fold-unary-constant-eligible-p (inst value)
   "Return T when unary INST can be safely folded for constant VALUE.

@@ -165,37 +165,53 @@ place by construction."
     (multiple-value-bind (body-inst-set body-inst-labels)
         (opt-function-body-instruction-tables func-defs)
       (let* ((graph (opt-build-call-graph instructions func-defs name-to-label))
-            (roots (opt-top-level-function-roots
-                    instructions func-defs name-to-label body-inst-set))
-            (reachable (opt-reachable-function-labels graph roots))
-            (closure-reg->label (make-hash-table :test #'eq))
-            (labels-to-drop (make-hash-table :test #'equal)))
-      (maphash (lambda (label _def)
-                 (unless (gethash label reachable)
-                   (setf (gethash label labels-to-drop) t)))
-               func-defs)
-      (when (zerop (hash-table-count labels-to-drop))
-        (return-from opt-pass-global-dce instructions))
-      (dolist (inst instructions)
-        (when (typep inst '(or vm-closure vm-func-ref))
-          (setf (gethash (vm-dst inst) closure-reg->label) (vm-label-name inst))))
-      (remove-if (lambda (inst)
-                    (cond
-                      ((and (typep inst '(or vm-closure vm-func-ref))
-                            (gethash (vm-label-name inst) labels-to-drop))
-                       t)
-                     ((and (typep inst 'vm-label)
-                           (gethash (vm-name inst) labels-to-drop))
-                      t)
-                     ((and (gethash inst body-inst-set)
-                           (not (typep inst 'vm-label))
-                           (gethash (gethash inst body-inst-labels) labels-to-drop))
-                      t)
-                     ((and (typep inst 'vm-register-function)
-                           (let ((label (gethash (vm-src inst) closure-reg->label)))
-                             (and label (gethash label labels-to-drop))))
-                      t)
-                     (t nil)))
-                 instructions)))))
+             (roots (opt-top-level-function-roots
+                     instructions func-defs name-to-label body-inst-set))
+             (reachable (opt-reachable-function-labels graph roots))
+             (closure-reg->label (make-hash-table :test #'eq))
+             (labels-to-drop (make-hash-table :test #'equal)))
+        (%opt-global-dce-collect-drop-labels! labels-to-drop reachable func-defs)
+        (when (zerop (hash-table-count labels-to-drop))
+          (return-from opt-pass-global-dce instructions))
+        (%opt-global-dce-track-closure-regs! instructions closure-reg->label)
+        (remove-if (lambda (inst)
+                     (%opt-global-dce-drop-instruction-p inst labels-to-drop body-inst-set body-inst-labels closure-reg->label))
+                   instructions)))))
 
 ;;; Cost model + main inline pass → see optimizer-inline-cost.lisp
+
+(defun %opt-global-dce-drop-instruction-p (inst labels-to-drop body-inst-set body-inst-labels closure-reg->label)
+  "Return T when INST belongs to a dropped-label group under LABELS-TO-DROP.
+Checks direct closure/func-ref definitions, label markers, function-body
+instructions (via BODY-INST-SET/BODY-INST-LABELS), and register-function
+installs resolved through CLOSURE-REG->LABEL."
+  (cond
+    ((and (typep inst '(or vm-closure vm-func-ref))
+          (gethash (vm-label-name inst) labels-to-drop))
+     t)
+    ((and (typep inst 'vm-label)
+          (gethash (vm-name inst) labels-to-drop))
+     t)
+    ((and (gethash inst body-inst-set)
+          (not (typep inst 'vm-label))
+          (gethash (gethash inst body-inst-labels) labels-to-drop))
+     t)
+    ((and (typep inst 'vm-register-function)
+          (let ((label (gethash (vm-src inst) closure-reg->label)))
+            (and label (gethash label labels-to-drop))))
+     t)
+    (t nil)))
+
+(defun %opt-global-dce-collect-drop-labels! (labels-to-drop reachable func-defs)
+  "Mark every FUNC-DEFS label not present in REACHABLE as t in LABELS-TO-DROP."
+  (maphash (lambda (label _def)
+             (unless (gethash label reachable)
+               (setf (gethash label labels-to-drop) t)))
+           func-defs))
+
+(defun %opt-global-dce-track-closure-regs! (instructions closure-reg->label)
+  "Record CLOSURE-REG->LABEL[dst] = label for every closure/func-ref definition
+instruction in INSTRUCTIONS."
+  (dolist (inst instructions)
+    (when (typep inst '(or vm-closure vm-func-ref))
+      (setf (gethash (vm-dst inst) closure-reg->label) (vm-label-name inst)))))

@@ -20,6 +20,32 @@
        (plusp (length (symbol-name x)))
        (char= (char (symbol-name x) 0) #\?)))
 
+(defun %egraph-match-const-pattern (eg pattern cid bindings)
+  "Match a (const VAL) pattern: succeeds when CID's e-class contains a
+   nullary CONST e-node whose stored value equals VAL."
+  (let* ((val (cadr pattern))
+         (cls (gethash cid (eg-classes eg))))
+    (when cls
+      (loop for n in (ec-nodes cls)
+            when (and (eq (en-op n) 'const)
+                      (null (en-children n))
+                      (let ((cls-data (ec-data cls)))
+                        (or (equal cls-data val)
+                            (and (consp cls-data) (equal (car cls-data) val)))))
+            collect bindings))))
+
+(defun %egraph-match-compound-pattern (eg pattern cid bindings)
+  "Match a compound (OP ARG1 ARG2 ...) pattern against CID: for every
+   e-node with a matching op and arity, recursively match the argument
+   patterns and collect all consistent binding alists."
+  (let ((op       (car pattern))
+        (arg-pats (cdr pattern)))
+    (when-let ((cls (gethash cid (eg-classes eg))))
+      (loop for n in (ec-nodes cls)
+            when (and (eq (en-op n) op)
+                      (= (length (en-children n)) (length arg-pats)))
+            nconc (egraph-match-pattern-args eg arg-pats (en-children n) bindings)))))
+
 (defun egraph-match-pattern (eg pattern class-id &optional bindings)
   "Match PATTERN against the e-class CLASS-ID in e-graph EG.
    Returns a list of all binding alists that satisfy the match, or NIL.
@@ -35,26 +61,11 @@
 
      ;; Constant pattern: match if the class contains a const e-node with this value
      ((and (consp pattern) (eq (car pattern) 'const) (cdr pattern))
-      (let* ((val (cadr pattern))
-             (cls (gethash cid (eg-classes eg))))
-        (when cls
-          (loop for n in (ec-nodes cls)
-                when (and (eq (en-op n) 'const)
-                          (null (en-children n))
-                          (let ((cls-data (ec-data cls)))
-                            (or (equal cls-data val)
-                                (and (consp cls-data) (equal (car cls-data) val)))))
-                collect bindings))))
+      (%egraph-match-const-pattern eg pattern cid bindings))
 
      ;; Compound pattern: (op arg1 arg2 ...)
      ((consp pattern)
-      (let ((op       (car pattern))
-            (arg-pats (cdr pattern)))
-        (when-let ((cls (gethash cid (eg-classes eg))))
-          (loop for n in (ec-nodes cls)
-                when (and (eq (en-op n) op)
-                          (= (length (en-children n)) (length arg-pats)))
-                nconc (egraph-match-pattern-args eg arg-pats (en-children n) bindings)))))
+      (%egraph-match-compound-pattern eg pattern cid bindings))
 
      ;; Literal symbol: match if the class has a node with that op and no children
      ((symbolp pattern)

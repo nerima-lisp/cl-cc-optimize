@@ -55,47 +55,59 @@ partial-evaluation passes without requiring callers to manually merge sources."
          (member node static-set :test #'equal)))
     (t (constantp node))))
 
+(defun %opt-offline-bta-all-static-p (forms static-set)
+  "Return T when every form in FORMS classifies as :STATIC under STATIC-SET."
+  (every (lambda (f)
+           (eq (%opt-offline-bta-classify-form f static-set) :static))
+         forms))
+
+(defun %opt-offline-bta-binding-symbol (binding)
+  "Return the variable name bound by a let/let* BINDING clause, or NIL."
+  (cond
+    ((symbolp binding) binding)
+    ((and (consp binding) (symbolp (car binding))) (car binding))
+    (t nil)))
+
+(defun %opt-offline-bta-let-static-set (bindings static-set)
+  "Return STATIC-SET extended with each variable from let/let* BINDINGS whose
+initform (if any) also classifies as :static under STATIC-SET."
+  (let ((new-static static-set))
+    (dolist (binding bindings new-static)
+      (let* ((var (%opt-offline-bta-binding-symbol binding))
+             (rhs (if (and (consp binding) (cdr binding)) (second binding)))
+             (rhs-static-p (or (null rhs)
+                               (eq (%opt-offline-bta-classify-form rhs static-set)
+                                   :static))))
+        (when (and var rhs-static-p)
+          (push var new-static))))))
+
 (defun %opt-offline-bta-classify-form (form static-set)
-  (labels ((all-static-p (forms env)
-             (every (lambda (f)
-                      (eq (%opt-offline-bta-classify-form f env) :static))
-                    forms))
-           (binding-symbol (binding)
-             (cond
-               ((symbolp binding) binding)
-               ((and (consp binding) (symbolp (car binding))) (car binding))
-               (t nil))))
-    (cond
-      ((atom form)
-       (if (%opt-offline-bta-constant-atom-p form static-set) :static :dynamic))
-      ((member (car form) '(quote function) :test #'eq)
-       :static)
-      ((eq (car form) 'if)
-       (if (all-static-p (cdr form) static-set) :static :dynamic))
-      ((eq (car form) 'progn)
-       (if (all-static-p (cdr form) static-set) :static :dynamic))
-      ((member (car form) '(let let*) :test #'eq)
-       (let* ((bindings (second form))
-              (new-static static-set))
-         (dolist (binding bindings)
-           (let* ((var (binding-symbol binding))
-                  (rhs (if (and (consp binding) (cdr binding)) (second binding)))
-                  (rhs-static-p (or (null rhs)
-                                    (eq (%opt-offline-bta-classify-form rhs static-set)
-                                        :static))))
-             (when (and var rhs-static-p)
-               (push var new-static))))
-         (if (all-static-p (cddr form) new-static) :static :dynamic)))
-      ((eq (car form) 'setq)
-       (if (all-static-p (loop for (_ v) on (cdr form) by #'cddr
-                               collect v)
-                         static-set)
-           :static
-           :dynamic))
-      ((and (symbolp (car form))
-            (member (car form) *opt-offline-bta-pure-operators* :test #'eq))
-       (if (all-static-p (cdr form) static-set) :static :dynamic))
-      (t :dynamic))))
+  (cond
+    ((atom form)
+     (if (%opt-offline-bta-constant-atom-p form static-set) :static :dynamic))
+    ((member (car form) '(quote function) :test #'eq)
+     :static)
+    ((eq (car form) 'if)
+     (if (%opt-offline-bta-all-static-p (cdr form) static-set) :static :dynamic))
+    ((eq (car form) 'progn)
+     (if (%opt-offline-bta-all-static-p (cdr form) static-set) :static :dynamic))
+    ((member (car form) '(let let*) :test #'eq)
+     (if (%opt-offline-bta-all-static-p
+          (cddr form)
+          (%opt-offline-bta-let-static-set (second form) static-set))
+         :static
+         :dynamic))
+    ((eq (car form) 'setq)
+     (if (%opt-offline-bta-all-static-p
+          (loop for (_ v) on (cdr form) by #'cddr
+                collect v)
+          static-set)
+         :static
+         :dynamic))
+    ((and (symbolp (car form))
+          (member (car form) *opt-offline-bta-pure-operators* :test #'eq))
+     (if (%opt-offline-bta-all-static-p (cdr form) static-set) :static :dynamic))
+    (t :dynamic)))
 
 (defun opt-offline-bta-classify-form (form
                                       &key

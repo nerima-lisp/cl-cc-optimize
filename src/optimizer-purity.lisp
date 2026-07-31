@@ -21,38 +21,7 @@ edges."
   (declare (ignore instructions))
   (let ((graph (make-hash-table :test #'equal)))
     (maphash (lambda (label def)
-               (let ((body (getf def :body))
-                     (reg-track (make-hash-table :test #'eq))
-                     (callees nil))
-                 (dolist (inst body)
-                   (typecase inst
-                     ((or vm-closure vm-func-ref)
-                      (let ((callee (vm-label-name inst)))
-                        (if (gethash callee func-defs)
-                            (setf (gethash (vm-dst inst) reg-track) callee)
-                            (remhash (vm-dst inst) reg-track))))
-                     (vm-const
-                      (let ((callee (and (symbolp (vm-value inst))
-                                         (gethash (vm-value inst) name-to-label))))
-                        (if (and callee (gethash callee func-defs))
-                            (setf (gethash (vm-dst inst) reg-track) callee)
-                            (remhash (vm-dst inst) reg-track))))
-                     (vm-move
-                      (multiple-value-bind (callee present-p)
-                          (gethash (vm-src inst) reg-track)
-                        (if present-p
-                            (setf (gethash (vm-dst inst) reg-track) callee)
-                            (remhash (vm-dst inst) reg-track))))
-                     ((or vm-call vm-tail-call vm-apply)
-                      (let ((callee (gethash (vm-func-reg inst) reg-track)))
-                        (when (and callee (gethash callee func-defs))
-                          (pushnew callee callees :test #'equal)))
-                      (when-let ((dst (opt-inst-dst inst)))
-                        (remhash dst reg-track)))
-                     (t
-                      (when-let ((dst (opt-inst-dst inst)))
-                        (remhash dst reg-track)))))
-                 (setf (gethash label graph) callees)))
+               (%opt-call-graph-populate-def label def func-defs name-to-label graph))
              func-defs)
     graph))
 
@@ -297,3 +266,48 @@ recursive SCCs remain untouched by construction."
     (let* ((name-to-label (opt-build-function-name-map instructions))
            (cse-rewritten (%opt-rewrite-pure-direct-calls instructions name-to-label pure-labels)))
       (%opt-remove-dead-pure-direct-calls cse-rewritten name-to-label pure-labels))))
+
+(defun %opt-call-graph-track-inst (inst func-defs name-to-label reg-track callees)
+  "Update REG-TRACK for INST and return CALLEES with any newly discovered
+direct callee from a known-target VM-CALL/VM-TAIL-CALL/VM-APPLY added."
+  (typecase inst
+    ((or vm-closure vm-func-ref)
+     (let ((callee (vm-label-name inst)))
+       (if (gethash callee func-defs)
+           (setf (gethash (vm-dst inst) reg-track) callee)
+           (remhash (vm-dst inst) reg-track)))
+     callees)
+    (vm-const
+     (let ((callee (and (symbolp (vm-value inst))
+                        (gethash (vm-value inst) name-to-label))))
+       (if (and callee (gethash callee func-defs))
+           (setf (gethash (vm-dst inst) reg-track) callee)
+           (remhash (vm-dst inst) reg-track)))
+     callees)
+    (vm-move
+     (multiple-value-bind (callee present-p)
+         (gethash (vm-src inst) reg-track)
+       (if present-p
+           (setf (gethash (vm-dst inst) reg-track) callee)
+           (remhash (vm-dst inst) reg-track)))
+     callees)
+    ((or vm-call vm-tail-call vm-apply)
+     (let ((callee (gethash (vm-func-reg inst) reg-track)))
+       (when (and callee (gethash callee func-defs))
+         (setf callees (pushnew callee callees :test #'equal))))
+     (when-let ((dst (opt-inst-dst inst)))
+       (remhash dst reg-track))
+     callees)
+    (t
+     (when-let ((dst (opt-inst-dst inst)))
+       (remhash dst reg-track))
+     callees)))
+
+(defun %opt-call-graph-populate-def (label def func-defs name-to-label graph)
+  "Compute direct callees for LABELs DEF body and record them in GRAPH."
+  (let ((body (getf def :body))
+        (reg-track (make-hash-table :test #'eq))
+        (callees nil))
+    (dolist (inst body)
+      (setf callees (%opt-call-graph-track-inst inst func-defs name-to-label reg-track callees)))
+    (setf (gethash label graph) callees)))

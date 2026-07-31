@@ -58,30 +58,47 @@
          (base   (if entry (cdr entry) 2)))
     (+ base (reduce #'+ children-costs :initial-value 0))))
 
+(defun %egraph-extract-node-cost (n cls eg cache cost-fn)
+  "Return (values total-cost sexp) for e-node N, recursively extracting
+   children of N via CACHE.  CLS is N's containing e-class, used as the
+   source of leaf data when N has no children."
+  (let* ((child-results (mapcar (lambda (c) (%egraph-extract-class c eg cache cost-fn))
+                                 (en-children n)))
+         (child-costs (mapcar (lambda (r) (if r (car r) most-positive-fixnum))
+                               child-results))
+         (child-sexps (mapcar (lambda (r) (when r (cdr r))) child-results))
+         (total-cost (funcall cost-fn (en-op n) child-costs)))
+    (values total-cost
+            (if (en-children n)
+                (cons (en-op n) child-sexps)
+                (or (ec-data cls) (en-op n))))))
+
+(defun %egraph-extract-best-for-class (cls eg cache cost-fn)
+  "Return (cost . sexp) for CLS's cheapest e-node, given COST-FN and
+   memoization CACHE."
+  (let ((best-cost most-positive-fixnum)
+        (best-sexp nil))
+    (dolist (n (ec-nodes cls))
+      (multiple-value-bind (total-cost sexp) (%egraph-extract-node-cost n cls eg cache cost-fn)
+        (when (< total-cost best-cost)
+          (setf best-cost total-cost)
+          (setf best-sexp sexp))))
+    (cons best-cost best-sexp)))
+
 (defun %egraph-extract-class (cid eg cache cost-fn)
   "Recursively extract the minimum-cost term for e-class CID from EG."
   (let ((canon (egraph-find eg cid)))
     (or (gethash canon cache)
         (let ((cls (gethash canon (eg-classes eg))))
-          (if cls (let ((best-cost most-positive-fixnum)
-                    (best-sexp nil))
+          (if cls
+              (progn
                 (setf (gethash canon cache) (list most-positive-fixnum))
-                (dolist (n (ec-nodes cls))
-                  (let* ((child-results
-                           (mapcar (lambda (c) (%egraph-extract-class c eg cache cost-fn))
-                                   (en-children n)))
-                         (child-costs   (mapcar (lambda (r) (if r (car r) most-positive-fixnum))
-                                               child-results))
-                         (child-sexps   (mapcar (lambda (r) (when r (cdr r))) child-results))
-                         (total-cost    (funcall cost-fn (en-op n) child-costs)))
-                    (when (< total-cost best-cost)
-                      (setf best-cost total-cost)
-                      (setf best-sexp
-                            (if (en-children n) (cons (en-op n) child-sexps) (let ((data (ec-data (gethash canon (eg-classes eg)))))
-                                  (or data (en-op n))))))))
-                (let ((result (cons best-cost best-sexp)))
+                (let ((result (%egraph-extract-best-for-class cls eg cache cost-fn)))
                   (setf (gethash canon cache) result)
-                  result)) (progn (setf (gethash canon cache) (cons most-positive-fixnum cid)) nil))))))
+                  result))
+              (progn
+                (setf (gethash canon cache) (cons most-positive-fixnum cid))
+                nil))))))
 
 (defun egraph-extract (eg root-id &optional (cost-fn #'egraph-default-cost))
   "Bottom-up extraction: for each e-class reachable from ROOT-ID,

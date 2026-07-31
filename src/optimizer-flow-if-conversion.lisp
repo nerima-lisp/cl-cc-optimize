@@ -44,6 +44,50 @@
              (eq (vm-dst (first insts)) dst))
     (vm-src (first insts))))
 
+(defun %opt-if-conversion-else-target (vec jz-inst jz-pos label-counts)
+  "Return (values ELSE-POS THEN-JUMP-POS THEN-JUMP) for the else-branch target
+of JZ-INST, or NIL when the shape is not a simple diamond's else edge."
+  (let* ((else-name (vm-label-name jz-inst))
+         (else-pos (%opt-label-position vec else-name))
+         (then-jump-pos (and else-pos (1- else-pos)))
+         (then-jump (and then-jump-pos (> then-jump-pos jz-pos)
+                         (aref vec then-jump-pos))))
+    (when (and else-pos
+               (typep then-jump 'vm-jump)
+               (= (%opt-label-ref-count label-counts else-name) 1))
+      (values else-pos then-jump-pos then-jump))))
+
+(defun %opt-if-conversion-join-position (vec then-jump else-pos label-counts)
+  "Return the join-label position targeted by THEN-JUMP when it is unique and
+located after ELSE-POS, or NIL otherwise."
+  (let* ((join-name (vm-label-name then-jump))
+         (join-pos (%opt-label-position vec join-name)))
+    (when (and join-pos
+               (> join-pos else-pos)
+               (= (%opt-label-ref-count label-counts join-name) 1))
+      join-pos)))
+
+(defun %opt-if-conversion-build-select (vec i then-jump-pos else-pos join-pos
+                                        cond-inst cond-reg)
+  "Return the vm-select candidate plist for the diamond bounded by I..JOIN-POS,
+or NIL when the arms are not simple single-move register copies."
+  (let* ((then-insts (loop for j from (+ i 2) below then-jump-pos
+                           collect (aref vec j)))
+         (else-insts (loop for j from (1+ else-pos) below join-pos
+                           collect (aref vec j)))
+         (then-dst (and then-insts (opt-inst-dst (first then-insts))))
+         (then-src (%opt-simple-select-arm-source then-insts then-dst))
+         (else-src (%opt-simple-select-arm-source else-insts then-dst)))
+    (when (and then-dst then-src else-src
+               (not (%opt-insts-contain-control-or-label-p then-insts))
+               (not (%opt-insts-contain-control-or-label-p else-insts)))
+      (list :end join-pos
+            :cond-inst cond-inst
+            :select (make-vm-select :dst then-dst
+                                    :cond-reg cond-reg
+                                    :then-reg then-src
+                                    :else-reg else-src)))))
+
 (defun %opt-if-conversion-candidate (vec i label-counts)
   "Return a vm-select candidate plist starting at VEC[I], or NIL.
 
@@ -66,35 +110,13 @@ converted, and both internal labels must be referenced solely by the diamond."
                (not (typep cond-inst 'vm-jump))
                (not (typep cond-inst 'vm-jump-zero))
                (eq (opt-inst-dst cond-inst) cond-reg))
-      (let* ((else-name (vm-label-name jz-inst))
-             (else-pos (%opt-label-position vec else-name))
-             (then-jump-pos (and else-pos (1- else-pos)))
-             (then-jump (and then-jump-pos (> then-jump-pos jz-pos)
-                             (aref vec then-jump-pos))))
-        (when (and else-pos
-                   (typep then-jump 'vm-jump)
-                   (= (%opt-label-ref-count label-counts else-name) 1))
-          (let* ((join-name (vm-label-name then-jump))
-                 (join-pos (%opt-label-position vec join-name)))
-            (when (and join-pos
-                       (> join-pos else-pos)
-                       (= (%opt-label-ref-count label-counts join-name) 1))
-              (let* ((then-insts (loop for j from (+ i 2) below then-jump-pos
-                                       collect (aref vec j)))
-                     (else-insts (loop for j from (1+ else-pos) below join-pos
-                                       collect (aref vec j)))
-                     (then-dst (and then-insts (opt-inst-dst (first then-insts))))
-                     (then-src (%opt-simple-select-arm-source then-insts then-dst))
-                     (else-src (%opt-simple-select-arm-source else-insts then-dst)))
-                (when (and then-dst then-src else-src
-                           (not (%opt-insts-contain-control-or-label-p then-insts))
-                           (not (%opt-insts-contain-control-or-label-p else-insts)))
-                  (list :end join-pos
-                        :cond-inst cond-inst
-                        :select (make-vm-select :dst then-dst
-                                                :cond-reg cond-reg
-                                                :then-reg then-src
-                                                :else-reg else-src)))))))))))
+      (multiple-value-bind (else-pos then-jump-pos then-jump)
+          (%opt-if-conversion-else-target vec jz-inst jz-pos label-counts)
+        (when else-pos
+          (let ((join-pos (%opt-if-conversion-join-position vec then-jump else-pos label-counts)))
+            (when join-pos
+              (%opt-if-conversion-build-select vec i then-jump-pos else-pos join-pos
+                                                cond-inst cond-reg))))))))
 
 (defun opt-pass-if-conversion (instructions)
   "Convert simple if-diamond control flow into branchless `vm-select`.

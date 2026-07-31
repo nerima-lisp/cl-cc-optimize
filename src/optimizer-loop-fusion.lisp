@@ -115,6 +115,34 @@ The IV registers may differ; fusion rewrites RIGHT's IV uses to LEFT's IV."
 
 (define-inst-type-predicate %loop-fr514-memory-inst-p (or vm-aref vm-aset vm-slot-read vm-slot-write vm-get-global vm-set-global))
 
+(defun %loop-fr514-affine-add (def iv const-env def-env)
+  "Return (values stride offset ok) for a VM-ADD index definition DEF."
+  (multiple-value-bind (s1 o1 ok1) (%loop-fr514-affine-of (vm-lhs def) iv const-env def-env)
+    (multiple-value-bind (s2 o2 ok2) (%loop-fr514-affine-of (vm-rhs def) iv const-env def-env)
+      (when (and ok1 ok2)
+        (values (+ s1 s2) (+ o1 o2) t)))))
+
+(defun %loop-fr514-affine-mul (def iv const-env)
+  "Return (values stride offset ok) for a VM-MUL index definition DEF."
+  (cond
+    ((eq (vm-lhs def) iv)
+     (when-let ((k (gethash (vm-rhs def) const-env)))
+       (values k 0 t)))
+    ((eq (vm-rhs def) iv)
+     (when-let ((k (gethash (vm-lhs def) const-env)))
+       (values k 0 t)))))
+
+(defun %loop-fr514-affine-of (reg iv const-env def-env)
+  "Return (values stride offset ok) when REG's value is an affine function of IV."
+  (cond
+    ((eq reg iv) (values 1 0 t))
+    ((gethash reg const-env) (values 0 (gethash reg const-env) t))
+    (t
+     (let ((def (gethash reg def-env)))
+       (cond
+         ((typep def 'vm-add) (%loop-fr514-affine-add def iv const-env def-env))
+         ((typep def 'vm-mul) (%loop-fr514-affine-mul def iv const-env)))))))
+
 (defun %loop-fr514-affine-access (inst iv const-env def-env)
   "Return (:array A :write-p P :stride S :offset O) for simple affine accesses.
 
@@ -123,28 +151,7 @@ when STRIDE/OFFSET are known constants."
   (when (typep inst '(or vm-aref vm-aset))
     (let ((array-reg (vm-array-reg inst))
           (index-reg (vm-index-reg inst)))
-      (labels ((const (reg) (gethash reg const-env))
-               (affine (reg)
-                       (cond
-                        ((eq reg iv) (values 1 0 t))
-                        ((gethash reg const-env) (values 0 (gethash reg const-env) t))
-                        (t
-                         (let ((def (gethash reg def-env)))
-                           (cond
-                            ((typep def 'vm-add)
-                             (multiple-value-bind (s1 o1 ok1) (affine (vm-lhs def))
-                               (multiple-value-bind (s2 o2 ok2) (affine (vm-rhs def))
-                                 (when (and ok1 ok2)
-                                   (values (+ s1 s2) (+ o1 o2) t)))))
-                            ((typep def 'vm-mul)
-                             (cond
-                              ((eq (vm-lhs def) iv)
-                               (when-let ((k (const (vm-rhs def))))
-                                 (values k 0 t)))
-                              ((eq (vm-rhs def) iv)
-                               (when-let ((k (const (vm-lhs def))))
-                                 (values k 0 t))))))))))))
-      (multiple-value-bind (stride offset ok) (affine index-reg)
+      (multiple-value-bind (stride offset ok) (%loop-fr514-affine-of index-reg iv const-env def-env)
         (when ok
           (list :array array-reg
                 :write-p (typep inst 'vm-aset)
