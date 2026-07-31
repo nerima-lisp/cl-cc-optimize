@@ -40,43 +40,49 @@ observable summary."
         (exit nil)
         (steps 0))
     (labels ((value-of (reg)
-               (or (gethash reg env) (list :input reg))))
+               (or (gethash reg env) (list :input reg)))
+             (record-const (inst)
+               (setf (gethash (vm-dst inst) env) (list :const (vm-value inst))))
+             (record-move (inst)
+               (setf (gethash (vm-dst inst) env) (value-of (vm-src inst))))
+             (record-binop (inst)
+               (setf (gethash (vm-dst inst) env)
+                     (list (type-of inst) (value-of (vm-lhs inst)) (value-of (vm-rhs inst)))))
+             (record-control (inst)
+               (push (instruction->sexp inst) control))
+             (record-print (inst)
+               (push (list :print (value-of (first (opt-inst-read-regs inst)))) effects))
+             (record-exit (inst kind)
+               (let ((values (mapcar (function value-of) (opt-inst-read-regs inst))))
+                 (push values outputs)
+                 (setf exit (list kind (first values)))))
+             (result ()
+               (let ((basic-summary (list :outputs (nreverse outputs) :control (nreverse control))))
+                 (values
+                   basic-summary
+                   t
+                   (list
+                     :effects
+                     (nreverse effects)
+                     :exit
+                     exit
+                     :control
+                     (getf basic-summary :control))))))
       (dolist (inst instructions)
         (when (or exit (>= steps 4096))
           (return-from tv-symbolic-execute-block (values nil nil nil)))
         (incf steps)
         (typecase inst
           (vm-label nil)
-          (vm-const
-            (setf (gethash (vm-dst inst) env) (list :const (vm-value inst))))
-          (vm-move
-            (setf (gethash (vm-dst inst) env) (value-of (vm-src inst))))
-          (vm-binop
-            (setf (gethash (vm-dst inst) env)
-                  (list (type-of inst) (value-of (vm-lhs inst)) (value-of (vm-rhs inst)))))
-          ((or vm-jump vm-jump-zero) (push (instruction->sexp inst) control))
-          (vm-print
-            (push (list :print (value-of (first (opt-inst-read-regs inst)))) effects))
-          (vm-ret
-            (let ((values (mapcar (function value-of) (opt-inst-read-regs inst))))
-              (push values outputs)
-              (setf exit (list :return (first values)))))
-          (vm-halt
-            (let ((values (mapcar (function value-of) (opt-inst-read-regs inst))))
-              (push values outputs)
-              (setf exit (list :halt (first values)))))
+          (vm-const (record-const inst))
+          (vm-move (record-move inst))
+          (vm-binop (record-binop inst))
+          ((or vm-jump vm-jump-zero) (record-control inst))
+          (vm-print (record-print inst))
+          (vm-ret (record-exit inst :return))
+          (vm-halt (record-exit inst :halt))
           (t (return-from tv-symbolic-execute-block (values nil nil nil)))))
-      (let ((basic-summary (list :outputs (nreverse outputs) :control (nreverse control))))
-        (values
-          basic-summary
-          t
-          (list
-            :effects
-            (nreverse effects)
-            :exit
-            exit
-            :control
-            (getf basic-summary :control)))))))
+      (result))))
 
 (defun %tv-label-set (instructions)
   (sort

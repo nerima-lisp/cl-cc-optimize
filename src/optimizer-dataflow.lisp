@@ -87,50 +87,51 @@ the entry block for forward analyses and exit block for backward analyses."
          (in-map         (opt-dataflow-result-in result))
          (out-map        (opt-dataflow-result-out result))
          (worklist       (copy-list blocks)))
-    (dolist (block blocks)
-      (setf (gethash block in-map)  (%opt-dataflow-copy-state initial-state copy-state)
-            (gethash block out-map) (%opt-dataflow-copy-state initial-state copy-state)))
-    (when boundary-block
-      (ecase direction
-        (:forward
-         (setf (gethash boundary-block in-map)
-               (%opt-dataflow-copy-state boundary-state copy-state)))
-        (:backward
-         (setf (gethash boundary-block out-map)
-               (%opt-dataflow-copy-state boundary-state copy-state)))))
-    (loop while worklist
-          do (let* ((block     (pop worklist))
-                    (incoming  (%opt-dataflow-neighbors block direction))
-                    (state-in  (loop for other in incoming
-                                     collect (ecase direction
-                                               (:forward  (gethash other out-map))
-                                               (:backward (gethash other in-map))))))
-               (ecase direction
-                 (:forward
-                  (let* ((new-in
-                           (if (eq block boundary-block)
-                               (%opt-dataflow-copy-state boundary-state copy-state)
-                               (%opt-dataflow-merge-states state-in meet initial-state copy-state)))
-                         (old-out (gethash block out-map))
-                         (new-out (funcall transfer block new-in)))
-                    (setf (gethash block in-map) new-in)
-                    (unless (funcall state-equal old-out new-out)
-                      (setf (gethash block out-map) new-out)
-                      (dolist (user (%opt-dataflow-users block direction))
-                        (pushnew user worklist :test #'eq)))))
-                 (:backward
-                  (let* ((new-out
-                           (if (eq block boundary-block)
-                               (%opt-dataflow-copy-state boundary-state copy-state)
-                               (%opt-dataflow-merge-states state-in meet initial-state copy-state)))
-                         (old-in (gethash block in-map))
-                         (new-in (funcall transfer block new-out)))
-                    (setf (gethash block out-map) new-out)
-                    (unless (funcall state-equal old-in new-in)
-                      (setf (gethash block in-map) new-in)
-                      (dolist (user (%opt-dataflow-users block direction))
-                        (pushnew user worklist :test #'eq))))))))
-    result))
+    (labels ((neighbor-states (block)
+               (loop for other in (%opt-dataflow-neighbors block direction)
+                     collect (ecase direction
+                               (:forward  (gethash other out-map))
+                               (:backward (gethash other in-map)))))
+             (merged-state (block)
+               (if (eq block boundary-block)
+                   (%opt-dataflow-copy-state boundary-state copy-state)
+                   (%opt-dataflow-merge-states (neighbor-states block) meet initial-state copy-state)))
+             (requeue-users (block)
+               (dolist (user (%opt-dataflow-users block direction))
+                 (pushnew user worklist :test #'eq)))
+             (process-forward (block)
+               (let* ((new-in  (merged-state block))
+                      (old-out (gethash block out-map))
+                      (new-out (funcall transfer block new-in)))
+                 (setf (gethash block in-map) new-in)
+                 (unless (funcall state-equal old-out new-out)
+                   (setf (gethash block out-map) new-out)
+                   (requeue-users block))))
+             (process-backward (block)
+               (let* ((new-out (merged-state block))
+                      (old-in  (gethash block in-map))
+                      (new-in  (funcall transfer block new-out)))
+                 (setf (gethash block out-map) new-out)
+                 (unless (funcall state-equal old-in new-in)
+                   (setf (gethash block in-map) new-in)
+                   (requeue-users block)))))
+      (dolist (block blocks)
+        (setf (gethash block in-map)  (%opt-dataflow-copy-state initial-state copy-state)
+              (gethash block out-map) (%opt-dataflow-copy-state initial-state copy-state)))
+      (when boundary-block
+        (ecase direction
+          (:forward
+           (setf (gethash boundary-block in-map)
+                 (%opt-dataflow-copy-state boundary-state copy-state)))
+          (:backward
+           (setf (gethash boundary-block out-map)
+                 (%opt-dataflow-copy-state boundary-state copy-state)))))
+      (loop while worklist
+            do (let ((block (pop worklist)))
+                 (ecase direction
+                   (:forward  (process-forward block))
+                   (:backward (process-backward block)))))
+      result)))
 
 (defmacro define-dataflow-pass (name lambda-list &rest options)
   "Define NAME as a thin wrapper around OPT-RUN-DATAFLOW."

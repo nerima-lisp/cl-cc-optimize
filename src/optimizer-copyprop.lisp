@@ -76,44 +76,51 @@
         return rank
         finally (return 7)))
 
+(defun %opt-value<-symbols (a b)
+  "Order symbols A and B by package name, unowned-before-owned, then symbol name."
+  (let ((apkg (symbol-package a))
+        (bpkg (symbol-package b)))
+    (cond
+      ((and apkg bpkg
+            (not (string= (package-name apkg) (package-name bpkg))))
+       (string< (package-name apkg) (package-name bpkg)))
+      ((and apkg (null bpkg)) nil)
+      ((and (null apkg) bpkg) t)
+      (t (string< (symbol-name a) (symbol-name b))))))
+
+(defun %opt-value<-vectors (a b)
+  "Order vectors A and B element-by-element, shorter-before-longer on a tie."
+  (loop for av across a
+        for bv across b
+        do (unless (equal av bv)
+             (return (%opt-value< av bv)))
+        finally (return (< (length a) (length b)))))
+
 (defun %opt-value< (a b)
   "Deterministic structural ordering without printed-string allocation."
-  (let ((ra (%opt-value-rank a))
-        (rb (%opt-value-rank b)))
-    (cond
-      ((< ra rb) t)
-      ((> ra rb) nil)
-      ((null a) nil)
-      ((numberp a) (and (/= a b) (< a b)))
-      ((characterp a) (< (char-code a) (char-code b)))
-      ((stringp a) (string< a b))
-      ((symbolp a)
-       (let ((apkg (symbol-package a))
-             (bpkg (symbol-package b)))
-         (cond
-           ((and apkg bpkg
-                 (not (string= (package-name apkg) (package-name bpkg))))
-            (string< (package-name apkg) (package-name bpkg)))
-           ((and apkg (null bpkg)) nil)
-           ((and (null apkg) bpkg) t)
-           (t (string< (symbol-name a) (symbol-name b))))))
-      ((consp a)
-       (if (equal (car a) (car b))
-           (%opt-value< (cdr a) (cdr b))
-           (%opt-value< (car a) (car b))))
-      ((vectorp a)
-       (loop for av across a
-             for bv across b
-             do (unless (equal av bv)
-                  (return (%opt-value< av bv)))
-             finally (return (< (length a) (length b)))))
-      (t
-       (let ((ta (type-of a))
-             (tb (type-of b)))
-         (cond
-           ((not (eq ta tb)) (%opt-value< ta tb))
-           ((equal a b) nil)
-           (t (< (sxhash a) (sxhash b)))))))))
+  (labels ((fallback-value< (a b)
+             (let ((ta (type-of a))
+                   (tb (type-of b)))
+               (cond
+                 ((not (eq ta tb)) (%opt-value< ta tb))
+                 ((equal a b) nil)
+                 (t (< (sxhash a) (sxhash b)))))))
+    (let ((ra (%opt-value-rank a))
+          (rb (%opt-value-rank b)))
+      (cond
+        ((< ra rb) t)
+        ((> ra rb) nil)
+        ((null a) nil)
+        ((numberp a) (and (/= a b) (< a b)))
+        ((characterp a) (< (char-code a) (char-code b)))
+        ((stringp a) (string< a b))
+        ((symbolp a) (%opt-value<-symbols a b))
+        ((consp a)
+         (if (equal (car a) (car b))
+             (%opt-value< (cdr a) (cdr b))
+             (%opt-value< (car a) (car b))))
+        ((vectorp a) (%opt-value<-vectors a b))
+        (t (fallback-value< a b))))))
 
 (defun %opt-copy-prop-merge (envs)
   (cond

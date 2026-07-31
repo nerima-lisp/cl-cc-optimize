@@ -14,6 +14,26 @@
   sealed-classes
   generic-methods)
 
+(defun %opt-cha-track-move (inst reg-symbol reg-label)
+  "Propagate symbol/label facts for REG-SYMBOL and REG-LABEL through a vm-move."
+  (multiple-value-bind (sym found-p) (gethash (vm-src inst) reg-symbol)
+    (if found-p
+        (setf (gethash (vm-dst inst) reg-symbol) sym)
+        (remhash (vm-dst inst) reg-symbol)))
+  (multiple-value-bind (label found-p) (gethash (vm-src inst) reg-label)
+    (if found-p
+        (setf (gethash (vm-dst inst) reg-label) label)
+        (remhash (vm-dst inst) reg-label))))
+
+(defun %opt-cha-track-register-method (inst reg-symbol reg-label gf-methods)
+  "Record a primary-method fact for a vm-register-method INST, when its
+generic function and method registers both resolve to known symbols/labels."
+  (let ((gf (gethash (vm-gf-reg inst) reg-symbol))
+        (label (gethash (vm-method-reg inst) reg-label)))
+    (when (and gf label (null (vm-method-qualifier inst)))
+      (push (list :specializer (vm-method-specializer inst) :label label)
+            (gethash gf gf-methods)))))
+
 (defun opt-build-class-hierarchy-analysis (instructions)
   "Build whole-program CHA facts from merged VM INSTRUCTIONS."
   (let ((classes (make-hash-table :test #'eq))
@@ -37,20 +57,9 @@
         ((or vm-closure vm-func-ref)
          (setf (gethash (vm-dst inst) reg-label) (vm-label-name inst)))
         (vm-move
-         (multiple-value-bind (sym found-p) (gethash (vm-src inst) reg-symbol)
-           (if found-p
-               (setf (gethash (vm-dst inst) reg-symbol) sym)
-               (remhash (vm-dst inst) reg-symbol)))
-         (multiple-value-bind (label found-p) (gethash (vm-src inst) reg-label)
-           (if found-p
-               (setf (gethash (vm-dst inst) reg-label) label)
-               (remhash (vm-dst inst) reg-label))))
+         (%opt-cha-track-move inst reg-symbol reg-label))
         (vm-register-method
-         (let ((gf (gethash (vm-gf-reg inst) reg-symbol))
-               (label (gethash (vm-method-reg inst) reg-label)))
-           (when (and gf label (null (vm-method-qualifier inst)))
-             (push (list :specializer (vm-method-specializer inst) :label label)
-                   (gethash gf gf-methods)))))))
+         (%opt-cha-track-register-method inst reg-symbol reg-label gf-methods))))
     (make-opt-cha :classes classes :subclasses subclasses
                   :sealed-classes sealed :generic-methods gf-methods)))
 
