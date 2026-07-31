@@ -21,6 +21,30 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-31
+
+### Added
+
+- FR-668 Scalar Replacement of Aggregates (`opt-pass-sroa`): conservative
+  scalar replacement for `vm-make-obj`/`vm-slot-read`/`vm-slot-write`
+  structs and `vm-make-array`/`vm-aref`/`vm-aset` fixed-index arrays. Wired
+  in as an opt-in `:sroa` pipeline stage (`*sroa-enabled*`, not in the
+  default convergence list — same precedent as `:path-profiling`).
+- Test coverage: the "every optimizer pass tolerates an empty instruction
+  stream" smoke check grew from 19 to 91 passes (every `*opt-pass-table*`
+  entry whose signature fits), plus 12 new behavioral tests asserting
+  concrete before/after transformations for DCE, CSE, strength reduction,
+  dead-store elimination, store-to-load forwarding, block merging,
+  unreachable-code removal, copy propagation, devirtualization, SCCP,
+  rotate recognition, and an `it-property` soundness check for value-range
+  propagation.
+
+### Fixed
+
+- FR-676 TLAB: `tlab-refill` no longer silently hands out address 0 (a
+  null pointer) when no real heap is configured; it now requires an
+  explicit `:new-chunk-address` from the caller or signals an error.
+
 ### Changed
 
 - `flake.nix` bumps three nerima-lisp sibling flake inputs to their latest
