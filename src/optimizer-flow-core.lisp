@@ -277,6 +277,46 @@ The transform is skipped unless all structural checks pass."
     (loop for i from header-pos below n do (push (aref vec i) result))
     (cfg-flatten (cfg-build (nreverse result)))))
 
+(defun %opt-loop-peeling-match-at (vec n i peeled cur)
+  "Return (cond-inst jz-inst body-insts exit-pos) when a peelable while-loop
+header sits at CUR (VEC position I), else NIL. PEELED is T once a peel has
+already been applied earlier in the scan, disabling further matches."
+  (unless (and (not peeled)
+               (vm-label-p cur)
+               (<= (+ i 4) (1- n)))
+    (return-from %opt-loop-peeling-match-at nil))
+  (let* ((cond-inst   (aref vec (1+ i)))
+         (jz-inst     (aref vec (+ i 2)))
+         (header-name (vm-name cur)))
+    (unless (and (typep jz-inst 'vm-jump-zero)
+                 (not (vm-label-p cond-inst)))
+      (return-from %opt-loop-peeling-match-at nil))
+    (let* ((exit-name (vm-label-name jz-inst))
+           (exit-pos  (cfg-find-label-position vec n exit-name))
+           (back-pos  (and exit-pos (1- exit-pos)))
+           (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
+      (unless (and exit-pos
+                   (> exit-pos (+ i 3))
+                   (typep back-inst 'vm-jump)
+                   (equal (vm-label-name back-inst) header-name))
+        (return-from %opt-loop-peeling-match-at nil))
+      (let ((body-insts (loop for j from (+ i 3) below back-pos
+                              collect (aref vec j))))
+        (unless (%opt-loop-peeling-safe-body-p body-insts)
+          (return-from %opt-loop-peeling-match-at nil))
+        (list cond-inst jz-inst body-insts exit-pos)))))
+
+(defun %opt-loop-peeling-apply (vec i cond-inst jz-inst body-insts exit-pos result)
+  "Peel COND-INST/JZ-INST/BODY-INSTS as the first loop iteration (without a
+header label) onto RESULT, then re-emit VEC's unchanged original loop
+header through exit. Return (values NEW-RESULT NEW-I)."
+  (push cond-inst result)
+  (push jz-inst result)
+  (dolist (b body-insts) (push b result))
+  (loop for j from i below (1+ exit-pos)
+        do (push (aref vec j) result))
+  (values result (1+ exit-pos)))
+
 (defun %opt-pass-loop-peeling-linear (instructions)
   "Peel the first iteration of a simple while-shaped loop.
 
@@ -292,52 +332,15 @@ This duplicates only one first-iteration body before the original loop header."
          (result nil)
          (i 0)
          (peeled nil))
-    (labels ((push-default (cur)
-               (push cur result)
-               (incf i))
-             (match-peel-at (cur)
-               ;; Return (cond-inst jz-inst body-insts exit-pos) when a peelable
-               ;; while-loop header sits at CUR (VM position I), else NIL.
-               (unless (and (not peeled)
-                            (vm-label-p cur)
-                            (<= (+ i 4) (1- n)))
-                 (return-from match-peel-at nil))
-               (let* ((cond-inst   (aref vec (1+ i)))
-                      (jz-inst     (aref vec (+ i 2)))
-                      (header-name (vm-name cur)))
-                 (unless (and (typep jz-inst 'vm-jump-zero)
-                              (not (vm-label-p cond-inst)))
-                   (return-from match-peel-at nil))
-                 (let* ((exit-name (vm-label-name jz-inst))
-                        (exit-pos  (cfg-find-label-position vec n exit-name))
-                        (back-pos  (and exit-pos (1- exit-pos)))
-                        (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
-                   (unless (and exit-pos
-                                (> exit-pos (+ i 3))
-                                (typep back-inst 'vm-jump)
-                                (equal (vm-label-name back-inst) header-name))
-                     (return-from match-peel-at nil))
-                   (let ((body-insts (loop for j from (+ i 3) below back-pos
-                                            collect (aref vec j))))
-                     (unless (%opt-loop-peeling-safe-body-p body-insts)
-                       (return-from match-peel-at nil))
-                     (list cond-inst jz-inst body-insts exit-pos)))))
-             (apply-peel (cond-inst jz-inst body-insts exit-pos)
-               ;; peeled first iteration (without header label)
-               (push cond-inst result)
-               (push jz-inst result)
-               (dolist (b body-insts) (push b result))
-               ;; then keep original loop unchanged
-               (loop for j from i below (1+ exit-pos)
-                     do (push (aref vec j) result))
-               (setf i (1+ exit-pos)
-                     peeled t)))
-      (loop while (< i n)
-            do (let* ((cur (aref vec i))
-                      (match (match-peel-at cur)))
-                 (if match
-                     (apply #'apply-peel match)
-                     (push-default cur)))))
+    (loop while (< i n)
+          do (let* ((cur (aref vec i))
+                    (match (%opt-loop-peeling-match-at vec n i peeled cur)))
+               (if match
+                   (destructuring-bind (cond-inst jz-inst body-insts exit-pos) match
+                     (multiple-value-bind (new-result new-i)
+                         (%opt-loop-peeling-apply vec i cond-inst jz-inst body-insts exit-pos result)
+                       (setf result new-result i new-i peeled t)))
+                   (progn (push cur result) (incf i)))))
     (nreverse result)))
 
 (defun opt-pass-loop-peeling (instructions)

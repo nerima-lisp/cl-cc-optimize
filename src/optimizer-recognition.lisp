@@ -36,6 +36,42 @@
        (typep o1 'vm-logior)
        (typep o2 'vm-logior)))
 
+(defun %opt-bswap-mask-extraction-consistent-p (src a0 c0 a1 c1 a2 c2 a3 c3 s0 s1 s2 s3)
+  "T when each AND reads SRC and masks it with its own byte-selecting
+constant, and the shift amounts are the canonical big-to-little
+permutation."
+  (and (eq (vm-lhs a0) src)
+       (eq (vm-rhs a0) (vm-dst c0))
+       (eq (vm-lhs a1) src)
+       (eq (vm-rhs a1) (vm-dst c1))
+       (eq (vm-lhs a2) src)
+       (eq (vm-rhs a2) (vm-dst c2))
+       (eq (vm-lhs a3) src)
+       (eq (vm-rhs a3) (vm-dst c3))
+       (equal (mapcar #'vm-value (list s0 s1 s2 s3)) '(24 8 -8 -24))))
+
+(defun %opt-bswap-shift-wiring-consistent-p (b0 a0 s0 b1 a1 s1 b2 a2 s2 b3 a3 s3)
+  "T when each shift reads its corresponding masked extract and its
+corresponding shift-amount constant."
+  (and (eq (vm-lhs b0) (vm-dst a0))
+       (eq (vm-rhs b0) (vm-dst s0))
+       (eq (vm-lhs b1) (vm-dst a1))
+       (eq (vm-rhs b1) (vm-dst s1))
+       (eq (vm-lhs b2) (vm-dst a2))
+       (eq (vm-rhs b2) (vm-dst s2))
+       (eq (vm-lhs b3) (vm-dst a3))
+       (eq (vm-rhs b3) (vm-dst s3))))
+
+(defun %opt-bswap-combine-wiring-consistent-p (o0 b0 b1 o1 b2 b3 o2)
+  "T when the three ORs fold the four shifted bytes together pairwise, then
+combine the two pairs."
+  (and (eq (vm-lhs o0) (vm-dst b0))
+       (eq (vm-rhs o0) (vm-dst b1))
+       (eq (vm-lhs o1) (vm-dst b2))
+       (eq (vm-rhs o1) (vm-dst b3))
+       (eq (vm-lhs o2) (vm-dst o0))
+       (eq (vm-rhs o2) (vm-dst o1))))
+
 (defun opt-bswap-recognition-match-at (instructions pos)
   (let ((end (+ pos 19)))
     (when (<= end (length instructions))
@@ -44,43 +80,10 @@
         (when (%opt-bswap-window-shape-valid-p c0 a0 s0 b0 c1 a1 s1 b1 c2 a2 s2 b2 c3 a3 s3 b3 o0 o1 o2)
           (let* ((src (vm-lhs a0))
                  (dst (vm-dst o2)))
-            (labels ((mask-extraction-consistent-p ()
-                       ;; Each AND reads the same source register and masks it
-                       ;; with its own byte-selecting constant, and the shift
-                       ;; amounts are the canonical big-to-little permutation.
-                       (and (eq (vm-lhs a0) src)
-                            (eq (vm-rhs a0) (vm-dst c0))
-                            (eq (vm-lhs a1) src)
-                            (eq (vm-rhs a1) (vm-dst c1))
-                            (eq (vm-lhs a2) src)
-                            (eq (vm-rhs a2) (vm-dst c2))
-                            (eq (vm-lhs a3) src)
-                            (eq (vm-rhs a3) (vm-dst c3))
-                            (equal (mapcar #'vm-value (list s0 s1 s2 s3)) '(24 8 -8 -24))))
-                     (shift-wiring-consistent-p ()
-                       ;; Each shift reads the corresponding masked extract and
-                       ;; its corresponding shift-amount constant.
-                       (and (eq (vm-lhs b0) (vm-dst a0))
-                            (eq (vm-rhs b0) (vm-dst s0))
-                            (eq (vm-lhs b1) (vm-dst a1))
-                            (eq (vm-rhs b1) (vm-dst s1))
-                            (eq (vm-lhs b2) (vm-dst a2))
-                            (eq (vm-rhs b2) (vm-dst s2))
-                            (eq (vm-lhs b3) (vm-dst a3))
-                            (eq (vm-rhs b3) (vm-dst s3))))
-                     (combine-wiring-consistent-p ()
-                       ;; The three ORs fold the four shifted bytes together
-                       ;; pairwise, then combine the two pairs.
-                       (and (eq (vm-lhs o0) (vm-dst b0))
-                            (eq (vm-rhs o0) (vm-dst b1))
-                            (eq (vm-lhs o1) (vm-dst b2))
-                            (eq (vm-rhs o1) (vm-dst b3))
-                            (eq (vm-lhs o2) (vm-dst o0))
-                            (eq (vm-rhs o2) (vm-dst o1)))))
-              (when (and (mask-extraction-consistent-p)
-                         (shift-wiring-consistent-p)
-                         (combine-wiring-consistent-p))
-                (values (make-vm-bswap :dst dst :src src) 19)))))))))
+            (when (and (%opt-bswap-mask-extraction-consistent-p src a0 c0 a1 c1 a2 c2 a3 c3 s0 s1 s2 s3)
+                       (%opt-bswap-shift-wiring-consistent-p b0 a0 s0 b1 a1 s1 b2 a2 s2 b3 a3 s3)
+                       (%opt-bswap-combine-wiring-consistent-p o0 b0 b1 o1 b2 b3 o2))
+              (values (make-vm-bswap :dst dst :src src) 19))))))))
 
 ;;; Shared skeleton for single-pass recognition passes.
 ;;; MATCH-FN: (instructions pos) → (values rewritten consumed) or (nil 0)
@@ -138,6 +141,22 @@
                                    :rhs (vm-dst c0)))
              5))))
 
+(defun %opt-rotate-counts-and-source-valid-p (k0 k1 src0 src1 count0 c0 count1 c1)
+  "T when both shifts read the same source register with in-range rotate
+counts, and the shift amounts trace back to their own constants."
+  (and (integerp k0)
+       (integerp k1)
+       (< 0 k0 64)
+       (< -64 k1 0)
+       (eq src0 src1)
+       (eq count0 (vm-dst c0))
+       (eq count1 (vm-dst c1))))
+
+(defun %opt-rotate-combine-wiring-consistent-p (o0 dst0 dst1)
+  "T when the OR combines the two shifted halves, in either order."
+  (or (and (eq (vm-lhs o0) dst0) (eq (vm-rhs o0) dst1))
+      (and (eq (vm-lhs o0) dst1) (eq (vm-rhs o0) dst0))))
+
 (defun opt-rotate-recognition-match-at (instructions pos)
   (let ((end (+ pos 5)))
     (when (<= end (length instructions))
@@ -153,23 +172,9 @@
                  (dst0 (vm-dst a0))
                  (dst1 (vm-dst a1))
                  (out-dst (vm-dst o0)))
-            (labels ((counts-and-source-valid-p ()
-                       ;; Both shifts read the same source register, and the
-                       ;; shift amounts trace back to their own constants.
-                       (and (integerp k0)
-                            (integerp k1)
-                            (< 0 k0 64)
-                            (< -64 k1 0)
-                            (eq src0 src1)
-                            (eq count0 (vm-dst c0))
-                            (eq count1 (vm-dst c1))))
-                     (combine-wiring-consistent-p ()
-                       ;; The OR combines the two shifted halves, in either order.
-                       (or (and (eq (vm-lhs o0) dst0) (eq (vm-rhs o0) dst1))
-                           (and (eq (vm-lhs o0) dst1) (eq (vm-rhs o0) dst0)))))
-              (when (and (counts-and-source-valid-p)
-                         (combine-wiring-consistent-p))
-                (%opt-rotate-build-replacement k0 k1 c0 c1 src0 out-dst)))))))))
+            (when (and (%opt-rotate-counts-and-source-valid-p k0 k1 src0 src1 count0 c0 count1 c1)
+                       (%opt-rotate-combine-wiring-consistent-p o0 dst0 dst1))
+              (%opt-rotate-build-replacement k0 k1 c0 c1 src0 out-dst))))))))
 
 (defun opt-pass-rotate-recognition (instructions)
   "Collapse rotate idioms into vm-rotate.

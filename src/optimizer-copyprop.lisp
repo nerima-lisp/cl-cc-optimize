@@ -203,21 +203,27 @@
     (setf (gethash block (cpps-queued state)) t)
     (push block (cpps-worklist state))))
 
+(defun %copyprop-compute-incoming-env (block state)
+  "Compute BLOCK's incoming copy environment: empty when BLOCK has no
+predecessors, a direct copy of the sole predecessor's out-environment when
+it has exactly one, or the merge of all predecessors' out-environments
+otherwise."
+  (let ((preds (bb-predecessors block)))
+    (cond
+     ((null preds) (make-hash-table :test #'eq))
+     ((null (cdr preds))
+      (if-let ((pred-out (gethash (first preds) (cpps-out-envs state))))
+        (%opt-copy-prop-env-copy pred-out)
+        (make-hash-table :test #'eq)))
+     (t (%opt-copy-prop-merge
+         (mapcar (lambda (pred)
+                   (or (gethash pred (cpps-out-envs state))
+                       (make-hash-table :test #'eq)))
+                 preds))))))
+
 (defun %copyprop-process-block (block state)
   "Compute the in/out copy environments for BLOCK, enqueue changed successors."
-  (let* ((preds (bb-predecessors block))
-         (incoming
-          (cond
-           ((null preds) (make-hash-table :test #'eq))
-           ((null (cdr preds))
-            (if-let ((pred-out (gethash (first preds) (cpps-out-envs state))))
-              (%opt-copy-prop-env-copy pred-out)
-              (make-hash-table :test #'eq)))
-           (t (%opt-copy-prop-merge
-               (mapcar (lambda (pred)
-                         (or (gethash pred (cpps-out-envs state))
-                             (make-hash-table :test #'eq)))
-                       preds)))))
+  (let* ((incoming (%copyprop-compute-incoming-env block state))
          (old-in  (gethash block (cpps-in-envs state)))
          (changed nil))
     (unless (and old-in (%opt-copy-prop-env-equal-p old-in incoming))

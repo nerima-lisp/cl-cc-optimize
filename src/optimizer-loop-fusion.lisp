@@ -252,6 +252,49 @@ GCD/Banerjee analysis."
            (not (%loop-fr514-register-dependencies-p core-a core-b))
            (not (%loop-fr514-memory-dependencies-p instructions left core-a right core-b))))))
 
+(defun %loop-fr514-emit-fused-pair (vec lp lp2 emit)
+  "Fuse canonical loops LP and LP2, which share an iteration space, into one
+loop whose body is LP's core followed by LP2's core copy (with LP2's
+induction register renamed to LP's). Emit the fused loop via EMIT and
+return the index just past LP2's exit."
+  (multiple-value-bind (core-a step-a) (%loop-fr514-core-and-step lp)
+    (multiple-value-bind (core-b step-b) (%loop-fr514-core-and-step lp2)
+      (declare (ignore step-b))
+      (let ((copies (make-hash-table :test #'eq)))
+        (setf (gethash (opt-loop-iv-reg lp2) copies) (opt-loop-iv-reg lp))
+        (funcall emit (aref vec (opt-loop-head-index lp)))
+        (funcall emit (aref vec (opt-loop-cmp-index lp)))
+        (funcall emit (aref vec (opt-loop-jz-index lp)))
+        (dolist (inst core-a) (funcall emit inst))
+        (dolist (inst core-b)
+          (funcall emit (opt-rewrite-inst-regs
+                         (%loop-fr514-copy-inst inst) copies)))
+        (funcall emit step-a)
+        (funcall emit (aref vec (opt-loop-back-index lp)))
+        (funcall emit (make-vm-label :name (opt-loop-exit-label lp2)))
+        (1+ (opt-loop-exit-index lp2))))))
+
+(defun %loop-fr514-emit-single-loop (vec lp emit)
+  "Emit LP's canonical loop unchanged via EMIT. Return the index just past
+LP's exit."
+  (dolist (inst (%loop-fr514-loop-seq vec lp)) (funcall emit inst))
+  (1+ (opt-loop-exit-index lp)))
+
+(defun %loop-fr514-advance-at (instructions vec n i emit)
+  "Advance past position I in VEC: when I begins a canonical loop with a
+successor loop and fusion is legal, fuse them via EMIT; when I begins a
+canonical loop without a legal fusion, emit it unchanged; otherwise emit
+VEC[I] unchanged. Return (values NEXT-I FUSED-P)."
+  (let ((lp (%loop-fr514-parse-canonical-loop-at vec i)))
+    (if (not lp)
+        (progn (funcall emit (aref vec i)) (values (1+ i) nil))
+        (let* ((next-i (1+ (opt-loop-exit-index lp)))
+               (lp2 (and (< next-i n)
+                         (%loop-fr514-parse-canonical-loop-at vec next-i))))
+          (if (and lp2 (%loop-fr514-fusion-legal-p instructions vec lp lp2))
+              (values (%loop-fr514-emit-fused-pair vec lp lp2 emit) t)
+              (values (%loop-fr514-emit-single-loop vec lp emit) nil))))))
+
 (defun opt-pass-loop-fusion (instructions)
   "FR-514: fuse adjacent canonical loops with identical iteration spaces.
 
@@ -262,39 +305,12 @@ legality is proven by register checks plus conservative GCD/Banerjee memory test
          (out nil)
          (changed nil)
          (i 0))
-    (labels ((emit (x) (push x out))
-             (emit-fused-pair (lp lp2)
-               (multiple-value-bind (core-a step-a) (%loop-fr514-core-and-step lp)
-                 (multiple-value-bind (core-b _step-b) (%loop-fr514-core-and-step lp2)
-                   (declare (ignore _step-b))
-                   (let ((copies (make-hash-table :test #'eq)))
-                     (setf (gethash (opt-loop-iv-reg lp2) copies) (opt-loop-iv-reg lp))
-                     (emit (aref vec (opt-loop-head-index lp)))
-                     (emit (aref vec (opt-loop-cmp-index lp)))
-                     (emit (aref vec (opt-loop-jz-index lp)))
-                     (dolist (inst core-a) (emit inst))
-                     (dolist (inst core-b)
-                       (emit (opt-rewrite-inst-regs
-                              (%loop-fr514-copy-inst inst) copies)))
-                     (emit step-a)
-                     (emit (aref vec (opt-loop-back-index lp)))
-                     (emit (make-vm-label :name (opt-loop-exit-label lp2)))
-                     (setf changed t)
-                     (1+ (opt-loop-exit-index lp2))))))
-             (emit-single-loop (lp)
-               (dolist (inst (%loop-fr514-loop-seq vec lp)) (emit inst))
-               (1+ (opt-loop-exit-index lp)))
-             (advance-at (i)
-               (let ((lp (%loop-fr514-parse-canonical-loop-at vec i)))
-                 (if (not lp)
-                     (progn (emit (aref vec i)) (1+ i))
-                     (let* ((next-i (1+ (opt-loop-exit-index lp)))
-                            (lp2 (and (< next-i n)
-                                      (%loop-fr514-parse-canonical-loop-at vec next-i))))
-                       (if (and lp2 (%loop-fr514-fusion-legal-p instructions vec lp lp2))
-                           (emit-fused-pair lp lp2)
-                           (emit-single-loop lp)))))))
-      (loop while (< i n) do (setf i (advance-at i)))
+    (labels ((emit (x) (push x out)))
+      (loop while (< i n)
+            do (multiple-value-bind (next-i fused-p)
+                   (%loop-fr514-advance-at instructions vec n i #'emit)
+                 (setf i next-i)
+                 (when fused-p (setf changed t))))
       (if changed (nreverse out) instructions))))
 
 (defun %loop-fr514-independent-split-index (core)

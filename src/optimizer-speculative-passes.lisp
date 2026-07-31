@@ -261,6 +261,93 @@ leaving control-flow and induction update in place."
           :register-pressure pressure
           :instruction-budget budget)))
 
+(defun %opt-loop-fusion-loop-seq (vec lp)
+  "Return the list of VEC instructions spanning LP's canonical loop, from its
+header through its exit index, inclusive."
+  (loop for k from (opt-loop-head-index lp) to (opt-loop-exit-index lp)
+        collect (aref vec k)))
+
+(defun %opt-loop-fusion-pure-core (lp)
+  "Return LP's pure core instructions, discarding the accompanying induction
+step instruction."
+  (multiple-value-bind (core step) (%opt-loop-core-and-step lp)
+    (declare (ignore step))
+    core))
+
+(defun %opt-loop-fusion-pure-loop-p (lp)
+  "True when every instruction in LP's pure core is CSE-eligible, i.e. LP is
+safe to fuse or fission."
+  (every #'opt-inst-cse-eligible-p (%opt-loop-fusion-pure-core lp)))
+
+(defun %opt-loop-fusion-same-iter-space-p (vec a b)
+  "True when canonical loops A and B iterate the same space via distinct
+induction registers: same limit register, step register, and constant
+initial value."
+  (and (not (eq (opt-loop-iv-reg a) (opt-loop-iv-reg b)))
+       (equal (opt-loop-limit-reg a) (opt-loop-limit-reg b))
+       (equal (opt-loop-step-reg a) (opt-loop-step-reg b))
+       (equal (%opt-loop-constant-init vec a) (%opt-loop-constant-init vec b))))
+
+(defun %opt-loop-fusion-fuse-adjacent (vec lp lp2 emit)
+  "Fuse canonical loops LP and LP2, which share an iteration space, into one
+loop whose body is LP's core followed by LP2's core, with LP2's induction
+register renamed to LP's. Emit the fused loop via EMIT and return the index
+just past LP2's exit."
+  (multiple-value-bind (core-a step-a) (%opt-loop-core-and-step lp)
+    (multiple-value-bind (core-b step-b) (%opt-loop-core-and-step lp2)
+      (declare (ignore step-b))
+      (let ((m (make-hash-table :test #'eq)))
+        (setf (gethash (opt-loop-iv-reg lp2) m) (opt-loop-iv-reg lp))
+        (funcall emit (aref vec (opt-loop-head-index lp)))
+        (funcall emit (aref vec (opt-loop-cmp-index lp)))
+        (funcall emit (aref vec (opt-loop-jz-index lp)))
+        (dolist (inst core-a) (funcall emit inst))
+        (dolist (inst core-b) (funcall emit (opt-rewrite-inst-regs inst m)))
+        (funcall emit step-a)
+        (funcall emit (aref vec (opt-loop-back-index lp)))
+        (funcall emit (aref vec (opt-loop-exit-index lp2)))
+        (1+ (opt-loop-exit-index lp2))))))
+
+(defun %opt-loop-fusion-fission-oversized (vec lp core emit)
+  "When LP's pure CORE exceeds the fission size threshold, split it in half
+at a synthetic split label and emit both halves; otherwise emit LP
+unchanged. Return (values NEXT-I CHANGED-P): the index just past LP's exit,
+and whether a split occurred."
+  (if (and (%opt-loop-fusion-pure-loop-p lp) (> (length core) 24))
+      (let* ((half (floor (length core) 2))
+             (core-a (subseq core 0 half))
+             (core-b (subseq core half))
+             (split-label
+               (make-vm-label
+                :name (intern (format nil "~A__SPLIT"
+                                       (vm-name (aref vec (opt-loop-head-index lp))))
+                               :keyword))))
+        (funcall emit (aref vec (opt-loop-head-index lp)))
+        (funcall emit (aref vec (opt-loop-cmp-index lp)))
+        (funcall emit (aref vec (opt-loop-jz-index lp)))
+        (dolist (inst core-a) (funcall emit inst))
+        (funcall emit split-label)
+        (dolist (inst core-b) (funcall emit inst))
+        (funcall emit (car (last (opt-loop-body lp))))
+        (funcall emit (aref vec (opt-loop-back-index lp)))
+        (funcall emit (aref vec (opt-loop-exit-index lp)))
+        (values (1+ (opt-loop-exit-index lp)) t))
+      (progn
+        (dolist (inst (%opt-loop-fusion-loop-seq vec lp)) (funcall emit inst))
+        (values (1+ (opt-loop-exit-index lp)) nil))))
+
+(defun %opt-loop-fusion-fission-step (vec lp lp2 emit)
+  "Advance past canonical loop LP (with successor LP2, if any): fuse LP and
+LP2 when both are pure and share an iteration space, otherwise fission LP
+alone if its core is oversized, otherwise emit LP unchanged via EMIT.
+Return (values NEXT-I CHANGED-P)."
+  (if (and lp2
+           (%opt-loop-fusion-pure-loop-p lp)
+           (%opt-loop-fusion-pure-loop-p lp2)
+           (%opt-loop-fusion-same-iter-space-p vec lp lp2))
+      (values (%opt-loop-fusion-fuse-adjacent vec lp lp2 emit) t)
+      (%opt-loop-fusion-fission-oversized vec lp (%opt-loop-fusion-pure-core lp) emit)))
+
 (defun opt-pass-loop-fusion-fission (instructions)
   "Apply conservative loop fusion/fission on canonical loops.
 
@@ -272,85 +359,16 @@ Fission: oversized loop body is split into two core regions in the same loop
          (out nil)
          (changed nil)
          (i 0))
-    (labels ((emit (x) (push x out))
-             (loop-seq (lp)
-               (loop for k from (opt-loop-head-index lp) to (opt-loop-exit-index lp)
-                     collect (aref vec k)))
-             (pure-core (lp)
-               (multiple-value-bind (core _step) (%opt-loop-core-and-step lp)
-                 (declare (ignore _step))
-                 core))
-             (pure-loop-p (lp)
-               (every #'opt-inst-cse-eligible-p (pure-core lp)))
-             (same-iter-space-p (a b)
-               (and (not (eq (opt-loop-iv-reg a) (opt-loop-iv-reg b)))
-                    (equal (opt-loop-limit-reg a) (opt-loop-limit-reg b))
-                    (equal (opt-loop-step-reg a) (opt-loop-step-reg b))
-                    (equal (%opt-loop-constant-init vec a)
-                           (%opt-loop-constant-init vec b))))
-             (fuse-adjacent-loops (lp lp2)
-               ;; LP and LP2 share an iteration space: emit one loop whose body
-               ;; is LP's core followed by LP2's core (with LP2's induction
-               ;; register renamed to LP's), then advance past LP2's exit.
-               (multiple-value-bind (core-a step-a) (%opt-loop-core-and-step lp)
-                 (multiple-value-bind (core-b _step-b) (%opt-loop-core-and-step lp2)
-                   (declare (ignore _step-b))
-                   (let ((m (make-hash-table :test #'eq)))
-                     (setf (gethash (opt-loop-iv-reg lp2) m)
-                           (opt-loop-iv-reg lp))
-                     (emit (aref vec (opt-loop-head-index lp)))
-                     (emit (aref vec (opt-loop-cmp-index lp)))
-                     (emit (aref vec (opt-loop-jz-index lp)))
-                     (dolist (inst core-a) (emit inst))
-                     (dolist (inst core-b) (emit (opt-rewrite-inst-regs inst m)))
-                     (emit step-a)
-                     (emit (aref vec (opt-loop-back-index lp)))
-                     (emit (aref vec (opt-loop-exit-index lp2)))
-                     (setf changed t)
-                     (setf i (1+ (opt-loop-exit-index lp2)))))))
-             (fission-oversized-loop (lp core)
-               ;; When LP's pure core exceeds the size threshold, split it in
-               ;; half at a synthetic split label; otherwise emit LP unchanged.
-               (if (and (pure-loop-p lp)
-                        (> (length core) 24))
-                   (let* ((half (floor (length core) 2))
-                          (core-a (subseq core 0 half))
-                          (core-b (subseq core half))
-                          (split-label
-                            (make-vm-label
-                             :name
-                             (intern
-                              (format nil "~A__SPLIT"
-                                      (vm-name (aref vec (opt-loop-head-index lp))))
-                              :keyword))))
-                     (emit (aref vec (opt-loop-head-index lp)))
-                     (emit (aref vec (opt-loop-cmp-index lp)))
-                     (emit (aref vec (opt-loop-jz-index lp)))
-                     (dolist (inst core-a) (emit inst))
-                     (emit split-label)
-                     (dolist (inst core-b) (emit inst))
-                     (emit (car (last (opt-loop-body lp))))
-                     (emit (aref vec (opt-loop-back-index lp)))
-                     (emit (aref vec (opt-loop-exit-index lp)))
-                     (setf changed t)
-                     (setf i (1+ (opt-loop-exit-index lp))))
-                   (progn
-                     (dolist (inst (loop-seq lp))
-                       (emit inst))
-                     (setf i (1+ (opt-loop-exit-index lp)))))))
+    (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%opt-parse-canonical-loop-at vec i)))
                  (if lp
                      (let* ((next-i (1+ (opt-loop-exit-index lp)))
                             (lp2 (and (< next-i n)
                                       (%opt-parse-canonical-loop-at vec next-i))))
-                       (if (and lp2
-                                (pure-loop-p lp)
-                                (pure-loop-p lp2)
-                                (same-iter-space-p lp lp2))
-                           (fuse-adjacent-loops lp lp2)
-                           (fission-oversized-loop lp (pure-core lp))))
-                     (progn
-                       (emit (aref vec i))
-                       (incf i)))))
+                       (multiple-value-bind (new-i change-p)
+                           (%opt-loop-fusion-fission-step vec lp lp2 #'emit)
+                         (setf i new-i)
+                         (when change-p (setf changed t))))
+                     (progn (emit (aref vec i)) (incf i)))))
       (if changed (nreverse out) instructions))))

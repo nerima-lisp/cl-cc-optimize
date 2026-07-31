@@ -33,6 +33,37 @@
 
 ;;; ─── Dominator Tree (Cooper et al. 2001) ─────────────────────────────────
 
+(defun %cfg-new-idom-from-preds (b)
+  "Return B's new immediate-dominator candidate: the intersection, across
+the dominator tree, of every predecessor of B that already has a computed
+BB-IDOM, or NIL when none do."
+  (let ((new-idom nil))
+    (dolist (p (bb-predecessors b))
+      (when (bb-idom p)
+        (if new-idom
+            (setf new-idom (cfg-intersect p new-idom))
+            (setf new-idom p))))
+    new-idom))
+
+(defun %cfg-update-block-idom (b)
+  "Recompute B's immediate dominator from its predecessors. Return T when
+BB-IDOM changed."
+  (let ((new-idom (%cfg-new-idom-from-preds b)))
+    (when (and new-idom (not (eq new-idom (bb-idom b))))
+      (setf (bb-idom b) new-idom)
+      t)))
+
+(defun %cfg-compute-idom-fixpoint (rpo entry)
+  "Iterate Cooper et al.'s dominator update over RPO until no block's
+BB-IDOM changes."
+  (let ((changed t))
+    (loop while changed
+          do (setf changed nil)
+             (dolist (b rpo)
+               (unless (eq b entry)
+                 (when (%cfg-update-block-idom b)
+                   (setf changed t)))))))
+
 (defun cfg-compute-dominators (cfg)
   "Compute immediate dominators for all blocks in CFG using Cooper et al.'s
    simple iterative algorithm (2001).  Sets bb-idom for each block.
@@ -51,19 +82,7 @@
     (setf (bb-idom entry) entry)
 
     ;; Iterate until stable
-    (let ((changed t))
-      (loop while changed
-            do (setf changed nil)
-               (dolist (b rpo)
-                 (unless (eq b entry)
-                   (let ((new-idom nil))
-                     ;; new-idom = first processed predecessor
-                     (dolist (p (bb-predecessors b))
-                       (when (bb-idom p)
-                         (if new-idom (setf new-idom (cfg-intersect p new-idom)) (setf new-idom p))))
-                     (when (and new-idom (not (eq new-idom (bb-idom b))))
-                       (setf (bb-idom b) new-idom
-                             changed t)))))))
+    (%cfg-compute-idom-fixpoint rpo entry)
 
     ;; Build dom-children lists
     (loop for b across (cfg-blocks cfg)

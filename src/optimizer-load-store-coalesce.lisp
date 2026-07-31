@@ -140,6 +140,30 @@ If the first two accesses cannot be widened/coalesced, NIL is returned."
                    (push (make-vm-logand :dst dst :lhs source-reg :rhs mask-reg) out))))
       (nreverse out))))
 
+(defun %opt-lsc-pack-store-lane (inst lane mask-reg packed-reg fresh out)
+  "Pack one lane's masked, (possibly shifted,) value into PACKED-REG within
+the FR-723 store-coalescing sequence being accumulated in OUT. Return
+(values NEW-OUT NEW-PACKED-REG)."
+  (multiple-value-bind (_kind _family _base _offset value-reg) (%opt-lsc-access inst)
+    (declare (ignore _kind _family _base _offset))
+    (let ((masked-reg (funcall fresh)))
+      (push (make-vm-logand :dst masked-reg :lhs value-reg :rhs mask-reg) out)
+      (let ((lane-reg masked-reg))
+        (when (plusp lane)
+          (let ((shift-reg (funcall fresh))
+                (shifted-reg (funcall fresh)))
+            (push (make-vm-const :dst shift-reg
+                                 :value (* lane +opt-coalesce-lane-bits+))
+                  out)
+            (push (make-vm-ash :dst shifted-reg :lhs masked-reg :rhs shift-reg) out)
+            (setf lane-reg shifted-reg)))
+        (if packed-reg
+            (let ((next-packed (funcall fresh)))
+              (push (make-vm-logior :dst next-packed :lhs packed-reg :rhs lane-reg)
+                    out)
+              (values out next-packed))
+            (values out lane-reg))))))
+
 (defun %opt-lsc-pack-stores (group fresh)
   "Rewrite GROUP of adjacent stores into one packed wider store."
   (multiple-value-bind (_ family base start-offset _value first-inst)
@@ -151,26 +175,9 @@ If the first two accesses cannot be widened/coalesced, NIL is returned."
       (push (make-vm-const :dst mask-reg :value #xff) out)
       (loop for inst in group
             for lane from 0
-            do (multiple-value-bind (_kind _family _base _offset value-reg)
-                   (%opt-lsc-access inst)
-                 (declare (ignore _kind _family _base _offset))
-                 (let ((masked-reg (funcall fresh)))
-                   (push (make-vm-logand :dst masked-reg :lhs value-reg :rhs mask-reg) out)
-                   (let ((lane-reg masked-reg))
-                     (when (plusp lane)
-                       (let ((shift-reg (funcall fresh))
-                             (shifted-reg (funcall fresh)))
-                         (push (make-vm-const :dst shift-reg
-                                              :value (* lane +opt-coalesce-lane-bits+))
-                               out)
-                         (push (make-vm-ash :dst shifted-reg :lhs masked-reg :rhs shift-reg) out)
-                         (setf lane-reg shifted-reg)))
-                     (if packed-reg
-                         (let ((next-packed (funcall fresh)))
-                           (push (make-vm-logior :dst next-packed :lhs packed-reg :rhs lane-reg)
-                                 out)
-                           (setf packed-reg next-packed))
-                         (setf packed-reg lane-reg))))))
+            do (multiple-value-bind (new-out new-packed)
+                   (%opt-lsc-pack-store-lane inst lane mask-reg packed-reg fresh out)
+                 (setf out new-out packed-reg new-packed)))
       (push (%opt-lsc-make-store family base start-offset packed-reg first-inst) out)
       (nreverse out))))
 

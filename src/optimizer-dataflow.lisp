@@ -161,6 +161,23 @@ the entry block for forward analyses and exit block for backward analyses."
                             :boundary-state ,boundary-state
                             :copy-state ,copy-state)))))
 
+(defun %opt-dataflow-meet-states (states boundary copy-state join widen iteration widen-after)
+  "Compute the meet (join, with optional widening) of STATES for one
+dataflow-equation evaluation. Uses BOUNDARY when STATES is empty, a copy of
+the sole state when there is only one, or folds JOIN (and WIDEN once
+ITERATION exceeds WIDEN-AFTER) across the rest."
+  (cond
+    ((null states) (%opt-dataflow-copy-state boundary copy-state))
+    ((null (cdr states))
+     (%opt-dataflow-copy-state (car states) copy-state))
+    (t
+     (let ((acc (%opt-dataflow-copy-state (car states) copy-state)))
+       (dolist (state (cdr states) acc)
+         (setf acc (funcall join acc state)
+               acc (if (and widen (> iteration widen-after))
+                       (funcall widen acc state)
+                       acc)))))))
+
 (defun opt-run-abstract-interpretation (cfg-or-instructions domain
                                        &key
                                          (direction :forward)
@@ -183,17 +200,7 @@ iterations to accelerate convergence on growing lattices."
     (opt-run-dataflow cfg
                       :direction direction
                       :meet (lambda (states)
-                              (cond
-                                ((null states) (%opt-dataflow-copy-state boundary copy-state))
-                                ((null (cdr states))
-                                 (%opt-dataflow-copy-state (car states) copy-state))
-                                (t
-                                 (let ((acc (%opt-dataflow-copy-state (car states) copy-state)))
-                                   (dolist (state (cdr states) acc)
-                                     (setf acc (funcall join acc state)
-                                           acc (if (and widen (> iteration widen-after))
-                                                   (funcall widen acc state)
-                                                   acc)))))))
+                              (%opt-dataflow-meet-states states boundary copy-state join widen iteration widen-after))
                       :transfer transfer
                       :state-equal (lambda (old new)
                                      (prog1 (funcall leq old new)

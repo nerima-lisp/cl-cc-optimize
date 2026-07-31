@@ -50,6 +50,100 @@ condition so odd or short trip counts fall through to the original exit."
     (dolist (b body-insts)
       (push b result))))
 
+(defun %opt-loop-unroll-header-candidate-p (vec n idx)
+  "T when IDX begins a candidate loop header: a label with room for a full
+canonical loop shape before the end of VEC."
+  (and (vm-label-p (aref vec idx))
+       (<= (+ idx 5) (1- n))))
+
+(defun %opt-loop-unroll-parse-shape (vec n idx)
+  "Return (values cmp-inst jz-inst exit-pos back-pos) when IDX begins a
+canonical compare/guard/back-jump/exit shape, else NIL."
+  (let* ((cmp-inst (aref vec (1+ idx)))
+         (jz-inst  (aref vec (+ idx 2)))
+         (header-name (vm-name (aref vec idx))))
+    (when (and (%opt-loop-unroll-cmp-inst-p cmp-inst)
+               (typep jz-inst 'vm-jump-zero)
+               (eq (vm-reg jz-inst) (vm-dst cmp-inst)))
+      (let* ((exit-name (vm-label-name jz-inst))
+             (exit-pos  (cfg-find-label-position vec n exit-name))
+             (back-pos  (and exit-pos (1- exit-pos)))
+             (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
+        (when (and exit-pos
+                   (> exit-pos (+ idx 4))
+                   (typep back-inst 'vm-jump)
+                   (equal (vm-label-name back-inst) header-name)
+                   (not (%opt-has-external-jump-to-label-p
+                         vec header-name idx exit-pos)))
+          (values cmp-inst jz-inst exit-pos back-pos))))))
+
+(defun %opt-loop-unroll-parse-affine-step (vec idx cmp-inst back-pos)
+  "Return (values body-insts init limit step) when the loop body ends in a
+self-add step on CMP-INST's LHS with compile-time-known integer
+init/limit/step, else NIL."
+  (let* ((body-insts (loop for j from (+ idx 3) below back-pos
+                           collect (aref vec j)))
+         (step-inst (car (last body-insts)))
+         (const-env (%opt-build-const-env-up-to vec idx)))
+    (when (and (typep step-inst 'vm-add)
+               (eq (vm-dst step-inst) (vm-lhs step-inst))
+               (eq (vm-dst step-inst) (vm-lhs cmp-inst)))
+      (let* ((iv-reg   (vm-lhs cmp-inst))
+             (lim-reg  (vm-rhs cmp-inst))
+             (step-reg (vm-rhs step-inst)))
+        (values body-insts
+                (gethash iv-reg const-env)
+                (gethash lim-reg const-env)
+                (gethash step-reg const-env))))))
+
+(defun %opt-loop-unroll-do-full (vec body-insts trip exit-pos result)
+  "Emit TRIP copies of BODY-INSTS, then VEC's exit-position instruction onto
+RESULT. Return (values NEW-RESULT NEW-I) with NEW-I positioned just past
+the exit label."
+  (dotimes (_ trip)
+    (dolist (b body-insts)
+      (push b result)))
+  (push (aref vec exit-pos) result)
+  (values result (1+ exit-pos)))
+
+(defun %opt-loop-unroll-do-partial (vec body-insts cmp-inst jz-inst idx exit-pos result)
+  "Emit a guarded partial unroll of BODY-INSTS followed by VEC's original
+header-through-exit instructions onto RESULT. Return (values NEW-RESULT
+NEW-I) with NEW-I positioned just past the exit label."
+  (let ((result (%opt-loop-unroll-emit-partial body-insts cmp-inst jz-inst result)))
+    (loop for j from idx below (1+ exit-pos)
+          do (push (aref vec j) result))
+    (values result (1+ exit-pos))))
+
+(defun %opt-loop-unroll-try-at (vec n idx result)
+  "Attempt to unroll the counted loop starting at IDX in VEC. Return (values
+MATCHED-P NEW-RESULT NEW-I): when the shape at IDX doesn't match or its
+trip count is not eligible for full or partial unrolling, MATCHED-P is NIL
+and RESULT/IDX are returned unchanged."
+  (unless (%opt-loop-unroll-header-candidate-p vec n idx)
+    (return-from %opt-loop-unroll-try-at (values nil result idx)))
+  (multiple-value-bind (cmp-inst jz-inst exit-pos back-pos)
+      (%opt-loop-unroll-parse-shape vec n idx)
+    (unless cmp-inst
+      (return-from %opt-loop-unroll-try-at (values nil result idx)))
+    (multiple-value-bind (body-insts init limit step)
+        (%opt-loop-unroll-parse-affine-step vec idx cmp-inst back-pos)
+      (unless body-insts
+        (return-from %opt-loop-unroll-try-at (values nil result idx)))
+      (let ((trip (and init limit step
+                        (%opt-loop-unroll-trip-count cmp-inst init limit step))))
+        (cond
+          ((and trip (plusp trip) (<= trip *opt-loop-unroll-max-trip*))
+           (multiple-value-bind (new-result new-i)
+               (%opt-loop-unroll-do-full vec body-insts trip exit-pos result)
+             (values t new-result new-i)))
+          ((and (<= (length body-insts) *opt-loop-unroll-max-body*)
+                (plusp *opt-loop-unroll-factor*))
+           (multiple-value-bind (new-result new-i)
+               (%opt-loop-unroll-do-partial vec body-insts cmp-inst jz-inst idx exit-pos result)
+             (values t new-result new-i)))
+          (t (values nil result idx)))))))
+
 (defun opt-pass-loop-unrolling (instructions)
   "Unroll conservative counted loops.
 
@@ -63,89 +157,12 @@ unrolling when the body is small."
          (n (length vec))
          (result nil)
          (i 0))
-    (labels ((header-candidate-p (idx)
-               (and (vm-label-p (aref vec idx))
-                    (<= (+ idx 5) (1- n))))
-             (parse-loop-shape (idx)
-               "Return (values cmp-inst jz-inst exit-pos back-pos) when IDX begins
-                a canonical compare/guard/back-jump/exit shape, else NIL."
-               (let* ((cmp-inst (aref vec (1+ idx)))
-                      (jz-inst  (aref vec (+ idx 2)))
-                      (header-name (vm-name (aref vec idx))))
-                 (when (and (%opt-loop-unroll-cmp-inst-p cmp-inst)
-                            (typep jz-inst 'vm-jump-zero)
-                            (eq (vm-reg jz-inst) (vm-dst cmp-inst)))
-                   (let* ((exit-name (vm-label-name jz-inst))
-                          (exit-pos  (cfg-find-label-position vec n exit-name))
-                          (back-pos  (and exit-pos (1- exit-pos)))
-                          (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
-                     (when (and exit-pos
-                                (> exit-pos (+ idx 4))
-                                (typep back-inst 'vm-jump)
-                                (equal (vm-label-name back-inst) header-name)
-                                (not (%opt-has-external-jump-to-label-p
-                                      vec header-name idx exit-pos)))
-                       (values cmp-inst jz-inst exit-pos back-pos))))))
-             (parse-affine-step (idx cmp-inst back-pos)
-               "Return (values body-insts init limit step) when the loop body
-                ends in a self-add step on CMP-INST's LHS with compile-time-known
-                integer init/limit/step, else NIL."
-               (let* ((body-insts (loop for j from (+ idx 3) below back-pos
-                                        collect (aref vec j)))
-                      (step-inst (car (last body-insts)))
-                      (const-env (%opt-build-const-env-up-to vec idx)))
-                 (when (and (typep step-inst 'vm-add)
-                            (eq (vm-dst step-inst) (vm-lhs step-inst))
-                            (eq (vm-dst step-inst) (vm-lhs cmp-inst)))
-                   (let* ((iv-reg   (vm-lhs cmp-inst))
-                          (lim-reg  (vm-rhs cmp-inst))
-                          (step-reg (vm-rhs step-inst)))
-                     (values body-insts
-                             (gethash iv-reg const-env)
-                             (gethash lim-reg const-env)
-                             (gethash step-reg const-env))))))
-             (emit-full-unroll (body-insts trip exit-pos)
-               (dotimes (_ trip)
-                 (dolist (b body-insts)
-                   (push b result)))
-               ;; keep exit label and continue
-               (setf i exit-pos)
-               (push (aref vec i) result)
-               (incf i))
-             (emit-partial-unroll (body-insts cmp-inst jz-inst idx exit-pos)
-               (setf result (%opt-loop-unroll-emit-partial body-insts cmp-inst jz-inst result))
-               (loop for j from idx below (1+ exit-pos)
-                     do (push (aref vec j) result))
-               (setf i (1+ exit-pos)))
-             (emit-header-unchanged (cur)
-               (push cur result)
-               (incf i))
-             (try-unroll-at (idx)
-               "Attempt to unroll the counted loop starting at IDX. Returns T and
-                advances I/RESULT when a rewrite is emitted. Returns NIL, leaving
-                I untouched, when the shape at IDX doesn't match or the trip count
-                is not eligible for full or partial unrolling."
-               (unless (header-candidate-p idx)
-                 (return-from try-unroll-at nil))
-               (multiple-value-bind (cmp-inst jz-inst exit-pos back-pos) (parse-loop-shape idx)
-                 (unless cmp-inst
-                   (return-from try-unroll-at nil))
-                 (multiple-value-bind (body-insts init limit step) (parse-affine-step idx cmp-inst back-pos)
-                   (unless body-insts
-                     (return-from try-unroll-at nil))
-                   (let ((trip (and init limit step
-                                     (%opt-loop-unroll-trip-count cmp-inst init limit step))))
-                     (cond
-                       ((and trip (plusp trip) (<= trip *opt-loop-unroll-max-trip*))
-                        (emit-full-unroll body-insts trip exit-pos)
-                        t)
-                       ((and (<= (length body-insts) *opt-loop-unroll-max-body*)
-                             (plusp *opt-loop-unroll-factor*))
-                        (emit-partial-unroll body-insts cmp-inst jz-inst idx exit-pos)
-                        t)
-                       (t nil)))))))
-      (loop while (< i n)
-            do (let ((cur (aref vec i)))
-                 (unless (try-unroll-at i)
-                   (emit-header-unchanged cur)))))
+    (loop while (< i n)
+          do (multiple-value-bind (matched-p new-result new-i)
+                 (%opt-loop-unroll-try-at vec n i result)
+               (if matched-p
+                   (setf result new-result i new-i)
+                   (progn
+                     (push (aref vec i) result)
+                     (incf i)))))
     (nreverse result)))

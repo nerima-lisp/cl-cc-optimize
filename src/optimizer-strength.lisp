@@ -245,6 +245,103 @@ Returns a list of vm instructions (may include vm-const, vm-ash, vm-add, vm-move
              (push (make-vm-neg :dst dst :src dst) seq))
            (nreverse seq)))))))
 
+(defun %opt-strength-handle-mul (inst env emit emit-seq new-reg)
+  "Rewrite a vm-mul INST via strength reduction: shift for a power-of-2
+operand, or shift/add decomposition for a small-popcount constant operand,
+falling back to emitting INST unchanged. Update ENV and emit via EMIT /
+EMIT-SEQ; NEW-REG allocates fresh registers."
+  (let* ((dst (vm-dst inst))
+         (lhs (vm-lhs inst))
+         (rhs (vm-rhs inst))
+         (rv  (gethash rhs env))
+         (lv  (gethash lhs env)))
+    (cond
+     ((and rv (opt-power-of-2-p rv))
+      (let* ((k         (1- (integer-length rv)))
+             (shift-reg (funcall new-reg)))
+        (remhash dst env)
+        (funcall emit (make-vm-const :dst shift-reg :value k))
+        (funcall emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
+
+     ((and lv (opt-power-of-2-p lv))
+      (let* ((k         (1- (integer-length lv)))
+             (shift-reg (funcall new-reg)))
+        (remhash dst env)
+        (funcall emit (make-vm-const :dst shift-reg :value k))
+        (funcall emit (make-vm-ash   :dst dst :lhs rhs :rhs shift-reg))))
+
+     ((and rv (integerp rv) (not (zerop rv)) (<= (logcount (abs rv)) 2))
+      (remhash dst env)
+      (funcall emit-seq (%opt-mul-by-const-seq dst lhs rv new-reg)))
+
+     ((and lv (integerp lv) (not (zerop lv)) (<= (logcount (abs lv)) 2))
+      (remhash dst env)
+      (funcall emit-seq (%opt-mul-by-const-seq dst rhs lv new-reg)))
+
+     (t
+      (funcall emit inst)))))
+
+(defun %opt-strength-handle-div (inst env intervals emit emit-seq new-reg)
+  "Rewrite a vm-div INST via strength reduction: shift for a power-of-2
+divisor, or a verified reciprocal/magic-multiply sequence for a proved
+divisor, falling back to emitting INST unchanged. Update ENV and emit via
+EMIT / EMIT-SEQ; NEW-REG allocates fresh registers."
+  (let* ((dst          (vm-dst inst))
+         (lhs          (vm-lhs inst))
+         (rhs          (vm-rhs inst))
+         (rv           (gethash rhs env))
+         (lhs-interval (gethash lhs intervals)))
+    (cond
+     ((and rv (opt-power-of-2-p rv))
+      (let* ((k         (- (1- (integer-length rv))))
+             (shift-reg (funcall new-reg)))
+        (remhash dst env)
+        (funcall emit (make-vm-const :dst shift-reg :value k))
+        (funcall emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
+
+     ((and rv
+           (integerp rv)
+           (> rv 1)
+           (not (opt-power-of-2-p rv)))
+      (if-let ((seq (or (%opt-div-by-verified-reciprocal-seq
+                          dst lhs rv lhs-interval new-reg)
+                         (%opt-div-by-verified-reciprocal-seq-with-bias
+                          dst lhs rv lhs-interval new-reg)
+                         (%opt-div-by-unsigned-magic-seq
+                          dst lhs rv lhs-interval new-reg))))
+          (progn
+            (remhash dst env)
+            (funcall emit-seq seq))
+          (progn
+            (when-let ((dstreg (opt-inst-dst inst)))
+              (remhash dstreg env))
+            (funcall emit inst))))
+
+     (t
+      (when-let ((dstreg (opt-inst-dst inst)))
+        (remhash dstreg env))
+      (funcall emit inst)))))
+
+(defun %opt-strength-handle-mod (inst env emit new-reg)
+  "Rewrite a vm-mod INST via strength reduction: mask-and for a power-of-2
+modulus, falling back to emitting INST unchanged. Update ENV and emit via
+EMIT; NEW-REG allocates a fresh register for the mask constant."
+  (let* ((dst (vm-dst inst))
+         (lhs (vm-lhs inst))
+         (rhs (vm-rhs inst))
+         (rv  (gethash rhs env)))
+    (cond
+     ((and rv (opt-power-of-2-p rv))
+      (let ((mask-reg (funcall new-reg)))
+        (remhash dst env)
+        (funcall emit (make-vm-const  :dst mask-reg :value (1- rv)))
+        (funcall emit (make-vm-logand :dst dst :lhs lhs :rhs mask-reg))))
+
+     (t
+      (when-let ((dstreg (opt-inst-dst inst)))
+        (remhash dstreg env))
+      (funcall emit inst)))))
+
 (defun opt-pass-strength-reduce (instructions)
   "Forward pass: replace multiply/divide by powers of 2 with arithmetic shifts.
    - (* x 2^k) → (ash x k)
@@ -263,98 +360,11 @@ Returns a list of vm instructions (may include vm-const, vm-ash, vm-add, vm-move
     (labels ((new-reg ()
                       (prog1 (intern (format nil "R~A" counter) :keyword)
                              (incf counter)))
-             (const-val (reg)
-                        (gethash reg env))
              (emit (inst)
                    (push inst result))
              (emit-seq (insts)
                        (dolist (inst insts)
-                         (push inst result)))
-             (advance-intervals (inst)
-                                (%opt-transfer-interval-inst inst intervals))
-             (handle-mul-inst (inst)
-                              (let* ((dst (vm-dst inst))
-                                     (lhs (vm-lhs inst))
-                                     (rhs (vm-rhs inst))
-                                     (rv  (const-val rhs))
-                                     (lv  (const-val lhs)))
-                                (cond
-                                 ((and rv (opt-power-of-2-p rv))
-                                  (let* ((k         (1- (integer-length rv)))
-                                         (shift-reg (new-reg)))
-                                    (remhash dst env)
-                                    (emit (make-vm-const :dst shift-reg :value k))
-                                    (emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
-
-                                 ((and lv (opt-power-of-2-p lv))
-                                  (let* ((k         (1- (integer-length lv)))
-                                         (shift-reg (new-reg)))
-                                    (remhash dst env)
-                                    (emit (make-vm-const :dst shift-reg :value k))
-                                    (emit (make-vm-ash   :dst dst :lhs rhs :rhs shift-reg))))
-
-                                 ((and rv (integerp rv) (not (zerop rv)) (<= (logcount (abs rv)) 2))
-                                  (remhash dst env)
-                                  (emit-seq (%opt-mul-by-const-seq dst lhs rv #'new-reg)))
-
-                                 ((and lv (integerp lv) (not (zerop lv)) (<= (logcount (abs lv)) 2))
-                                  (remhash dst env)
-                                  (emit-seq (%opt-mul-by-const-seq dst rhs lv #'new-reg)))
-
-                                 (t
-                                  (emit inst)))))
-             (handle-div-inst (inst)
-                              (let* ((dst          (vm-dst inst))
-                                     (lhs          (vm-lhs inst))
-                                     (rhs          (vm-rhs inst))
-                                     (rv           (const-val rhs))
-                                     (lhs-interval (gethash lhs intervals)))
-                                (cond
-                                 ((and rv (opt-power-of-2-p rv))
-                                  (let* ((k         (- (1- (integer-length rv))))
-                                         (shift-reg (new-reg)))
-                                    (remhash dst env)
-                                    (emit (make-vm-const :dst shift-reg :value k))
-                                    (emit (make-vm-ash   :dst dst :lhs lhs :rhs shift-reg))))
-
-                                 ((and rv
-                                       (integerp rv)
-                                       (> rv 1)
-                                       (not (opt-power-of-2-p rv)))
-                                  (if-let ((seq (or (%opt-div-by-verified-reciprocal-seq
-                                    dst lhs rv lhs-interval #'new-reg)
-                                   (%opt-div-by-verified-reciprocal-seq-with-bias
-                                    dst lhs rv lhs-interval #'new-reg)
-                                   (%opt-div-by-unsigned-magic-seq
-                                    dst lhs rv lhs-interval #'new-reg))))
-                                    (progn
-                                      (remhash dst env)
-                                      (emit-seq seq))
-                                    (progn
-                                      (when-let ((dstreg (opt-inst-dst inst)))
-                                        (remhash dstreg env))
-                                      (emit inst))))
-
-                                 (t
-                                  (when-let ((dstreg (opt-inst-dst inst)))
-                                    (remhash dstreg env))
-                                  (emit inst)))))
-             (handle-mod-inst (inst)
-                              (let* ((dst (vm-dst inst))
-                                     (lhs (vm-lhs inst))
-                                     (rhs (vm-rhs inst))
-                                     (rv  (const-val rhs)))
-                                (cond
-                                 ((and rv (opt-power-of-2-p rv))
-                                  (let ((mask-reg (new-reg)))
-                                    (remhash dst env)
-                                    (emit (make-vm-const  :dst mask-reg :value (1- rv)))
-                                    (emit (make-vm-logand :dst dst :lhs lhs :rhs mask-reg))))
-
-                                 (t
-                                  (when-let ((dstreg (opt-inst-dst inst)))
-                                    (remhash dstreg env))
-                                  (emit inst))))))
+                         (push inst result))))
       (dolist (inst instructions)
         (typecase inst
           (vm-label
@@ -365,25 +375,25 @@ Returns a list of vm instructions (may include vm-const, vm-ash, vm-add, vm-move
           (vm-const
            (setf (gethash (vm-dst inst) env) (vm-value inst))
            (emit inst)
-           (advance-intervals inst))
+           (%opt-transfer-interval-inst inst intervals))
 
           (vm-mul
-           (handle-mul-inst inst)
-           (advance-intervals inst))
+           (%opt-strength-handle-mul inst env #'emit #'emit-seq #'new-reg)
+           (%opt-transfer-interval-inst inst intervals))
 
           (vm-div
-           (handle-div-inst inst)
-           (advance-intervals inst))
+           (%opt-strength-handle-div inst env intervals #'emit #'emit-seq #'new-reg)
+           (%opt-transfer-interval-inst inst intervals))
 
           (vm-mod
-           (handle-mod-inst inst)
-           (advance-intervals inst))
+           (%opt-strength-handle-mod inst env #'emit #'new-reg)
+           (%opt-transfer-interval-inst inst intervals))
 
           (t
            (when-let ((dst (opt-inst-dst inst)))
              (remhash dst env))
            (emit inst)
-           (advance-intervals inst)))))
+           (%opt-transfer-interval-inst inst intervals)))))
     (nreverse result)))
 
 ;;; Bswap and rotate recognition passes are in optimizer-recognition.lisp.

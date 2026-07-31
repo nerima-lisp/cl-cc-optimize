@@ -65,6 +65,63 @@
       (%cse-record state dst key)
       (cons inst result))))
 
+(defun %opt-cse-handle-label (inst target-labels state result)
+  "Flush all CSE knowledge when INST is a branch target, then emit it onto
+RESULT. Return the updated RESULT."
+  (when (gethash (vm-name inst) target-labels)
+    (%cse-flush state))
+  (cons inst result))
+
+(defun %opt-cse-handle-const (inst state result)
+  "Record INST's constant value as its own CSE key without ever replacing it
+with a vm-move (which risks a fold<->CSE oscillation that DCE can turn into
+a dangling register reference), then emit it onto RESULT. Return the
+updated RESULT."
+  (let ((dst (vm-dst inst))
+        (key (list :const (vm-value inst))))
+    (%cse-bump-gen state dst)
+    (%cse-record state dst key)
+    (cons inst result)))
+
+(defun %opt-cse-handle-move (inst state result)
+  "Propagate INST's source value to its destination's CSE fact, then emit it
+onto RESULT. Return the updated RESULT."
+  (let* ((dst (vm-move-dst inst))
+         (src-val (%cse-get-val state (vm-move-src inst))))
+    (%cse-bump-gen state dst)
+    (setf (gethash dst (cse-val-env state)) src-val)
+    (cons inst result)))
+
+(defun %opt-cse-binary-key (inst lv rv)
+  "Return the CSE value-numbering key for binary INST over operand value keys
+LV and RV, normalizing operand order when INST is commutative."
+  (let ((op (type-of inst)))
+    (if (%opt-commutative-inst-p inst)
+        (list op (if (%opt-value< lv rv) lv rv)
+              (if (%opt-value< lv rv) rv lv))
+        (list op lv rv))))
+
+(defun %opt-cse-handle-compute (inst state result)
+  "Value-number a general compute INST: emit it or replace it with vm-move
+based on its binary/unary operand key, or, for anything else, bump its
+destination's generation and emit it unchanged. Return the updated RESULT."
+  (cond
+    ((opt-binary-lhs-rhs-p inst)
+     (let* ((dst (vm-dst inst))
+            (lv (%cse-get-val state (vm-lhs inst)))
+            (rv (%cse-get-val state (vm-rhs inst)))
+            (key (%opt-cse-binary-key inst lv rv)))
+       (%cse-emit-or-cse inst dst key state result)))
+    ((opt-unary-src-p inst)
+     (let* ((dst (vm-dst inst))
+            (sv (%cse-get-val state (vm-src inst)))
+            (key (list (type-of inst) sv)))
+       (%cse-emit-or-cse inst dst key state result)))
+    (t
+     (when-let ((dst (opt-inst-dst inst)))
+       (%cse-bump-gen state dst))
+     (cons inst result))))
+
 (defun opt-pass-cse (instructions)
   "Common subexpression elimination via generation-numbered value numbering.
    Replaces redundant computations with vm-move from the first computing register.
@@ -75,58 +132,13 @@
     (let ((*opt-cse-unification-count* 0))
       (prog1
        (progn
-         (labels ((handle-label (inst)
-                    (when (gethash (vm-name inst) target-labels)
-                      (%cse-flush state))
-                    (push inst result))
-                  (handle-const (inst)
-                    ;; Never replace vm-const with vm-move: doing so creates a
-                    ;; fold<->CSE oscillation that DCE can turn into a dangling
-                    ;; register reference (first canonical reg gets removed by
-                    ;; DCE while later moves still point to it, leaving the
-                    ;; register uninitialized = 0 instead of NIL).
-                    ;; The fold pass already propagates constant values; CSE is
-                    ;; only needed for computed expressions.
-                    (let ((dst (vm-dst inst))
-                          (key (list :const (vm-value inst))))
-                      (%cse-bump-gen state dst)
-                      (%cse-record state dst key)
-                      (push inst result)))
-                  (handle-move (inst)
-                    (let* ((dst     (vm-move-dst inst))
-                           (src-val (%cse-get-val state (vm-move-src inst))))
-                      (%cse-bump-gen state dst)
-                      (setf (gethash dst (cse-val-env state)) src-val)
-                      (push inst result)))
-                  (binary-cse-key (inst lv rv)
-                    (let ((op (type-of inst)))
-                      (if (%opt-commutative-inst-p inst)
-                          (list op (if (%opt-value< lv rv) lv rv)
-                                (if (%opt-value< lv rv) rv lv))
-                          (list op lv rv))))
-                  (handle-compute (inst)
-                    (cond
-                      ((opt-binary-lhs-rhs-p inst)
-                       (let* ((dst (vm-dst inst))
-                              (lv  (%cse-get-val state (vm-lhs inst)))
-                              (rv  (%cse-get-val state (vm-rhs inst)))
-                              (key (binary-cse-key inst lv rv)))
-                         (setf result (%cse-emit-or-cse inst dst key state result))))
-                      ((opt-unary-src-p inst)
-                       (let* ((dst (vm-dst inst))
-                              (sv  (%cse-get-val state (vm-src inst)))
-                              (key (list (type-of inst) sv)))
-                         (setf result (%cse-emit-or-cse inst dst key state result))))
-                      (t
-                       (when-let ((dst (opt-inst-dst inst)))
-                         (%cse-bump-gen state dst))
-                       (push inst result)))))
-           (dolist (inst instructions)
-             (typecase inst
-               (vm-label (handle-label inst))
-               (vm-const (handle-const inst))
-               (vm-move (handle-move inst))
-               (t (handle-compute inst)))))
+         (dolist (inst instructions)
+           (setf result
+                 (typecase inst
+                   (vm-label (%opt-cse-handle-label inst target-labels state result))
+                   (vm-const (%opt-cse-handle-const inst state result))
+                   (vm-move (%opt-cse-handle-move inst state result))
+                   (t (%opt-cse-handle-compute inst state result)))))
          (nreverse result))
        (%opt-report :cse "unified=~D" *opt-cse-unification-count*)))))
 

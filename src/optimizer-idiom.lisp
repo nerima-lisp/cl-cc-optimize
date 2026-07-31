@@ -74,6 +74,24 @@
        (typep back-jump 'vm-jump)
        (typep exit-label 'vm-label)))
 
+(defun %opt-strlen-wiring-consistent-p (idx-reg char nul cmp body-jump body-label
+                                         exit-jump exit-label inc one step back-jump header)
+  "T when every instruction in the strlen window references the same index
+register and jumps to the same labels."
+  (and (eq (vm-index char) idx-reg)
+       (or (and (eq (vm-char1 cmp) (vm-dst char))
+                (eq (vm-char2 cmp) (vm-dst nul)))
+           (and (eq (vm-char2 cmp) (vm-dst char))
+                (eq (vm-char1 cmp) (vm-dst nul))))
+       (eq (vm-reg body-jump) (vm-dst cmp))
+       (equal (vm-label-name body-jump) (vm-name body-label))
+       (equal (vm-label-name exit-jump) (vm-name exit-label))
+       (or (and (eq (vm-lhs inc) idx-reg) (eq (vm-rhs inc) (vm-dst one)))
+           (and (eq (vm-rhs inc) idx-reg) (eq (vm-lhs inc) (vm-dst one))))
+       (eq (vm-dst step) idx-reg)
+       (eq (vm-src step) (vm-dst inc))
+       (equal (vm-label-name back-jump) (vm-name header))))
+
 (defun %opt-idiom-strlen-match-at (instructions pos)
   "Recognize a zero-based loop over characters until #\\Nul and use vm-string-length."
   (let ((end (+ pos 13)))
@@ -82,19 +100,8 @@
           (subseq instructions pos end)
         (when (%opt-strlen-window-shape-valid-p init header char nul cmp body-jump exit-jump body-label one inc step back-jump exit-label)
           (let ((idx-reg (vm-dst init)))
-            (when (and (eq (vm-index char) idx-reg)
-                       (or (and (eq (vm-char1 cmp) (vm-dst char))
-                                (eq (vm-char2 cmp) (vm-dst nul)))
-                           (and (eq (vm-char2 cmp) (vm-dst char))
-                                (eq (vm-char1 cmp) (vm-dst nul))))
-                       (eq (vm-reg body-jump) (vm-dst cmp))
-                       (equal (vm-label-name body-jump) (vm-name body-label))
-                       (equal (vm-label-name exit-jump) (vm-name exit-label))
-                       (or (and (eq (vm-lhs inc) idx-reg) (eq (vm-rhs inc) (vm-dst one)))
-                           (and (eq (vm-rhs inc) idx-reg) (eq (vm-lhs inc) (vm-dst one))))
-                       (eq (vm-dst step) idx-reg)
-                       (eq (vm-src step) (vm-dst inc))
-                       (equal (vm-label-name back-jump) (vm-name header)))
+            (when (%opt-strlen-wiring-consistent-p idx-reg char nul cmp body-jump body-label
+                                                    exit-jump exit-label inc one step back-jump header)
               (values (list (make-vm-string-length :dst idx-reg :src (vm-string-reg char)))
                       13))))))))
 
@@ -113,6 +120,23 @@
        (typep back-jump 'vm-jump)
        (typep exit-label 'vm-label)))
 
+(defun %opt-popcount-wiring-consistent-p (src-reg count-reg one-reg dec clear-low
+                                           inc-count step-src back-jump header exit-test exit-label)
+  "T when every instruction in the popcount window references the same
+count/source registers and jumps to the same labels."
+  (and (eq (vm-lhs dec) src-reg)
+       (eq (vm-rhs dec) one-reg)
+       (eq (vm-lhs clear-low) src-reg)
+       (eq (vm-rhs clear-low) (vm-dst dec))
+       (or (and (eq (vm-lhs inc-count) count-reg)
+                (eq (vm-rhs inc-count) one-reg))
+           (and (eq (vm-rhs inc-count) count-reg)
+                (eq (vm-lhs inc-count) one-reg)))
+       (eq (vm-dst step-src) src-reg)
+       (eq (vm-src step-src) (vm-dst clear-low))
+       (equal (vm-label-name back-jump) (vm-name header))
+       (equal (vm-label-name exit-test) (vm-name exit-label))))
+
 (defun %opt-idiom-popcount-match-at (instructions pos)
   "Recognize Kernighan bit-counting loop and emit vm-logcount."
   (let ((end (+ pos 10)))
@@ -123,18 +147,8 @@
           (let ((count-reg (vm-dst init-count))
                 (src-reg (vm-reg exit-test))
                 (one-reg (vm-dst one)))
-            (when (and (eq (vm-lhs dec) src-reg)
-                       (eq (vm-rhs dec) one-reg)
-                       (eq (vm-lhs clear-low) src-reg)
-                       (eq (vm-rhs clear-low) (vm-dst dec))
-                       (or (and (eq (vm-lhs inc-count) count-reg)
-                                (eq (vm-rhs inc-count) one-reg))
-                           (and (eq (vm-rhs inc-count) count-reg)
-                                (eq (vm-lhs inc-count) one-reg)))
-                       (eq (vm-dst step-src) src-reg)
-                       (eq (vm-src step-src) (vm-dst clear-low))
-                       (equal (vm-label-name back-jump) (vm-name header))
-                       (equal (vm-label-name exit-test) (vm-name exit-label)))
+            (when (%opt-popcount-wiring-consistent-p src-reg count-reg one-reg dec clear-low
+                                                      inc-count step-src back-jump header exit-test exit-label)
               (values (list (make-vm-logcount :dst count-reg :src src-reg)
                             (make-vm-const :dst src-reg :value 0))
                       10))))))))
