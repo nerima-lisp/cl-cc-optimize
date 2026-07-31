@@ -83,6 +83,32 @@ stream."
   (dolist (inst (bb-instructions block) result)
     (push inst result)))
 
+(defun %cfg-layout-defer-cold-p (block force entry)
+  "Return T when BLOCK should be deferred to the cold tail rather than
+visited now: it isn't FORCE-visited, isn't the ENTRY block, and contains a
+cold-path instruction."
+  (and block (not force) (not (eq block entry)) (%cfg-block-cold-p block)))
+
+(defun %cfg-layout-successors-after (block primary)
+  "Return BLOCK's successors other than PRIMARY, in hot/cold layout order."
+  (stable-sort (remove primary (copy-list (bb-successors block)) :test #'eq)
+               #'%cfg-layout-successor-hotter-p))
+
+(defun %cfg-layout-primary-successor (cfg block)
+  "Return BLOCK's primary (fall-through) layout successor, if any."
+  (or (%cfg-conditional-fallthrough-successor cfg block)
+      (%cfg-implicit-fallthrough-successor block)))
+
+(defun %cfg-layout-visit-non-deferred (cfg block successors-after-fn visit-fn)
+  "Visit BLOCK's primary (fall-through) successor first, then its remaining
+successors in hot/cold order, via VISIT-FN. Assumes the caller has already
+marked BLOCK visited and pushed it onto the layout order."
+  (let ((primary (%cfg-layout-primary-successor cfg block)))
+    (when primary
+      (funcall visit-fn primary nil))
+    (dolist (succ (funcall successors-after-fn block primary))
+      (funcall visit-fn succ nil))))
+
 (defun %cfg-layout-order (cfg)
   "Return basic blocks in hot/cold layout order.
 
@@ -98,24 +124,15 @@ deferred to the cold tail when possible."
          (ordered   nil))
     (dolist (block rpo)
       (setf (gethash block reachable) t))
-    (labels ((defer-cold-p (block force)
-               (and block (not force) (not (eq block entry)) (%cfg-block-cold-p block)))
-             (successors-after (block primary)
-               (stable-sort (remove primary (copy-list (bb-successors block)) :test #'eq)
-                            #'%cfg-layout-successor-hotter-p))
-             (visit (block &optional force)
+    (labels ((visit (block &optional force)
                (when (and block (not (gethash block visited)))
-                 (if (defer-cold-p block force)
+                 (if (%cfg-layout-defer-cold-p block force entry)
                      (pushnew block cold-tail :test #'eq)
                      (progn
                        (setf (gethash block visited) t)
                        (push block ordered)
-                       (let ((primary (or (%cfg-conditional-fallthrough-successor cfg block)
-                                          (%cfg-implicit-fallthrough-successor block))))
-                         (when primary
-                           (visit primary nil))
-                         (dolist (succ (successors-after block primary))
-                           (visit succ nil))))))))
+                       (%cfg-layout-visit-non-deferred
+                        cfg block #'%cfg-layout-successors-after #'visit))))))
       (visit entry t)
       (dolist (block rpo)
         (visit block nil))

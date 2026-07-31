@@ -167,6 +167,37 @@ bodies. Recursive SCCs remain conservative and are not marked pure."
            (gethash label pure-labels)
            label))))
 
+(defun %opt-rewrite-pure-call (inst reg-track pure-labels call-cse result)
+  "Rewrite one vm-call INST for %OPT-REWRITE-PURE-DIRECT-CALLS's pure-call
+CSE: reuse a cached pure result when it's still live in the same register,
+emit a move when the cached result lives in another register, or emit and
+memoize INST when its result isn't yet known. Return the updated RESULT
+accumulator (built most-recent-first, as with PUSH)."
+  (let* ((dst (opt-inst-dst inst))
+         (label (%opt-resolved-pure-direct-call-label inst reg-track pure-labels))
+         (args (vm-args inst))
+         (key (and label dst (%opt-pure-call-key label args)))
+         (existing (and key
+                        (multiple-value-bind (cached found-p)
+                            (opt-pure-function-memo-get call-cse pure-labels label args)
+                          (and found-p cached)))))
+    (cond
+      ((and existing (eq existing dst))
+       ;; The same register still holds the same pure result.
+       result)
+      (existing
+       (%opt-pure-call-kill-reg call-cse dst)
+       (remhash dst reg-track)
+       (cons (make-vm-move :dst dst :src existing) result))
+      (t
+       (%opt-pure-call-kill-reg call-cse dst)
+       (let ((new-result (cons inst result)))
+         (remhash dst reg-track)
+         (let ((recorded-p (%opt-pure-call-record-if-safe call-cse key dst)))
+           (when (and recorded-p key dst)
+             (opt-pure-function-memo-put call-cse pure-labels label args dst)))
+         new-result)))))
+
 (defun %opt-rewrite-pure-direct-calls (instructions name-to-label pure-labels)
   "Rewrite repeated pure direct calls inside straight-line regions.
 
@@ -187,29 +218,7 @@ registers is overwritten."
            (flush-state)
            (push inst result))
           ((typep inst 'vm-call)
-           (let* ((dst (opt-inst-dst inst))
-                  (label (%opt-resolved-pure-direct-call-label inst reg-track pure-labels))
-                  (args (vm-args inst))
-                  (key (and label dst (%opt-pure-call-key label args)))
-                  (existing (and key
-                                 (multiple-value-bind (cached found-p)
-                                     (opt-pure-function-memo-get call-cse pure-labels label args)
-                                   (and found-p cached)))))
-             (cond
-               ((and existing (eq existing dst))
-                ;; The same register still holds the same pure result.
-                nil)
-               (existing
-                (%opt-pure-call-kill-reg call-cse dst)
-                (remhash dst reg-track)
-                (push (make-vm-move :dst dst :src existing) result))
-               (t
-                (%opt-pure-call-kill-reg call-cse dst)
-                (push inst result)
-                (remhash dst reg-track)
-                (let ((recorded-p (%opt-pure-call-record-if-safe call-cse key dst)))
-                  (when (and recorded-p key dst)
-                    (opt-pure-function-memo-put call-cse pure-labels label args dst)))))))
+           (setf result (%opt-rewrite-pure-call inst reg-track pure-labels call-cse result)))
           (t
            (let ((dst (opt-inst-dst inst)))
              (%opt-pure-call-kill-reg call-cse dst)

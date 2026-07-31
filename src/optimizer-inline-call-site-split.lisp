@@ -95,6 +95,15 @@ vm-func-ref) for every label referenced in INSTRUCTIONS."
       (when-let ((dst (opt-inst-dst inst)))
         (setf (gethash dst safe) t)))))
 
+(defun %opt-find-closure-label-for-reg (instructions reg)
+  "Return the label of the vm-closure in INSTRUCTIONS whose destination
+register is REG. Used as a fallback whole-list search when a forward
+reference means REG-TRACK hasn't recorded REG's closure label yet."
+  (dolist (i instructions)
+    (when (and (vm-closure-p i)
+               (eq (vm-dst i) reg))
+      (return (vm-label-name i)))))
+
 (defun opt-build-function-name-map (instructions)
   "Return symbol → function-label mapping for top-level function registrations."
   (let ((reg-track (make-hash-table :test #'eq))
@@ -106,10 +115,7 @@ vm-func-ref) for every label referenced in INSTRUCTIONS."
            (setf (gethash (vm-dst inst) reg-track) label)))
         (vm-register-function
          (when-let ((label (or (gethash (vm-src inst) reg-track)
-           (dolist (i instructions)
-             (when (and (vm-closure-p i)
-                        (eq (vm-dst i) (vm-src inst)))
-               (return (vm-label-name i)))))))
+                                (%opt-find-closure-label-for-reg instructions (vm-src inst)))))
            (setf (gethash (vm-func-name inst) name-to-label) label)))))
     name-to-label))
 

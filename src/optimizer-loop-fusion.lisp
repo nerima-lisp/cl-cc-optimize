@@ -317,6 +317,26 @@ legality is proven by register checks plus conservative GCD/Banerjee memory test
        (%loop-fr514-constant-init vec lp)
        (not (some #'%loop-fr514-memory-inst-p core))))
 
+(defun %opt-loop-fission-process-loop (vec lp out)
+  "Attempt FR-514 fission on the canonical loop LP found in VEC. On
+success, emit two independent loops (FISSION_A/FISSION_B) onto OUT;
+otherwise emit LP's instructions unchanged. Return (values NEW-OUT NEXT-I
+CHANGED-P), where NEXT-I is the index just past LP."
+  (multiple-value-bind (core _step) (%loop-fr514-core-and-step lp)
+    (declare (ignore _step))
+    (let* ((split (%loop-fr514-independent-split-index core))
+           (init (%loop-fr514-constant-init vec lp))
+           (next-i (1+ (opt-loop-exit-index lp))))
+      (if (%loop-fr514-fission-candidate-p vec lp core split)
+          (let* ((left (subseq core 0 split))
+                 (right (subseq core split))
+                 (out (%loop-fr514-emit-loop vec lp left "FISSION_A" nil out))
+                 (out (%loop-fr514-emit-loop vec lp right "FISSION_B" init out)))
+            (values out next-i t))
+          (values (dolist (inst (%loop-fr514-loop-seq vec lp) out)
+                    (push inst out))
+                  next-i nil)))))
+
 (defun opt-pass-loop-fission (instructions)
   "FR-514: split large independent loop bodies into separate loops.
 
@@ -332,18 +352,11 @@ single-purpose loops without changing loops with unknown state or memory effects
     (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%loop-fr514-parse-canonical-loop-at vec i)))
-                 (if lp (multiple-value-bind (core _step) (%loop-fr514-core-and-step lp)
-                       (declare (ignore _step))
-                       (let ((split (%loop-fr514-independent-split-index core))
-                             (init (%loop-fr514-constant-init vec lp)))
-                         (if (%loop-fr514-fission-candidate-p vec lp core split)
-                             (let ((left (subseq core 0 split))
-                                   (right (subseq core split)))
-                               (setf out (%loop-fr514-emit-loop vec lp left "FISSION_A" nil out))
-                               (setf out (%loop-fr514-emit-loop vec lp right "FISSION_B" init out))
-                               (setf changed t
-                                     i (1+ (opt-loop-exit-index lp))))
-                             (progn
-                               (dolist (inst (%loop-fr514-loop-seq vec lp)) (emit inst))
-                               (setf i (1+ (opt-loop-exit-index lp))))))) (progn (emit (aref vec i)) (incf i)))))
+                 (if lp
+                     (multiple-value-bind (new-out new-i fissioned-p)
+                         (%opt-loop-fission-process-loop vec lp out)
+                       (setf out new-out
+                             i new-i)
+                       (when fissioned-p (setf changed t)))
+                     (progn (emit (aref vec i)) (incf i)))))
       (if changed (nreverse out) instructions))))

@@ -25,40 +25,85 @@ Returns T when map changed. Conflicting values conservatively drop knowledge."
        (remhash param fn-bindings)
        t))))
 
+(defun %opt-peval-static-const-value (node static-signature)
+  "Return the compile-time-known value of NODE under STATIC-SIGNATURE (a
+param-name -> value alist), or :UNKNOWN when NODE isn't foldable."
+  (cond
+    ((symbolp node)
+     (if-let ((cell (assoc node static-signature :test #'equal)))
+       (cdr cell)
+       :unknown))
+    ((or (numberp node) (stringp node) (characterp node)
+         (keywordp node) (member node '(nil t) :test #'eq))
+     node)
+    ((and (consp node) (eq (car node) 'quote))
+     (second node))
+    (t :unknown)))
+
+(defun %opt-extract-constant-call-entry (node static-signature)
+  "Return a (HEAD . ((param-index . const-value) ...)) entry for call-shaped
+NODE's constant-valued arguments under STATIC-SIGNATURE, or NIL when NODE's
+head isn't a symbol or none of its arguments fold to a known constant."
+  (let ((head (car node)))
+    (when (symbolp head)
+      (let ((pairs nil))
+        (loop for arg in (cdr node)
+              for i from 0
+              for v = (%opt-peval-static-const-value arg static-signature)
+              unless (eq v :unknown)
+              do (push (cons i v) pairs))
+        (when pairs
+          (list (cons head (nreverse pairs))))))))
+
 (defun %opt-extract-constant-calls-from-form (form static-signature)
   "Collect conservative call-site constant bindings from FORM.
 
 Returns alist entries: (callee . ((param-index . const-value) ...))"
-  (labels ((const-value (node)
-                        (cond
-                         ((symbolp node)
-                          (if-let ((cell (assoc node static-signature :test #'equal)))
-                            (cdr cell)
-                            :unknown))
-                         ((or (numberp node) (stringp node) (characterp node)
-                              (keywordp node) (member node '(nil t) :test #'eq))
-                          node)
-                         ((and (consp node) (eq (car node) 'quote))
-                          (second node))
-                         (t :unknown)))
-           (walk (node)
-                 (cond
-                  ((atom node) nil)
-                  ((member (car node) '(quote function) :test #'eq) nil)
-                  (t
-                   (append
-                    (let ((head (car node)))
-                      (when (symbolp head)
-                        (let ((pairs nil))
-                          (loop for arg in (cdr node)
-                                for i from 0
-                                for v = (const-value arg)
-                                unless (eq v :unknown)
-                                do (push (cons i v) pairs))
-                          (when pairs
-                            (list (cons head (nreverse pairs)))))))
-                    (mapcan #'walk node))))))
+  (labels ((walk (node)
+             (cond
+               ((atom node) nil)
+               ((member (car node) '(quote function) :test #'eq) nil)
+               (t
+                (append
+                 (%opt-extract-constant-call-entry node static-signature)
+                 (mapcan #'walk node))))))
     (walk form)))
+
+(defun %opt-record-call-constant-bindings (call params-by-fn const-map)
+  "Merge constant-argument facts from one call entry CALL (as returned by
+%OPT-EXTRACT-CONSTANT-CALLS-FROM-FORM) into CONST-MAP, using PARAMS-BY-FN
+to resolve each constant argument's index to a parameter name."
+  (let* ((callee (car call))
+         (idx-vals (cdr call))
+         (params (gethash callee params-by-fn)))
+    (when params
+      (dolist (iv idx-vals)
+        (let* ((idx (car iv))
+               (value (cdr iv))
+               (param (nth idx params)))
+          (when param
+            (%opt-merge-constant-binding const-map callee param value)))))))
+
+(defun %opt-record-report-constant-bindings (entry params-by-fn const-map)
+  "Merge constant-argument facts found in one partial-eval report ENTRY's
+residual body into CONST-MAP."
+  (let* ((report (cdr entry))
+         (sig (opt-partial-eval-signature report)))
+    (dolist (form (opt-partial-eval-residual-body report))
+      (dolist (call (%opt-extract-constant-calls-from-form form sig))
+        (%opt-record-call-constant-bindings call params-by-fn const-map)))))
+
+(defun %opt-const-map-to-alist (const-map)
+  "Convert CONST-MAP (fn -> (param -> value) hash tables) into the alist
+((fn . ((param . value) ...)) ...) result shape."
+  (let (result)
+    (maphash
+     (lambda (fn table)
+       (let (pairs)
+         (maphash (lambda (k v) (push (cons k v) pairs)) table)
+         (push (cons fn (nreverse pairs)) result)))
+     const-map)
+    (nreverse result)))
 
 (defun %opt-build-inferred-constant-bindings (function-definitions reports)
   "Infer inter-function constant bindings from REPORTS residual signatures.
@@ -70,28 +115,8 @@ Produces alist: ((fn . ((param . value) ...)) ...)."
       (setf (gethash (first def) params-by-fn)
             (coerce (getf (rest def) :params) 'list)))
     (dolist (entry reports)
-      (let* ((report (cdr entry))
-             (sig (opt-partial-eval-signature report)))
-        (dolist (form (opt-partial-eval-residual-body report))
-          (dolist (call (%opt-extract-constant-calls-from-form form sig))
-            (let* ((callee (car call))
-                   (idx-vals (cdr call))
-                   (params (gethash callee params-by-fn)))
-              (when params
-                (dolist (iv idx-vals)
-                  (let* ((idx (car iv))
-                         (value (cdr iv))
-                         (param (nth idx params)))
-                    (when param
-                      (%opt-merge-constant-binding const-map callee param value))))))))))
-    (let (result)
-      (maphash
-       (lambda (fn table)
-         (let (pairs)
-           (maphash (lambda (k v) (push (cons k v) pairs)) table)
-           (push (cons fn (nreverse pairs)) result)))
-       const-map)
-      (nreverse result))))
+      (%opt-record-report-constant-bindings entry params-by-fn const-map))
+    (%opt-const-map-to-alist const-map)))
 
 (defun %opt-merge-constant-binding-alists (base inferred)
   "Merge INFERRED bindings into BASE conservatively.

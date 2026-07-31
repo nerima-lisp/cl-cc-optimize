@@ -54,6 +54,44 @@
          (equal (vm-label-name term) label-name)
          term)))
 
+(defun %opt-loop-cfg-candidate-plist (header header-name label-pos vec latch)
+  "Build the candidate plist for HEADER once its single LATCH has been
+confirmed, or NIL when the header/exit/back instruction shape doesn't
+match a conservative single-latch natural loop."
+  (let* ((header-insts (bb-instructions header))
+         (cond-inst (first header-insts))
+         (jz-inst (second header-insts))
+         (back-inst (%opt-loop-last-jump-to latch header-name))
+         (header-pos (gethash header-name label-pos))
+         (exit-pos (and (typep jz-inst 'vm-jump-zero)
+                        (gethash (vm-label-name jz-inst) label-pos)))
+         (back-pos (%opt-loop-inst-position vec back-inst)))
+    (when (and cond-inst
+               (typep jz-inst 'vm-jump-zero)
+               (not (vm-label-p cond-inst))
+               header-pos exit-pos back-pos
+               (< header-pos back-pos exit-pos))
+      (list :header-name header-name
+            :header-pos header-pos
+            :exit-pos exit-pos
+            :back-pos back-pos
+            :cond-inst cond-inst
+            :jz-inst jz-inst))))
+
+(defun %opt-loop-cfg-candidate-header-info (header latch label-pos vec)
+  "Return a loop-rotation candidate plist for HEADER/LATCH when HEADER
+dominates LATCH, HEADER has a label, and LATCH is HEADER's single latch;
+otherwise NIL."
+  (and (cfg-dominates-p header latch)
+       (bb-label header)
+       (let* ((header-name (vm-name (bb-label header)))
+              (loop-blocks (cfg-collect-natural-loop header latch))
+              (latches (remove-if-not
+                        (lambda (b) (%opt-loop-last-jump-to b header-name))
+                        loop-blocks)))
+         (when (= (length latches) 1)
+           (%opt-loop-cfg-candidate-plist header header-name label-pos vec latch)))))
+
 (defun %opt-loop-cfg-candidate (instructions)
   "Find a conservative single-latch natural loop candidate using the CFG.
 Returns a plist with linear positions needed by the existing transforms."
@@ -67,33 +105,7 @@ Returns a plist with linear positions needed by the existing transforms."
               thereis
               (loop for header in (bb-successors latch)
                     thereis
-                    (and (cfg-dominates-p header latch)
-                         (bb-label header)
-                         (let* ((header-name (vm-name (bb-label header)))
-                                (loop-blocks (cfg-collect-natural-loop header latch))
-                                (latches (remove-if-not
-                                          (lambda (b) (%opt-loop-last-jump-to b header-name))
-                                          loop-blocks)))
-                           (when (= (length latches) 1)
-                             (let* ((header-insts (bb-instructions header))
-                                    (cond-inst (first header-insts))
-                                    (jz-inst (second header-insts))
-                                    (back-inst (%opt-loop-last-jump-to latch header-name))
-                                    (header-pos (gethash header-name label-pos))
-                                    (exit-pos (and (typep jz-inst 'vm-jump-zero)
-                                                   (gethash (vm-label-name jz-inst) label-pos)))
-                                    (back-pos (%opt-loop-inst-position vec back-inst)))
-                               (when (and cond-inst
-                                          (typep jz-inst 'vm-jump-zero)
-                                          (not (vm-label-p cond-inst))
-                                          header-pos exit-pos back-pos
-                                          (< header-pos back-pos exit-pos))
-                                 (list :header-name header-name
-                                       :header-pos header-pos
-                                       :exit-pos exit-pos
-                                       :back-pos back-pos
-                                       :cond-inst cond-inst
-                                       :jz-inst jz-inst)))))))))
+                    (%opt-loop-cfg-candidate-header-info header latch label-pos vec))))
     (error () nil)))
 
 (defun %opt-loop-rotation-apply-candidate (instructions candidate)

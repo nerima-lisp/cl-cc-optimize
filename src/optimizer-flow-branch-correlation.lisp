@@ -13,6 +13,44 @@
     (and (= (length insts) 1)
          (typep (first insts) 'vm-jump))))
 
+(defun %opt-branch-predicate-fact-for-def (inst edge-label target-label)
+  "Return the branch fact proven by the type-testing INST that defines a
+branch condition register, or NIL when INST doesn't fold to a fact.
+EDGE-LABEL/TARGET-LABEL determine whether the fact holds the taken (0) or
+not-taken (1) outcome."
+  (when (or (opt-foldable-type-pred-p inst)
+            (typep inst 'vm-not))
+    (list :pred (type-of inst)
+          :src (vm-src inst)
+          :value (if (and edge-label
+                          (equal edge-label target-label))
+                     0
+                     1))))
+
+(defun %opt-branch-predicate-fact-search-cond-reg (pred term edge-label target-label)
+  "Scan PRED's instructions backward from TERM's condition register to its
+defining instruction, returning the branch fact it proves, if any."
+  (let ((cond-reg (vm-reg term)))
+    (loop for inst in (reverse (bb-instructions pred))
+          do (let ((dst (opt-inst-dst inst)))
+               (when (eq dst cond-reg)
+                 (return
+                   (%opt-branch-predicate-fact-for-def inst edge-label target-label)))))))
+
+(defun %opt-branch-predicate-fact-via-forwarder (pred term edge-label seen)
+  "Recurse through a trivial single-predecessor forwarder PRED whose jump
+matches EDGE-LABEL, returning the branch fact carried further upstream, or
+NIL when PRED doesn't qualify as such a forwarder."
+  (when (and (typep term 'vm-jump)
+             (%opt-branch-correlation-forwarder-block-p pred)
+             (= (length (bb-predecessors pred)) 1)
+             (equal (vm-label-name term) edge-label)
+             (bb-label pred))
+    (%opt-branch-predicate-fact-from-edge
+     (first (bb-predecessors pred))
+     (vm-name (bb-label pred))
+     seen)))
+
 (defun %opt-branch-predicate-fact-from-edge
     (pred edge-label &optional (seen (make-hash-table :test #'eq)))
   "Return branch fact seen on PRED -> EDGE-LABEL, recursively through forwarders.
@@ -26,28 +64,8 @@ EDGE-LABEL is the successor label on the edge being analyzed."
                             (vm-label-name term))))
     (cond
       (target-label
-       (let ((cond-reg (vm-reg term)))
-         (loop for inst in (reverse (bb-instructions pred))
-               do (let ((dst (opt-inst-dst inst)))
-                    (when (eq dst cond-reg)
-                      (return
-                        (when (or (opt-foldable-type-pred-p inst)
-                                  (typep inst 'vm-not))
-                          (list :pred (type-of inst)
-                                :src (vm-src inst)
-                                :value (if (and edge-label
-                                                (equal edge-label target-label))
-                                           0
-                                           1)))))))))
-      ((and (typep term 'vm-jump)
-            (%opt-branch-correlation-forwarder-block-p pred)
-            (= (length (bb-predecessors pred)) 1)
-            (equal (vm-label-name term) edge-label)
-            (bb-label pred))
-       (%opt-branch-predicate-fact-from-edge
-        (first (bb-predecessors pred))
-        (vm-name (bb-label pred))
-        seen))
+       (%opt-branch-predicate-fact-search-cond-reg pred term edge-label target-label))
+      ((%opt-branch-predicate-fact-via-forwarder pred term edge-label seen))
       (t nil))))
 
 (defun %opt-branch-predicate-fact-from-predecessor (pred block)

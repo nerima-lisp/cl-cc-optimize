@@ -35,41 +35,52 @@ base index register for an affine `(+ base constant)` value found in the block."
         (multiple-value-bind (desc offset-p) (gethash reg offsets)
           (if offset-p desc (cons reg 0))))))
 
+(defun %opt-slp-record-const-index-fact (inst values offsets)
+  "Record VALUES/OFFSETS index facts for a vm-const INST."
+  (if (integerp (vm-value inst))
+      (setf (gethash (vm-dst inst) values) (vm-value inst))
+      (remhash (vm-dst inst) values))
+  (remhash (vm-dst inst) offsets))
+
+(defun %opt-slp-record-add-index-fact (inst values offsets)
+  "Record VALUES/OFFSETS index facts for a vm-add INST: fold a
+constant+constant sum directly into VALUES, or combine a constant operand
+with the other operand's base/offset descriptor into an affine OFFSETS
+fact."
+  (let ((dst (vm-dst inst))
+        (lhs (vm-lhs inst))
+        (rhs (vm-rhs inst)))
+    (multiple-value-bind (lhs-value lhs-const-p) (gethash lhs values)
+      (multiple-value-bind (rhs-value rhs-const-p) (gethash rhs values)
+        (cond
+          ((and lhs-const-p rhs-const-p)
+           (setf (gethash dst values) (+ lhs-value rhs-value))
+           (remhash dst offsets))
+          (rhs-const-p
+           (remhash dst values)
+           (setf (gethash dst offsets)
+                 (let ((base (%opt-slp-index-descriptor lhs values offsets)))
+                   (cons (car base) (+ (cdr base) rhs-value)))))
+          (lhs-const-p
+           (remhash dst values)
+           (setf (gethash dst offsets)
+                 (let ((base (%opt-slp-index-descriptor rhs values offsets)))
+                   (cons (car base) (+ (cdr base) lhs-value)))))
+          (t
+           (remhash dst values)
+           (remhash dst offsets)))))))
+
 (defun %opt-slp-record-index-fact (inst values offsets)
   "Record simple integer/affine index facts produced by INST."
   (cond
-   ((typep inst 'vm-const)
-    (if (integerp (vm-value inst))
-        (setf (gethash (vm-dst inst) values) (vm-value inst))
-        (remhash (vm-dst inst) values))
-    (remhash (vm-dst inst) offsets))
-   ((typep inst 'vm-add)
-    (let ((dst (vm-dst inst))
-          (lhs (vm-lhs inst))
-          (rhs (vm-rhs inst)))
-      (multiple-value-bind (lhs-value lhs-const-p) (gethash lhs values)
-        (multiple-value-bind (rhs-value rhs-const-p) (gethash rhs values)
-          (cond
-           ((and lhs-const-p rhs-const-p)
-            (setf (gethash dst values) (+ lhs-value rhs-value))
-            (remhash dst offsets))
-           (rhs-const-p
-            (remhash dst values)
-            (setf (gethash dst offsets)
-                  (let ((base (%opt-slp-index-descriptor lhs values offsets)))
-                    (cons (car base) (+ (cdr base) rhs-value)))))
-           (lhs-const-p
-            (remhash dst values)
-            (setf (gethash dst offsets)
-                  (let ((base (%opt-slp-index-descriptor rhs values offsets)))
-                    (cons (car base) (+ (cdr base) lhs-value)))))
-           (t
-            (remhash dst values)
-            (remhash dst offsets)))))))
-   (t
-    (when-let ((dst (opt-inst-dst inst)))
-      (remhash dst values)
-      (remhash dst offsets)))))
+    ((typep inst 'vm-const)
+     (%opt-slp-record-const-index-fact inst values offsets))
+    ((typep inst 'vm-add)
+     (%opt-slp-record-add-index-fact inst values offsets))
+    (t
+     (when-let ((dst (opt-inst-dst inst)))
+       (remhash dst values)
+       (remhash dst offsets)))))
 
 (defun %opt-slp-analyze-block (insts)
   "Return per-block producer/index facts used by SLP matching."

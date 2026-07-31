@@ -148,6 +148,34 @@ regions (not from caller-provided payload lists)."
         :dependence-safe-p (not (null dependence-safe-p))
         :cache-locality-score (or cache-locality-score 0)))
 
+(defun %opt-loop-interchange-swapped-core (core)
+  "Return (values REWRITTEN CHANGED-P): CORE with its first two instructions
+swapped when both are CSE-eligible and independent of each other, or CORE
+unchanged (CHANGED-P NIL) otherwise."
+  (if (and (>= (length core) 2)
+           (opt-inst-cse-eligible-p (first core))
+           (opt-inst-cse-eligible-p (second core))
+           (not (%opt-inst-depends-on-p (first core) (second core)))
+           (not (%opt-inst-depends-on-p (second core) (first core))))
+      (values (cons (second core) (cons (first core) (cddr core))) t)
+      (values core nil)))
+
+(defun %opt-loop-interchange-emit-loop (vec i lp emit)
+  "Emit LP's canonical loop found at position I in VEC via the EMIT
+function, swapping its core operations when independent. Return (values
+NEXT-I SWAPPED-P): the index just past the loop, and whether the core was
+swapped."
+  (multiple-value-bind (core step) (%opt-loop-core-and-step lp)
+    (multiple-value-bind (rewritten swapped-p) (%opt-loop-interchange-swapped-core core)
+      (funcall emit (aref vec i))
+      (funcall emit (aref vec (1+ i)))
+      (funcall emit (aref vec (+ i 2)))
+      (dolist (inst rewritten) (funcall emit inst))
+      (funcall emit step)
+      (funcall emit (aref vec (opt-loop-back-index lp)))
+      (funcall emit (aref vec (opt-loop-exit-index lp)))
+      (values (1+ (opt-loop-exit-index lp)) swapped-p))))
+
 (defun opt-pass-loop-interchange (instructions)
   "Apply conservative loop-body interchange via independent core-op swap.
 
@@ -161,23 +189,12 @@ Control instructions and IV update remain untouched."
     (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%opt-parse-canonical-loop-at vec i)))
-                 (if lp (multiple-value-bind (core step) (%opt-loop-core-and-step lp)
-                       (let ((rewritten core))
-                         (when (and (>= (length core) 2)
-                                    (opt-inst-cse-eligible-p (first core))
-                                    (opt-inst-cse-eligible-p (second core))
-                                    (not (%opt-inst-depends-on-p (first core) (second core)))
-                                    (not (%opt-inst-depends-on-p (second core) (first core))))
-                           (setf rewritten (cons (second core) (cons (first core) (cddr core))))
-                           (setf changed t))
-                         (emit (aref vec i))
-                         (emit (aref vec (1+ i)))
-                         (emit (aref vec (+ i 2)))
-                         (dolist (inst rewritten) (emit inst))
-                         (emit step)
-                         (emit (aref vec (opt-loop-back-index lp)))
-                         (emit (aref vec (opt-loop-exit-index lp)))
-                         (setf i (1+ (opt-loop-exit-index lp))))) (progn (emit (aref vec i)) (incf i)))))
+                 (if lp
+                     (multiple-value-bind (new-i swapped-p)
+                         (%opt-loop-interchange-emit-loop vec i lp #'emit)
+                       (setf i new-i)
+                       (when swapped-p (setf changed t)))
+                     (progn (emit (aref vec i)) (incf i)))))
       (if changed (nreverse out) instructions))))
 
 (defun opt-polyhedral-schedule-plan (&key statements constraints objective)

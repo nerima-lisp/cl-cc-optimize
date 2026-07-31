@@ -154,36 +154,45 @@
 (defun %opt-mir-value-p (x)
   (%opt-typep x "CL-CC/MIR" "MIR-VALUE"))
 
+(defun %opt-verify-mir-inst (inst block defs pass-name)
+  "Verify one MIR instruction INST inside BLOCK against DEFS (value ->
+defining block), signaling on a use-before-def or double-def SSA value."
+  (dolist (src (%opt-call "CL-CC/MIR" "MIRI-SRCS" inst))
+    (let ((value (if (and (consp src) (%opt-mir-value-p (cdr src))) (cdr src) src)))
+      (when (%opt-mir-value-p value)
+        (unless (gethash value defs)
+          (%opt-signal-ir-verification
+           pass-name :undefined-register-use
+           (format nil "MIR value ~S used before definition" value)
+           (prin1-to-string inst))))))
+  (when-let ((dst (%opt-call "CL-CC/MIR" "MIRI-DST" inst)))
+    (when (gethash dst defs)
+      (%opt-signal-ir-verification pass-name :live-interval-consistency
+                                   (format nil "MIR value ~S defined more than once" dst)
+                                   (prin1-to-string inst)))
+    (setf (gethash dst defs) block)))
+
+(defun %opt-verify-mir-block (block defs pass-name)
+  "Verify one MIR BLOCK's terminator and instructions against DEFS."
+  (let* ((insts (append (%opt-call "CL-CC/MIR" "MIRB-PHIS" block)
+                        (%opt-call "CL-CC/MIR" "MIRB-INSTS" block)))
+         (last (car (last insts))))
+    (unless (and last (member (%opt-call "CL-CC/MIR" "MIRI-OP" last)
+                              '(:ret :jump :branch :tail-call) :test #'eq))
+      (%opt-signal-ir-verification pass-name :block-terminators
+                                   (format nil "MIR block ~A has no terminator"
+                                           (%opt-call "CL-CC/MIR" "MIRB-LABEL" block))
+                                   (prin1-to-string block)))
+    (dolist (inst insts)
+      (%opt-verify-mir-inst inst block defs pass-name))))
+
 (defun %opt-verify-mir-function (fn &key pass-name)
   "Verifier for cl-cc/mir MIR functions using dynamic accessors."
   (let ((defs (make-hash-table :test #'eq)))
     (dolist (param (%opt-call "CL-CC/MIR" "MIRF-PARAMS" fn))
       (setf (gethash param defs) (%opt-call "CL-CC/MIR" "MIRF-ENTRY" fn)))
     (dolist (block (%opt-call "CL-CC/MIR" "MIRF-BLOCKS" fn))
-      (let* ((insts (append (%opt-call "CL-CC/MIR" "MIRB-PHIS" block)
-                            (%opt-call "CL-CC/MIR" "MIRB-INSTS" block)))
-             (last (car (last insts))))
-        (unless (and last (member (%opt-call "CL-CC/MIR" "MIRI-OP" last)
-                                  '(:ret :jump :branch :tail-call) :test #'eq))
-          (%opt-signal-ir-verification pass-name :block-terminators
-                                       (format nil "MIR block ~A has no terminator"
-                                               (%opt-call "CL-CC/MIR" "MIRB-LABEL" block))
-                                       (prin1-to-string block)))
-        (dolist (inst insts)
-          (dolist (src (%opt-call "CL-CC/MIR" "MIRI-SRCS" inst))
-            (let ((value (if (and (consp src) (%opt-mir-value-p (cdr src))) (cdr src) src)))
-              (when (%opt-mir-value-p value)
-                (unless (gethash value defs)
-                  (%opt-signal-ir-verification
-                   pass-name :undefined-register-use
-                   (format nil "MIR value ~S used before definition" value)
-                   (prin1-to-string inst))))))
-          (when-let ((dst (%opt-call "CL-CC/MIR" "MIRI-DST" inst)))
-            (when (gethash dst defs)
-              (%opt-signal-ir-verification pass-name :live-interval-consistency
-                                           (format nil "MIR value ~S defined more than once" dst)
-                                           (prin1-to-string inst)))
-            (setf (gethash dst defs) block)))))
+      (%opt-verify-mir-block block defs pass-name))
     t))
 
 (defun opt-verify-ir (ir &key pass-name)

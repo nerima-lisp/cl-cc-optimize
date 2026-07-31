@@ -82,6 +82,15 @@
           (setf (gethash store-target pending) inst))
         (%opt-clear-pending-aliasing-collection-stores pending inst)))))
 
+(defun %opt-dce-instruction-dead-p (inst dead-stores used)
+  "Return T when INST is DCE-eligible for removal: a provably dead collection
+store recorded in DEAD-STORES, or a pure instruction whose destination
+register never appears in USED."
+  (or (gethash inst dead-stores)
+      (and (opt-inst-dce-eligible-p inst)
+           (let ((dst (opt-inst-dst inst)))
+             (and dst (not (gethash dst used)))))))
+
 (defun opt-pass-dce (instructions)
   "Dead code elimination via global usedness analysis.
    Pass 1: collect every register that appears as a source operand anywhere
@@ -101,11 +110,7 @@
     ;; Pass 2: drop DCE-eligible instructions (pure + alloc) whose dst is never read
     (prog1
         (remove-if (lambda (inst)
-                      (let ((dead-p
-                              (or (gethash inst dead-stores)
-                                  (and (opt-inst-dce-eligible-p inst)
-                                       (let ((dst (opt-inst-dst inst)))
-                                         (and dst (not (gethash dst used))))))))
+                     (let ((dead-p (%opt-dce-instruction-dead-p inst dead-stores used)))
                        (when dead-p (incf removed))
                        dead-p))
                    instructions)

@@ -73,6 +73,34 @@ critical-edge maintenance below."
     (%cfg-replace-predecessor succ pred pad)
     pad))
 
+(defun %cfg-post-dom-new-idom (b post-rpo)
+  "Return the candidate immediate post-dominator for B from its successors
+whose post-idom is already known, via the standard intersect-based
+fixed-point step."
+  (let ((new-idom nil))
+    (dolist (s (bb-successors b))
+      (when (bb-post-idom s)
+        (setf new-idom (if new-idom
+                            (%cfg-post-dom-intersect s new-idom post-rpo)
+                            s))))
+    new-idom))
+
+(defun %cfg-post-dom-update-block (b exit post-rpo)
+  "Update B's post-idom for one fixed-point iteration. Return T when it
+changed."
+  (unless (eq b exit)
+    (let ((new-idom (%cfg-post-dom-new-idom b post-rpo)))
+      (when (and new-idom (not (eq new-idom (bb-post-idom b))))
+        (setf (bb-post-idom b) new-idom)
+        t))))
+
+(defun %cfg-post-dom-populate-children (cfg exit)
+  "Populate BB-POST-CHILDREN for every reachable block in CFG's
+post-dominator tree, rooted at EXIT."
+  (loop for b across (cfg-blocks cfg)
+        when (and (bb-post-idom b) (not (eq b exit)))
+        do (push b (bb-post-children (bb-post-idom b)))))
+
 (defun cfg-compute-post-dominators (cfg)
   "Compute immediate post-dominators for all blocks in CFG.
    Traverses the reverse CFG starting from CFG's exit block. Sets bb-post-idom
@@ -94,18 +122,9 @@ critical-edge maintenance below."
               while changed
               do (setf changed nil)
                  (dolist (b post-order)
-                   (unless (eq b exit)
-                     (let ((new-idom nil))
-                       (dolist (s (bb-successors b))
-                         (when (bb-post-idom s)
-                           (setf new-idom (if new-idom
-                                              (%cfg-post-dom-intersect s new-idom post-rpo)
-                                              s))))
-                       (when (and new-idom (not (eq new-idom (bb-post-idom b))))
-                         (setf (bb-post-idom b) new-idom changed t))))))
-        (loop for b across (cfg-blocks cfg)
-              when (and (bb-post-idom b) (not (eq b exit)))
-              do (push b (bb-post-children (bb-post-idom b))))
+                   (when (%cfg-post-dom-update-block b exit post-rpo)
+                     (setf changed t))))
+        (%cfg-post-dom-populate-children cfg exit)
         exit))))
 
 (defun cfg-post-dominates-p (a b)

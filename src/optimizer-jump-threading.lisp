@@ -113,6 +113,34 @@ and never across CFG back-edges."
        (eq (vm-rhs inst) (getf fact :rhs))
        (opt-inst-dst inst)))
 
+(defun %opt-jump-branch-fact-from-comparison (inst env)
+  "Return a comparison fact for INST when it's a comparison whose LHS/RHS
+are both known constants in ENV, or NIL otherwise."
+  (when (%opt-jump-comparison-p inst)
+    (multiple-value-bind (lval lfound) (gethash (vm-lhs inst) env)
+      (declare (ignore lval))
+      (multiple-value-bind (rval rfound) (gethash (vm-rhs inst) env)
+        (declare (ignore rval))
+        (when (and lfound rfound)
+          (list :pred (type-of inst)
+                :lhs (vm-lhs inst)
+                :rhs (vm-rhs inst)))))))
+
+(defun %opt-jump-branch-fact-step (inst cond-reg env)
+  "Process one instruction INST while scanning for a branch comparison
+fact: update ENV's known-constant bindings for INST's destination, and
+when INST defines COND-REG, return (values T NEW-FACT), where NEW-FACT is
+the comparison fact INST establishes (or NIL to clear any prior fact).
+Returns (values NIL NIL) when INST doesn't define COND-REG."
+  (let ((dst (opt-inst-dst inst)))
+    (when dst
+      (if (typep inst 'vm-const)
+          (setf (gethash dst env) (vm-value inst))
+          (remhash dst env)))
+    (if (and dst (eq dst cond-reg))
+        (values t (%opt-jump-branch-fact-from-comparison inst env))
+        (values nil nil))))
+
 (defun %opt-jump-branch-comparison-fact (block)
   "Return a comparison fact for BLOCK's vm-jump-zero terminator, or NIL.
 
@@ -130,24 +158,10 @@ successors."
       (dolist (inst insts fact)
         (when (eq inst term)
           (return fact))
-        (let ((dst (opt-inst-dst inst)))
-          (when dst
-            (cond
-              ((typep inst 'vm-const)
-               (setf (gethash dst env) (vm-value inst)))
-              (t
-               (remhash dst env))))
-          (when (and dst (eq dst cond-reg))
-            (setf fact nil)
-            (when (%opt-jump-comparison-p inst)
-              (multiple-value-bind (lval lfound) (gethash (vm-lhs inst) env)
-                (declare (ignore lval))
-                (multiple-value-bind (rval rfound) (gethash (vm-rhs inst) env)
-                  (declare (ignore rval))
-                  (when (and lfound rfound)
-                    (setf fact (list :pred (type-of inst)
-                                     :lhs (vm-lhs inst)
-                                     :rhs (vm-rhs inst)))))))))))))
+        (multiple-value-bind (updated-p new-fact)
+            (%opt-jump-branch-fact-step inst cond-reg env)
+          (when updated-p
+            (setf fact new-fact)))))))
 
 (defun %opt-jump-constant-facts (fact)
   (copy-list (getf fact :constants)))

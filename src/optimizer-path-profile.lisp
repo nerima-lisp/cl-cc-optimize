@@ -91,20 +91,25 @@
   "A CFG edge is cyclic when its target dominates its source."
   (and (bb-idom to) (cfg-dominates-p to from)))
 
+(defun %opt-bl-dag-successors (block visiting)
+  "Return BLOCK's successors that are neither backedges nor already on the
+current DFS path VISITING, i.e. its DAG successors for Ball-Larus NumPaths."
+  (remove-if (lambda (succ)
+               (or (%opt-bl-backedge-p block succ)
+                   (member succ visiting :test #'eq)))
+             (%opt-bl-successors block)))
+
 (defun %opt-bl-compute-path-counts (cfg)
   "Compute Ball-Larus NumPaths on the CFG DAG after removing backedges."
   (cfg-compute-dominators cfg)
   (let ((memo (make-hash-table :test #'eq)))
     (labels ((count-from (block visiting)
-                         (or (gethash block memo)
-                             (setf (gethash block memo)
-                                   (if-let ((dag-successors (remove-if (lambda (succ)
-                                     (or (%opt-bl-backedge-p block succ)
-                                         (member succ visiting :test #'eq)))
-                                   (%opt-bl-successors block))))
-                                     (loop for succ in dag-successors
-                                           sum (count-from succ (cons block visiting)))
-                                     1)))))
+               (or (gethash block memo)
+                   (setf (gethash block memo)
+                         (if-let ((dag-successors (%opt-bl-dag-successors block visiting)))
+                           (loop for succ in dag-successors
+                                 sum (count-from succ (cons block visiting)))
+                           1)))))
       (count-from (cfg-entry cfg) nil)
       memo)))
 

@@ -192,6 +192,10 @@ marker."
            (%opt-lsc-same-base-p base-a base-b alias-roots)
            (%opt-lsc-natural-alignment-p offset-a 2)))))
 
+(defun %opt-lsc-store-group-p (group)
+  "Return T when GROUP is a non-empty group of adjacent stores."
+  (and group (eq (nth-value 0 (%opt-lsc-access (first group))) :store)))
+
 (defun opt-pass-store-coalescing (instructions &key alias-roots)
   "Combine adjacent narrow stores into packed naturally-aligned wider stores.
 
@@ -207,12 +211,20 @@ intervening instructions, so alias boundaries and side effects remain intact."
                  ((endp rest) (values (nreverse acc) changed))
                  (t
                   (let ((group (%opt-lsc-group-prefix rest aliases)))
-                    (if (and group (eq (nth-value 0 (%opt-lsc-access (first group))) :store))
+                    (if (%opt-lsc-store-group-p group)
                         (walk (nthcdr (length group) rest)
                               (nreconc (%opt-lsc-pack-stores group fresh) acc)
                               t)
                         (walk (cdr rest) (cons (first rest) acc) changed)))))))
       (walk instructions nil nil))))
+
+(defun %opt-lsc-widen-or-pack-group (group fresh)
+  "Return replacement instructions for GROUP: widened loads for a load group,
+packed stores for a store group, per %OPT-LSC-ACCESS's classification of
+GROUP's first instruction."
+  (ecase (nth-value 0 (%opt-lsc-access (first group)))
+    (:load (%opt-lsc-extract-loads group fresh))
+    (:store (%opt-lsc-pack-stores group fresh))))
 
 (defun opt-pass-load-widening-store-coalescing (instructions &key alias-roots)
   "Run FR-723 adjacent load widening and adjacent store coalescing.
@@ -227,20 +239,12 @@ groups until the VM grows an explicit unaligned access marker."
   (let ((fresh (%opt-fresh-register-generator instructions))
         (aliases (or alias-roots (opt-compute-heap-aliases instructions))))
     (labels ((walk (rest acc changed)
-                   (cond
-                    ((endp rest) (values (nreverse acc) changed))
-                    (t
-                     (if-let ((group (%opt-lsc-group-prefix rest aliases)))
-                       (multiple-value-bind (kind)
-                           (%opt-lsc-access (first group))
-                         (ecase kind
-                           (:load
-                            (walk (nthcdr (length group) rest)
-                                  (nreconc (%opt-lsc-extract-loads group fresh) acc)
-                                  t))
-                           (:store
-                            (walk (nthcdr (length group) rest)
-                                  (nreconc (%opt-lsc-pack-stores group fresh) acc)
-                                  t))))
-                       (walk (cdr rest) (cons (first rest) acc) changed))))))
+               (cond
+                 ((endp rest) (values (nreverse acc) changed))
+                 (t
+                  (if-let ((group (%opt-lsc-group-prefix rest aliases)))
+                    (walk (nthcdr (length group) rest)
+                          (nreconc (%opt-lsc-widen-or-pack-group group fresh) acc)
+                          t)
+                    (walk (cdr rest) (cons (first rest) acc) changed))))))
       (walk instructions nil nil))))
