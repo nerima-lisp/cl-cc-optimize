@@ -356,6 +356,52 @@
   (it-todo "finds no optimizer-vs-interpreter mismatch across 200 random programs"
            "[#FR-753-fuzz-1] deterministic first-call-only optimizer error, see comment above"))
 
+(describe-sequential "optimizer crash-safety on short generated instruction streams"
+  ;; A narrower, weaker property than FR-753 above: this checks only that
+  ;; OPTIMIZE-INSTRUCTIONS does not signal an unexpected error on a short,
+  ;; syntactically-valid instruction stream built from a safe opcode subset
+  ;; (:const :add :sub :mul :move :ret). It does NOT compare optimized vs.
+  ;; interpreted results -- that stronger semantic-equivalence property is
+  ;; what FR-753 is about, and stays explicitly out of scope here. Inputs
+  ;; are generated through cl-weave's own GEN-INTEGER/GEN-LIST/GEN-TUPLE
+  ;; machinery (a different generation path from
+  ;; OPT-GENERATE-RANDOM-IR-PROGRAM in optimizer-fuzz.lisp, which is what
+  ;; FR-753's reproduction depends on), so a pass here is independent
+  ;; evidence and does not retest FR-753's exact reproduction path.
+  (it-fuzz "optimize-instructions does not signal an error on a short safe-opcode stream"
+      ((program
+        (gen-map
+         (lambda (raw)
+           (destructuring-bind (c0 c1 op-specs) raw
+             (let ((registers (list :g1 :g0))
+                   (program (list (cl-cc/vm:make-vm-const :dst :g0 :value c0)
+                                  (cl-cc/vm:make-vm-const :dst :g1 :value c1)))
+                   (next-index 2))
+               (dolist (spec op-specs)
+                 (destructuring-bind (op lhs-index rhs-index) spec
+                   (let* ((defined (length registers))
+                          (lhs (nth (mod lhs-index defined) registers))
+                          (rhs (nth (mod rhs-index defined) registers))
+                          (dst (intern (format nil "G~D" next-index) :keyword)))
+                     (push dst registers)
+                     (push (case op
+                             (:add (cl-cc/vm:make-vm-add :dst dst :lhs lhs :rhs rhs))
+                             (:sub (cl-cc/vm:make-vm-sub :dst dst :lhs lhs :rhs rhs))
+                             (:mul (cl-cc/vm:make-vm-mul :dst dst :lhs lhs :rhs rhs))
+                             (:move (cl-cc/vm:make-vm-move :dst dst :src lhs)))
+                           program)
+                     (incf next-index))))
+               (nreverse (cons (cl-cc/vm:make-vm-ret :reg (first registers)) program)))))
+         (gen-tuple (gen-integer :min -20 :max 20)
+                    (gen-integer :min -20 :max 20)
+                    (gen-list (gen-tuple (gen-member '(:add :sub :mul :move))
+                                          (gen-integer :min 0 :max 3)
+                                          (gen-integer :min 0 :max 3))
+                              :min-length 1 :max-length 3))
+         :name :crash-fuzz-program)))
+      (:trials 100 :timeout-per-trial 2)
+    (cl-cc/optimize:optimize-instructions program)))
+
 (describe-sequential "Prolog peephole candidate selection"
   (it "skips opcode-incompatible rules before unification"
     (let ((rule (quote ((:add ?dst ?lhs ?rhs) ?next

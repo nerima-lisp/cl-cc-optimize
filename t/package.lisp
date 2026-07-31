@@ -4,4 +4,5 @@
   (:import-from #:cl-weave
     #:describe-sequential #:it #:it-todo #:expect
     #:it-each #:it-property #:it-fuzz
-    #:gen-integer #:gen-list #:gen-such-that))
+    #:gen-integer #:gen-list #:gen-such-that
+    #:gen-member #:gen-map #:gen-tuple))
