@@ -5,14 +5,14 @@
 ;;;; decides eligibility against the thresholds in
 ;;;; optimizer-inline-cost-data.lisp. optimizer-inline-expand.lisp consumes
 ;;;; this to pick which candidates to actually inline.
-
 (in-package :cl-cc/optimize)
 
 (defun %opt-inline-call-heavy-p (body)
   "Return T when BODY contains call-like instructions that make inlining risky."
-  (some (lambda (inst)
-          (typep inst '(or vm-call vm-generic-call vm-tail-call vm-apply)))
-        body))
+  (some
+    (lambda (inst)
+      (typep inst '(or vm-call vm-generic-call vm-tail-call vm-apply)))
+    body))
 
 (defun %opt-inline-profile-value (profile-data label key default)
   "Read KEY from PROFILE-DATA for LABEL, accepting either a plist or hash table."
@@ -24,13 +24,11 @@
 (defun %opt-inline-def-label (def)
   "Return DEF's label when it has a closure entry."
   (let ((closure (getf def :closure)))
-    (and (typep closure '(or vm-closure vm-func-ref))
-         (vm-label-name closure))))
+    (and (typep closure '(or vm-closure vm-func-ref)) (vm-label-name closure))))
 
 (defun %opt-inline-captured-vars (inst)
   "Return captured vars for callable reference INST. vm-func-ref never captures."
-  (if (vm-closure-p inst)
-      (vm-captured-vars inst)))
+  (if (vm-closure-p inst) (vm-captured-vars inst)))
 
 (defun %opt-inline-size-adjustment (inst-count body-cost)
   "Return a conservative inline threshold adjustment for function size."
@@ -42,12 +40,13 @@
 
 (defun %opt-inline-hotness-adjustment (call-count loop-depth)
   "Return inline threshold bonus from profile call count and loop depth hints."
-  (+ (cond
-       ((>= call-count 100) 10)
-       ((>= call-count 20) 5)
-       ((>= call-count 5) 2)
-       (t 0))
-     (min 12 (* 4 loop-depth))))
+  (+
+    (cond
+      ((>= call-count 100) 10)
+      ((>= call-count 20) 5)
+      ((>= call-count 5) 2)
+      (t 0))
+    (min 12 (* 4 loop-depth))))
 
 (defun %opt-inline-loop-depths (instructions)
   "Return index -> loop-depth table derived from backward branch ranges."
@@ -61,8 +60,9 @@
           for i from 0
           when (typep inst '(or vm-jump vm-jump-zero))
             do (let ((target (gethash (vm-label-name inst) label-pos)))
-                 (when (and target (< target i))
-                   (loop for j from target to i do (incf (gethash j depths 0))))))
+        (when (and target (< target i))
+          (loop for j from target to i
+                do (incf (gethash j depths 0))))))
     depths))
 
 (defun opt-inline-profile-data (instructions)
@@ -74,32 +74,34 @@
     (loop for inst in instructions
           for i from 0
           do (typecase inst
-               ((or vm-call vm-tail-call vm-apply)
-                (when-let ((label (gethash (vm-func-reg inst) reg-track)))
-                  (let ((entry (or (gethash label profile)
-                                   (setf (gethash label profile)
-                                         (list :call-count 0 :loop-depth 0)))))
-                    (incf (getf entry :call-count))
-                    (setf (getf entry :loop-depth)
-                          (max (getf entry :loop-depth 0) (gethash i depths 0)))))
-                (when-let ((dst (opt-inst-dst inst)))
-                  (remhash dst reg-track)))
-               (t (%opt-track-known-callee-label inst name-to-label reg-track))))
+        ((or vm-call vm-tail-call vm-apply)
+          (%opt-inline-profile-record-call inst i reg-track depths profile)
+          (when-let ((dst (opt-inst-dst inst))) (remhash dst reg-track)))
+        (t (%opt-track-known-callee-label inst name-to-label reg-track))))
     profile))
 
 (defun %opt-inline-score-features (def)
   "Build coarse feature tags for ML-guided inline score estimation."
   (let* ((body (butlast (getf def :body)))
          (inst-count (length body))
-          (call-heavy-p (%opt-inline-call-heavy-p body))
-         (cheap-count (count-if (lambda (inst)
-                                  (<= (egraph-default-cost (vm-inst-to-enode-op inst) nil) 1))
-                                body))
-         (cheap-ratio (if (zerop inst-count) 1.0 (/ cheap-count inst-count))))
-    (remove nil
-            (list (if (<= inst-count 6) :small-body :large-body)
-                  (when (>= cheap-ratio 0.75) :cheap-body)
-                  (when call-heavy-p :call-heavy)))))
+         (call-heavy-p (%opt-inline-call-heavy-p body))
+         (cheap-count
+        (count-if
+          (lambda (inst)
+            (<= (egraph-default-cost (vm-inst-to-enode-op inst) nil) 1))
+          body))
+         (cheap-ratio
+        (if (zerop inst-count) 1.0
+          (/ cheap-count inst-count))))
+    (remove
+      nil
+      (list
+        (if (<= inst-count 6) :small-body
+          :large-body)
+        (when (>= cheap-ratio 0.75)
+          :cheap-body)
+        (when call-heavy-p
+          :call-heavy)))))
 
 (defun %opt-ml-inline-threshold-bonus (def)
   "Translate ML inline score into a small threshold bonus."
@@ -149,41 +151,54 @@ instead of relying on raw instruction count."
   "Return the total inline cost of BODY, excluding the final vm-ret."
   (reduce #'+ (mapcar #'opt-inline-inst-cost (butlast body)) :initial-value 0))
 
-(defun opt-adaptive-inline-threshold (def &key (base-threshold 15) (max-threshold 50)
-                                            profile-data call-count loop-depth function-size)
+(defun opt-adaptive-inline-threshold (def
+    &key
+    (base-threshold 15)
+    (max-threshold 50)
+    profile-data
+    call-count
+    loop-depth
+    function-size)
   "Compute a conservative adaptive inline threshold for DEF.
 Cheap bodies dominated by low-cost instructions get a larger threshold, while
 call-heavy bodies are kept near the base threshold. Optional profile hints make
 hot loop-local callees more aggressive without weakening structural checks."
   (let* ((body (butlast (getf def :body)))
-          (inst-count (length body))
-          (body-cost (opt-inline-body-cost (getf def :body)))
-          (label (%opt-inline-def-label def))
-          (effective-call-count (or call-count
-                                    (%opt-inline-profile-value profile-data label :call-count 0)))
-          (effective-loop-depth (or loop-depth
-                                    (%opt-inline-profile-value profile-data label :loop-depth 0)))
-          (effective-size (or function-size inst-count))
-          (cheap-count (count-if (lambda (inst)
-                                   (<= (egraph-default-cost (vm-inst-to-enode-op inst) nil) 1))
-                                 body))
-          (call-heavy-p (%opt-inline-call-heavy-p body))
-          (cheap-ratio (if (zerop inst-count) 1.0 (/ cheap-count inst-count))))
-    (let* ((raw (max 8
-                      (+ base-threshold
-                         (if call-heavy-p -5 0)
-                         (%opt-inline-hotness-adjustment effective-call-count effective-loop-depth)
-                         (%opt-inline-size-adjustment effective-size body-cost)
-                         (cond
-                          ((>= cheap-ratio 0.90) 35)
-                          ((>= cheap-ratio 0.75) 20)
-                          ((>= cheap-ratio 0.50) 8)
-                          (t 0)))))
-            (scaled (if (and (integerp *opt-inline-threshold-scale*)
-                             (> *opt-inline-threshold-scale* 1))
-                        (* raw *opt-inline-threshold-scale*)
-                        raw))
-            (with-ml (+ scaled (%opt-ml-inline-threshold-bonus def))))
+         (inst-count (length body))
+         (body-cost (opt-inline-body-cost (getf def :body)))
+         (label (%opt-inline-def-label def))
+         (effective-call-count
+        (or call-count (%opt-inline-profile-value profile-data label :call-count 0)))
+         (effective-loop-depth
+        (or loop-depth (%opt-inline-profile-value profile-data label :loop-depth 0)))
+         (effective-size (or function-size inst-count))
+         (cheap-count
+        (count-if
+          (lambda (inst)
+            (<= (egraph-default-cost (vm-inst-to-enode-op inst) nil) 1))
+          body))
+         (call-heavy-p (%opt-inline-call-heavy-p body))
+         (cheap-ratio
+        (if (zerop inst-count) 1.0
+          (/ cheap-count inst-count))))
+    (let* ((raw
+          (max
+            8
+            (+
+              base-threshold
+              (if call-heavy-p -5
+                0)
+              (%opt-inline-hotness-adjustment effective-call-count effective-loop-depth)
+              (%opt-inline-size-adjustment effective-size body-cost)
+              (cond
+                ((>= cheap-ratio 0.90) 35)
+                ((>= cheap-ratio 0.75) 20)
+                ((>= cheap-ratio 0.50) 8)
+                (t 0)))))
+           (scaled
+          (if (and (integerp *opt-inline-threshold-scale*) (> *opt-inline-threshold-scale* 1)) (* raw *opt-inline-threshold-scale*)
+            raw))
+           (with-ml (+ scaled (%opt-ml-inline-threshold-bonus def))))
       (min max-threshold with-ml))))
 
 (defun opt-inline-eligible-p (def threshold)
@@ -195,32 +210,45 @@ hot loop-local callees more aggressive without weakening structural checks."
 5. Body reads no global registers not defined by params or body.
 NOTINLINE always blocks inlining; INLINE only bypasses the cost threshold and
 does not weaken any structural safety checks."
-  (let ((ci   (getf def :closure))
-         (body (getf def :body)))
-    (and (typep ci '(or vm-closure vm-func-ref))
-         (<= (length (butlast body)) *max-inline-size*)
-         (not (eq (vm-closure-inline-policy ci) :notinline))
-          (or *block-compile*
-              (null (%opt-inline-captured-vars ci)))
-         (null (vm-closure-optional-params ci))
-         (null (vm-closure-rest-param ci))
-         (null (vm-closure-key-params ci))
-         (or (eq (vm-closure-inline-policy ci) :inline)
-             (<= (opt-inline-body-cost body) threshold))
-          (opt-can-safely-rename-p body)
-           (or *block-compile*
-               (not (opt-body-has-global-refs-p body (vm-closure-params ci)))))))
+  (let ((ci (getf def :closure))
+        (body (getf def :body)))
+    (and
+      (typep ci '(or vm-closure vm-func-ref))
+      (<= (length (butlast body)) *max-inline-size*)
+      (not (eq (vm-closure-inline-policy ci) :notinline))
+      (or *block-compile* (null (%opt-inline-captured-vars ci)))
+      (null (vm-closure-optional-params ci))
+      (null (vm-closure-rest-param ci))
+      (null (vm-closure-key-params ci))
+      (or
+        (eq (vm-closure-inline-policy ci) :inline)
+        (<= (opt-inline-body-cost body) threshold))
+      (opt-can-safely-rename-p body)
+      (or
+        *block-compile*
+        (not (opt-body-has-global-refs-p body (vm-closure-params ci)))))))
 
 (defun %opt-inline-effective-threshold (def threshold profile-data)
   "Resolve THRESHOLD for DEF, honoring the adaptive policy when requested."
   (cond
     ((eq threshold :adaptive)
-     (opt-adaptive-inline-threshold def :profile-data profile-data))
-    ((and (eq threshold :mlgo)
-          (boundp '*mlgo-enabled*)
-          (symbol-value '*mlgo-enabled*)
-          (fboundp 'opt-mlgo-inline-threshold))
-     (opt-mlgo-inline-threshold def :profile-data profile-data))
+      (opt-adaptive-inline-threshold def :profile-data profile-data))
+    ((and
+        (eq threshold :mlgo)
+        (boundp '*mlgo-enabled*)
+        (symbol-value '*mlgo-enabled*)
+        (fboundp 'opt-mlgo-inline-threshold))
+      (opt-mlgo-inline-threshold def :profile-data profile-data))
     ((eq threshold :mlgo)
-     (opt-adaptive-inline-threshold def :profile-data profile-data))
+      (opt-adaptive-inline-threshold def :profile-data profile-data))
     (t threshold)))
+
+(defun %opt-inline-profile-record-call (inst i reg-track depths profile)
+  (when-let
+    ((label (gethash (vm-func-reg inst) reg-track)))
+    (let ((entry
+          (or
+            (gethash label profile)
+            (setf (gethash label profile) (list :call-count 0 :loop-depth 0)))))
+      (incf (getf entry :call-count))
+      (setf (getf entry :loop-depth) (max (getf entry :loop-depth 0) (gethash i depths 0))))))

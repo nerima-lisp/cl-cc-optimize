@@ -1,5 +1,4 @@
 ;;;; optimizer-dae.lisp --- FR-606 Dead Argument Elimination
-
 (in-package :cl-cc/optimize)
 
 (defparameter *opt-dae-specialized-label-fragment* ".DAE."
@@ -7,14 +6,15 @@
 
 (defun %opt-dae-specialized-label-p (label)
   "Return T when LABEL names a dead-argument-elimination specialization."
-  (and (stringp label)
-       (search *opt-dae-specialized-label-fragment* label :test #'char=)))
+  (and
+    (stringp label)
+    (search *opt-dae-specialized-label-fragment* label :test #'char=)))
 
 (defun %opt-dae-copy-inst (inst)
   "Return a structural copy of INST."
-  (handler-case
-      (sexp->instruction (instruction->sexp inst))
-    (error () inst)))
+  (handler-case (sexp->instruction (instruction->sexp inst))
+    (error ()
+      inst)))
 
 (defun %opt-dae-remove-indexes (values indexes)
   "Return VALUES with zero-based INDEXES removed."
@@ -25,14 +25,16 @@
 
 (defun %opt-dae-captures-param-p (inst params)
   "Return T when INST captures one of PARAMS, making that parameter live indirectly."
-  (and (typep inst 'vm-closure)
-       (intersection (vm-captured-vars inst) params :test #'eq)))
+  (and
+    (typep inst 'vm-closure)
+    (intersection (vm-captured-vars inst) params :test #'eq)))
 
 (defun %opt-dae-unsafe-function-shape-p (closure)
   "Return T when CLOSURE has non-positional calling convention metadata."
-  (or (vm-closure-optional-params closure)
-      (vm-closure-rest-param closure)
-      (vm-closure-key-params closure)))
+  (or
+    (vm-closure-optional-params closure)
+    (vm-closure-rest-param closure)
+    (vm-closure-key-params closure)))
 
 (defun %opt-dae-absent-param-indexes (params body)
   "Return indexes of PARAMS that are never read by BODY and not captured."
@@ -55,25 +57,9 @@
         (counter 0)
         (specializations (make-hash-table :test #'equal)))
     (maphash
-     (lambda (label def)
-       (let* ((closure (getf def :closure))
-              (params (copy-list (getf def :params)))
-              (body (getf def :body)))
-         (unless (or (%opt-dae-specialized-label-p label)
-                     (null params)
-                     (%opt-dae-unsafe-function-shape-p closure))
-           (when-let ((drop-indexes (%opt-dae-absent-param-indexes params body)))
-             (let ((new-label (format nil "~A~A~D" label
-                                      *opt-dae-specialized-label-fragment*
-                                      (incf counter))))
-               (setf (gethash label specializations)
-                     (list :old-label label
-                           :new-label new-label
-                           :old-params params
-                           :new-params (%opt-dae-remove-indexes params drop-indexes)
-                           :drop-indexes drop-indexes
-                           :body body)))))))
-     defs)
+      (lambda (label def)
+        (setf counter (%opt-dae-build-specialization-for label def specializations counter)))
+      defs)
     specializations))
 
 (defun %opt-dae-rewrite-call (inst specialization)
@@ -81,36 +67,37 @@
   (let* ((drop-indexes (getf specialization :drop-indexes))
          (args (copy-list (vm-args inst)))
          (new-args (%opt-dae-remove-indexes args drop-indexes))
-         (dropped-args (loop for arg in args
-                             for index from 0
-                             when (member index drop-indexes)
-                               collect arg)))
-    (values (typecase inst
-              (vm-tail-call (make-vm-tail-call :dst (vm-dst inst)
-                                               :func (vm-func-reg inst)
-                                               :args new-args))
-              (t (make-vm-call :dst (vm-dst inst)
-                               :func (vm-func-reg inst)
-                               :args new-args)))
-            dropped-args)))
+         (dropped-args
+        (loop for arg in args
+              for index from 0
+              when (member index drop-indexes)
+                collect arg)))
+    (values
+      (typecase inst
+        (vm-tail-call
+          (make-vm-tail-call :dst (vm-dst inst) :func (vm-func-reg inst) :args new-args))
+        (t (make-vm-call :dst (vm-dst inst) :func (vm-func-reg inst) :args new-args)))
+      dropped-args)))
 
 (defun %opt-dae-drop-trailing-arg-sets (out dropped-args)
   "Drop immediately preceding pure argument moves for DROPPED-ARGS from reversed OUT."
-  (loop while (and out
-                   (typep (first out) 'vm-move)
-                   (member (vm-dst (first out)) dropped-args :test #'eq))
+  (loop while (and
+      out
+      (typep (first out) 'vm-move)
+      (member (vm-dst (first out)) dropped-args :test #'eq))
         do (pop out))
   out)
 
 (defun %opt-dae-append-specialized-bodies (instructions specializations)
   "Append specialized function bodies described by SPECIALIZATIONS."
   (let ((bodies nil))
-    (maphash (lambda (label spec)
-               (declare (ignore label))
-               (push (make-vm-label :name (getf spec :new-label)) bodies)
-               (dolist (inst (getf spec :body))
-                 (push (%opt-dae-copy-inst inst) bodies)))
-             specializations)
+    (maphash
+      (lambda (label spec)
+        (declare (ignore label))
+        (push (make-vm-label :name (getf spec :new-label)) bodies)
+        (dolist (inst (getf spec :body))
+          (push (%opt-dae-copy-inst inst) bodies)))
+      specializations)
     (append instructions (nreverse bodies))))
 
 (defun %opt-dae-rewrite-known-call (inst spec out)
@@ -118,33 +105,40 @@
 rewritten call pair, after dropping the trailing argument-setup moves for
 INST's now-removed arguments."
   (multiple-value-bind (new-call dropped-args) (%opt-dae-rewrite-call inst spec)
-    (list* new-call
-           (make-vm-func-ref :dst (vm-func-reg inst)
-                             :label (getf spec :new-label)
-                             :params (copy-list (getf spec :new-params)))
-           (%opt-dae-drop-trailing-arg-sets out dropped-args))))
+    (list*
+      new-call
+      (make-vm-func-ref
+        :dst
+        (vm-func-reg inst)
+        :label
+        (getf spec :new-label)
+        :params
+        (copy-list (getf spec :new-params)))
+      (%opt-dae-drop-trailing-arg-sets out dropped-args))))
 
 (defun %opt-dae-process-call (inst name-to-label reg->label specializations out changed)
   "Handle one VM-CALL/VM-TAIL-CALL instruction in the pass's rewrite loop.
 Returns (values new-out new-changed)."
   (let* ((label (gethash (vm-func-reg inst) reg->label))
          (spec (and label (gethash label specializations))))
-    (multiple-value-bind (new-out new-changed)
-        (if (and spec (= (length (vm-args inst))
-                         (length (getf spec :old-params))))
-            (values (%opt-dae-rewrite-known-call inst spec out) t)
-            (values (cons inst out) changed))
+    (multiple-value-bind (new-out new-changed) (if (and spec (= (length (vm-args inst)) (length (getf spec :old-params)))) (values (%opt-dae-rewrite-known-call inst spec out) t)
+        (values (cons inst out) changed))
       (%opt-track-known-callee-label inst name-to-label reg->label)
       (values new-out new-changed))))
 
 (defun %opt-dae-process-inst (inst name-to-label reg->label specializations out changed)
   "Process one instruction of the pass's main rewrite loop, returning
 (values new-out new-changed)."
-  (if (typep inst '(or vm-call vm-tail-call))
-      (%opt-dae-process-call inst name-to-label reg->label specializations out changed)
-      (progn
-        (%opt-track-known-callee-label inst name-to-label reg->label)
-        (values (cons inst out) changed))))
+  (if (typep inst '(or vm-call vm-tail-call)) (%opt-dae-process-call
+      inst
+      name-to-label
+      reg->label
+      specializations
+      out
+      changed)
+    (progn
+      (%opt-track-known-callee-label inst name-to-label reg->label)
+      (values (cons inst out) changed))))
 
 (defun opt-pass-dead-argument-elimination (instructions)
   "FR-606: create specialized functions with unused positional parameters removed.
@@ -155,17 +149,49 @@ label and receive a shorter argument list.  Original functions are retained for
 unknown call sites and future cross-module/LTO use.  Parameters captured by an
 inner closure are treated as used and are never removed."
   (let ((specializations (%opt-dae-build-specializations instructions)))
-    (if (zerop (hash-table-count specializations))
-        instructions
-        (let ((name-to-label (opt-build-function-name-map instructions))
-              (reg->label (make-hash-table :test #'eq))
-              (out nil)
-              (changed nil))
-          (dolist (inst instructions)
-            (multiple-value-bind (new-out new-changed)
-                (%opt-dae-process-inst inst name-to-label reg->label specializations out changed)
-              (setf out new-out changed new-changed)))
-          (let ((rewritten (nreverse out)))
-            (if changed
-                (%opt-dae-append-specialized-bodies rewritten specializations)
-                instructions))))))
+    (if (zerop (hash-table-count specializations)) instructions
+      (let ((name-to-label (opt-build-function-name-map instructions))
+            (reg->label (make-hash-table :test #'eq))
+            (out nil)
+            (changed nil))
+        (dolist (inst instructions)
+          (multiple-value-bind (new-out new-changed) (%opt-dae-process-inst
+              inst
+              name-to-label
+              reg->label
+              specializations
+              out
+              changed)
+            (setf out new-out
+                  changed new-changed)))
+        (let ((rewritten (nreverse out)))
+          (if changed (%opt-dae-append-specialized-bodies rewritten specializations)
+            instructions))))))
+
+(defun %opt-dae-build-specialization-for (label def specializations counter)
+  (let* ((closure (getf def :closure))
+         (params (copy-list (getf def :params)))
+         (body (getf def :body)))
+    (unless (or
+        (%opt-dae-specialized-label-p label)
+        (null params)
+        (%opt-dae-unsafe-function-shape-p closure))
+      (when-let
+        ((drop-indexes (%opt-dae-absent-param-indexes params body)))
+        (incf counter)
+        (let ((new-label
+              (format nil "~A~A~D" label *opt-dae-specialized-label-fragment* counter)))
+          (setf (gethash label specializations) (list
+              :old-label
+              label
+              :new-label
+              new-label
+              :old-params
+              params
+              :new-params
+              (%opt-dae-remove-indexes params drop-indexes)
+              :drop-indexes
+              drop-indexes
+              :body
+              body)))))
+    counter))
