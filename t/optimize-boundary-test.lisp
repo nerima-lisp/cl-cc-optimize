@@ -244,7 +244,79 @@
        (cl-cc/optimize::opt-pass-dead-store-elim)
        (cl-cc/optimize::opt-pass-strength-reduce)
        (cl-cc/optimize::opt-pass-idiom-recognition)
-       (cl-cc/optimize::opt-pass-if-conversion))
+       (cl-cc/optimize::opt-pass-if-conversion)
+       (cl-cc/optimize::%maybe-apply-prolog-rewrite)
+       (cl-cc/optimize::%maybe-run-superopt)
+       (cl-cc/optimize::opt-pass-sequence-fusion)
+       (cl-cc/optimize::optimize-with-egraph)
+       (cl-cc/optimize::opt-pass-call-site-splitting)
+       (cl-cc/optimize::opt-pass-demand-analysis)
+       (cl-cc/optimize::%maybe-run-speculative-inline)
+       (cl-cc/optimize::opt-pass-closure-capture-dedup)
+       (cl-cc/optimize::opt-pass-closure-thunk-sharing)
+       (cl-cc/optimize::opt-pass-inline-iterative)
+       (cl-cc/optimize::%maybe-run-overflow-check-elimination)
+       (cl-cc/optimize::%maybe-run-bounds-check-elimination)
+       (cl-cc/optimize::%maybe-run-value-range-propagation)
+       (cl-cc/optimize::opt-pass-cons-slot-forward)
+       (cl-cc/optimize::%maybe-run-iv-strength-reduce)
+       (cl-cc/optimize::%maybe-run-div-by-const)
+       (cl-cc/optimize::%maybe-run-bitwidth-reduction)
+       (cl-cc/optimize::%maybe-run-idiom-recognition)
+       (cl-cc/optimize::opt-pass-fma-recognition)
+       (cl-cc/optimize::opt-pass-bswap-recognition)
+       (cl-cc/optimize::opt-pass-rotate-recognition)
+       (cl-cc/optimize::opt-pass-fill-recognition)
+       (cl-cc/optimize::opt-pass-copy-recognition)
+       (cl-cc/optimize::%maybe-run-trmc)
+       (cl-cc/optimize::opt-pass-auto-vectorization)
+       (cl-cc/optimize::opt-pass-slp-vectorize)
+       (cl-cc/optimize::opt-pass-function-outlining)
+       (cl-cc/optimize::opt-pass-safepoint-polling)
+       (cl-cc/optimize::opt-pass-software-pipelining)
+       (cl-cc/optimize::%maybe-run-fr523-affine-loop-analysis)
+       (cl-cc/optimize::%maybe-run-fr524-loop-interchange)
+       (cl-cc/optimize::%maybe-run-fr525-polyhedral-schedule)
+       (cl-cc/optimize::%maybe-run-fr526-loop-fusion-fission)
+       (cl-cc/optimize::%maybe-run-loop-fusion)
+       (cl-cc/optimize::%maybe-run-loop-fission)
+       (cl-cc/optimize::%maybe-run-loop-tile)
+       (cl-cc/optimize::%maybe-run-autotune-simd)
+       (cl-cc/optimize::%maybe-run-polyhedral)
+       (cl-cc/optimize::%maybe-run-mlgo-inline)
+       (cl-cc/optimize::%maybe-run-ml-regalloc)
+       (cl-cc/optimize::%maybe-run-loop-unswitch)
+       (cl-cc/optimize::%maybe-run-pure-call-optimization)
+       (cl-cc/optimize::opt-pass-batch-concatenate)
+       (cl-cc/optimize::opt-pass-loop-unrolling-adaptive)
+       (cl-cc/optimize::%maybe-run-loop-unroll)
+       (cl-cc/optimize::opt-pass-loop-rotation)
+       (cl-cc/optimize::%maybe-run-loop-rotate)
+       (cl-cc/optimize::opt-pass-loop-peel)
+       (cl-cc/optimize::%maybe-run-loop-peel)
+       (cl-cc/optimize::opt-pass-prefetch-insertion)
+       (cl-cc/optimize::opt-pass-code-sinking)
+       (cl-cc/optimize::%maybe-run-load-store-coalescing)
+       (cl-cc/optimize::opt-pass-dominated-type-check-elim)
+       (cl-cc/optimize::opt-pass-branch-correlation)
+       (cl-cc/optimize::%maybe-run-tail-duplication)
+       (cl-cc/optimize::opt-pass-tail-merge)
+       (cl-cc/optimize::opt-pass-global-dce)
+       (cl-cc/optimize::opt-pass-hot-cold-layout)
+       (cl-cc/optimize::%maybe-run-dead-loop-elimination)
+       (cl-cc/optimize::%maybe-run-dead-argument-elimination)
+       (cl-cc/optimize::%maybe-run-cps-reduce)
+       (cl-cc/optimize::%maybe-run-defunctionalize)
+       (cl-cc/optimize::%maybe-run-delimited-continuations)
+       (cl-cc/optimize::%maybe-run-escape-analysis)
+       (cl-cc/optimize::%maybe-run-sroa)
+       (cl-cc/optimize::opt-analyze-branch-weights)
+       (cl-cc/optimize::%maybe-run-path-profiling)
+       (cl-cc/optimize::%maybe-run-optimization-remarks)
+       (cl-cc/optimize::%maybe-run-abstract-interpretation)
+       (cl-cc/optimize::%maybe-run-translation-validation)
+       (cl-cc/optimize::%maybe-run-verify-ir)
+       (cl-cc/optimize::opt-pass-schedule-local))
       "~A returns a list for an empty instruction stream"
       (pass)
     (expect (listp (funcall pass nil)) :to-be-truthy)))
@@ -400,4 +472,191 @@
            (optimized (cl-cc/optimize::opt-pass-sroa instructions)))
       (expect optimized :to-equal instructions)
       (expect (some (lambda (i) (typep i 'cl-cc/vm:vm-make-array)) optimized) :to-be-truthy))))
+)
+(progn
+(describe-sequential
+  "dead code elimination removes an unread pure instruction"
+  (it
+    "drops a dead vm-const whose destination is never read"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :r0 :value 5)
+                   (cl-cc/vm:make-vm-const :dst :r1 :value 99)
+                   (cl-cc/vm:make-vm-halt :reg :r0)))
+           (optimized (cl-cc/optimize::opt-pass-dce instructions)))
+      (expect (length optimized) :to-equal 2)
+      (expect (notany (lambda (i) (eq (ignore-errors (cl-cc/vm:vm-dst i)) :r1)) optimized)
+              :to-be-truthy))))
+
+(describe-sequential
+  "common subexpression elimination merges a redundant computation"
+  (it
+    "replaces the second identical add with a move from the first"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :r0 :value 2)
+                   (cl-cc/vm:make-vm-const :dst :r1 :value 3)
+                   (cl-cc/vm:make-vm-add :dst :r2 :lhs :r0 :rhs :r1)
+                   (cl-cc/vm:make-vm-add :dst :r3 :lhs :r0 :rhs :r1)
+                   (cl-cc/vm:make-vm-halt :reg :r3)))
+           (optimized (cl-cc/optimize::opt-pass-cse instructions)))
+      (expect (length optimized) :to-equal 5)
+      (expect (typep (nth 2 optimized) 'cl-cc/vm:vm-add) :to-be-truthy)
+      (expect (typep (nth 3 optimized) 'cl-cc/vm:vm-move) :to-be-truthy)
+      (expect (cl-cc/vm:vm-move-src (nth 3 optimized)) :to-be :r2))))
+
+(describe-sequential
+  "strength reduction rewrites multiply-by-power-of-two as a shift"
+  (it
+    "turns (* x 2) into a const shift-count plus a vm-ash"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :r0 :value 2)
+                   (cl-cc/vm:make-vm-mul :dst :r1 :lhs :src :rhs :r0)
+                   (cl-cc/vm:make-vm-halt :reg :r1)))
+           (optimized (cl-cc/optimize::opt-pass-strength-reduce instructions)))
+      (expect (length optimized) :to-equal 4)
+      (let ((shift-const (nth 1 optimized))
+            (ash-inst (nth 2 optimized)))
+        (expect (typep shift-const 'cl-cc/vm:vm-const) :to-be-truthy)
+        (expect (cl-cc/vm:vm-const-value shift-const) :to-equal 1)
+        (expect (typep ash-inst 'cl-cc/vm:vm-ash) :to-be-truthy)
+        (expect (cl-cc/vm:vm-lhs ash-inst) :to-be :src)
+        (expect (cl-cc/vm:vm-rhs ash-inst) :to-be (cl-cc/vm:vm-dst shift-const))))))
+
+(describe-sequential
+  "memory passes forward and eliminate redundant global accesses"
+  (it
+    "dead-store-elim drops a global store overwritten before any read"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :a :value 1)
+                   (cl-cc/vm:make-vm-const :dst :b :value 2)
+                   (cl-cc/vm:make-vm-set-global :name "x" :src :a)
+                   (cl-cc/vm:make-vm-set-global :name "x" :src :b)
+                   (cl-cc/vm:make-vm-halt :reg :b)))
+           (optimized (cl-cc/optimize::opt-pass-dead-store-elim instructions)))
+      (expect (length optimized) :to-equal 4)
+      (expect (count-if (lambda (i) (typep i 'cl-cc/vm:vm-set-global)) optimized)
+              :to-equal 1)
+      (expect (cl-cc/vm:vm-set-global-src
+               (find-if (lambda (i) (typep i 'cl-cc/vm:vm-set-global)) optimized))
+              :to-be :b)))
+  (it
+    "store-to-load-forward turns a matching get-global into a move"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :val :value 42)
+                   (cl-cc/vm:make-vm-set-global :name "x" :src :val)
+                   (cl-cc/vm:make-vm-get-global :dst :result :name "x")
+                   (cl-cc/vm:make-vm-halt :reg :result)))
+           (optimized (cl-cc/optimize::opt-pass-store-to-load-forward instructions)))
+      (expect (length optimized) :to-equal 4)
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-get-global)) optimized) :to-be-truthy)
+      (let ((move (find-if (lambda (i) (typep i 'cl-cc/vm:vm-move)) optimized)))
+        (expect move :to-be-truthy)
+        (expect (cl-cc/vm:vm-move-src move) :to-be :val)
+        (expect (cl-cc/vm:vm-move-dst move) :to-be :result)))))
+
+(describe-sequential
+  "control-flow simplification passes"
+  (it
+    "block-merge folds a single-predecessor successor into its block, dropping the jump"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :r0 :value 1)
+                   (cl-cc/vm:make-vm-jump :label "L")
+                   (cl-cc/vm:make-vm-label :name "L")
+                   (cl-cc/vm:make-vm-const :dst :r1 :value 2)
+                   (cl-cc/vm:make-vm-halt :reg :r1)))
+           (optimized (cl-cc/optimize::opt-pass-block-merge instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-jump)) optimized) :to-be-truthy)
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-label)) optimized) :to-be-truthy)))
+  (it
+    "unreachable code after an unconditional jump is dropped before the next label"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-jump :label "L")
+                   (cl-cc/vm:make-vm-const :dst :dead :value 99)
+                   (cl-cc/vm:make-vm-label :name "L")
+                   (cl-cc/vm:make-vm-halt :reg :r0)))
+           (optimized (cl-cc/optimize::opt-pass-unreachable instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (notany (lambda (i) (eq (ignore-errors (cl-cc/vm:vm-dst i)) :dead)) optimized)
+              :to-be-truthy))))
+
+(describe-sequential
+  "copy propagation rewrites reads through a move"
+  (it
+    "substitutes the copy source directly into a later add's operands"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :r0 :value 5)
+                   (cl-cc/vm:make-vm-move :dst :r1 :src :r0)
+                   (cl-cc/vm:make-vm-add :dst :r2 :lhs :r1 :rhs :r1)
+                   (cl-cc/vm:make-vm-halt :reg :r2)))
+           (optimized (cl-cc/optimize::opt-pass-copy-prop instructions))
+           (add (find-if (lambda (i) (typep i 'cl-cc/vm:vm-add)) optimized)))
+      (expect (length optimized) :to-equal 4)
+      (expect (cl-cc/vm:vm-lhs add) :to-be :r0)
+      (expect (cl-cc/vm:vm-rhs add) :to-be :r0))))
+
+(describe-sequential
+  "devirtualization inserts a direct callee reference"
+  (it
+    "emits a vm-func-ref before a call whose callee register holds a known closure"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-closure :dst :fn :label "callee")
+                   (cl-cc/vm:make-vm-call :dst :result :func :fn :args nil)
+                   (cl-cc/vm:make-vm-halt :reg :result)))
+           (optimized (cl-cc/optimize:opt-pass-devirtualize instructions)))
+      (expect (length optimized) :to-equal 4)
+      (let ((ref (find-if (lambda (i) (typep i 'cl-cc/vm:vm-func-ref)) optimized)))
+        (expect ref :to-be-truthy)
+        (expect (cl-cc/vm:vm-label-name ref) :to-equal "callee")
+        (expect (cl-cc/vm:vm-dst ref) :to-be :fn)))))
+
+(describe-sequential
+  "sparse conditional constant propagation folds a known-false branch"
+  (it
+    "rewrites a jump-zero on a provably-zero register into an unconditional jump"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :cond :value 0)
+                   (cl-cc/vm:make-vm-jump-zero :reg :cond :label "L")
+                   (cl-cc/vm:make-vm-label :name "L")
+                   (cl-cc/vm:make-vm-halt :reg :cond)))
+           (optimized (cl-cc/optimize::opt-pass-sccp instructions)))
+      (expect (length optimized) :to-equal 4)
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-jump-zero)) optimized) :to-be-truthy)
+      (let ((jmp (find-if (lambda (i) (typep i 'cl-cc/vm:vm-jump)) optimized)))
+        (expect jmp :to-be-truthy)
+        (expect (cl-cc/vm:vm-label-name jmp) :to-equal "L")))))
+
+(describe-sequential
+  "rotate idiom recognition collapses shift/or trees"
+  (it
+    "collapses a two-shift-plus-or tree into a single vm-rotate"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :k0 :value 8)
+                   (cl-cc/vm:make-vm-ash :dst :hi :lhs :src :rhs :k0)
+                   (cl-cc/vm:make-vm-const :dst :k1 :value -56)
+                   (cl-cc/vm:make-vm-ash :dst :lo :lhs :src :rhs :k1)
+                   (cl-cc/vm:make-vm-logior :dst :out :lhs :hi :rhs :lo)
+                   (cl-cc/vm:make-vm-halt :reg :out)))
+           (optimized (cl-cc/optimize::opt-pass-rotate-recognition instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (typep (first optimized) 'cl-cc/vm:vm-const) :to-be-truthy)
+      (expect (cl-cc/vm:vm-const-value (first optimized)) :to-equal 56)
+      (expect (typep (second optimized) 'cl-cc/vm:vm-rotate) :to-be-truthy)
+      (expect (cl-cc/vm:vm-lhs (second optimized)) :to-be :src))))
+
+(describe-sequential "value range propagation soundness"
+  (it-property
+      "the propagated entry range for a constant forwarded across an edge contains the constant"
+      ((n (gen-integer :min -1000 :max 1000)))
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :r0 :value n)
+                   (cl-cc/vm:make-vm-jump :label "L")
+                   (cl-cc/vm:make-vm-label :name "L")
+                   (cl-cc/vm:make-vm-halt :reg :r0)))
+           (cfg (cl-cc/optimize::cfg-build instructions)))
+      (cl-cc/optimize::opt-compute-path-sensitive-ranges cfg)
+      (let* ((succ (first (cl-cc/optimize::bb-successors (cl-cc/optimize::cfg-entry cfg))))
+             (range (cl-cc/optimize::opt-block-reg-range succ :r0)))
+        (and range
+             (<= (cl-cc/optimize::opt-interval-lo range) n)
+             (>= (cl-cc/optimize::opt-interval-hi range) n))))))
 )
