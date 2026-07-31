@@ -21,6 +21,35 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-07-31
+
+### Fixed
+
+- Two regressions from this session's own earlier automated `paredit fix
+  apply` passes in `optimizer-trmc.lisp`: a dropped `progn` case-clause
+  key (silently mistaken for a redundant-`progn` wrapper) and a stripped
+  quote that turned `eval-when` into an unbound-variable reference.
+- `optimizer-energy.lisp`'s `energy-cost-of-block`/`energy-optimize-block`
+  called a function (`%block-instructions`) that does not exist anywhere
+  in this system; their `ignore-errors` fallback always silently failed.
+- `opt-inst-read-regs`'s sexp-reflection fallback silently
+  under-approximated read-registers on failure (unsafe for DCE/liveness);
+  now warns instead of failing silently.
+- Added `*read-eval* nil` around the one genuine untrusted-input `read`
+  call in `optimizer-speculative-ic.lisp` (a persisted speculation log).
+
+### Changed
+
+- First `paredit inspect lint` run this session (distinct from the
+  parse-validity check already gated in CI): 421 findings (37
+  error-severity) found, 226 (29 error-severity, verified false
+  positives) remain after ~212 mechanical style auto-fixes
+  (`paredit fix apply`) plus targeted manual fixes for
+  `handler-case-swallows-error`, `identity-arithmetic`, and
+  `implementation-package-symbol` findings. 22
+  `handler-case-swallows-error` instances reviewed and confirmed
+  intentional graceful degradation, documented as such.
+
 ## [0.4.2] - 2026-07-31
 
 ### Added
