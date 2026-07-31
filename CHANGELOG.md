@@ -21,6 +21,22 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-31
+
+### Fixed
+
+- `optimize-with-egraph`'s `:cost-fn` keyword argument was dead on arrival
+  (`(declare (ignore cost-fn))` since its introducing commit); removed,
+  since no call site ever passed it.
+
+### Changed
+
+- Systematic `cl-weave` `:timeout-ms` coverage: added to the 9 test cases
+  that loop, run symbolic execution, or drive the full
+  `optimize-instructions`/`optimize-with-egraph` pipeline; confirmed
+  `it-each`/`it-property` have no options slot in the pinned `cl-weave`
+  version to add it to.
+
 ## [0.4.0] - 2026-07-31
 
 ### Changed
