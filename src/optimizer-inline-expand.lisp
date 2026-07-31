@@ -76,6 +76,65 @@ The second value is the next fresh register base."
         (push (make-vm-move :dst (vm-dst inst) :src ret-src) replacement))
       (values (nreverse replacement) (+ base-idx (hash-table-count rename))))))
 
+(defun %opt-inline-track-callee-ref (inst func-defs reg-track const-track)
+  "Update REG-TRACK/CONST-TRACK for a vm-closure/vm-func-ref INST: record which
+label its destination register now names when that label is a known callee,
+otherwise stop tracking it as one."
+  (let ((label (vm-label-name inst)))
+    (if (gethash label func-defs)
+        (setf (gethash (vm-dst inst) reg-track) label)
+        (remhash (vm-dst inst) reg-track)))
+  (remhash (opt-inst-dst inst) const-track))
+
+(defun %opt-inline-track-const (inst name-to-label func-defs reg-track const-track)
+  "Update REG-TRACK/CONST-TRACK for a vm-const INST: a quoted function-name
+constant is tracked as a callee reference, and its literal value is always
+tracked as a known constant."
+  (let* ((val (vm-value inst))
+         (label (and (symbolp val) (gethash val name-to-label))))
+    (if (and label (gethash label func-defs))
+        (setf (gethash (vm-dst inst) reg-track) label)
+        (remhash (vm-dst inst) reg-track)))
+  (setf (gethash (vm-dst inst) const-track) (vm-value inst)))
+
+(defun %opt-inline-track-move (inst reg-track const-track)
+  "Propagate REG-TRACK/CONST-TRACK knowledge of a vm-move INST's source
+register onto its destination register."
+  (multiple-value-bind (label present-p)
+      (gethash (vm-src inst) reg-track)
+    (if present-p
+        (setf (gethash (vm-dst inst) reg-track) label)
+        (remhash (vm-dst inst) reg-track)))
+  (multiple-value-bind (src-const present-p)
+      (gethash (vm-src inst) const-track)
+    (if present-p
+        (setf (gethash (vm-dst inst) const-track) src-const)
+        (remhash (vm-dst inst) const-track))))
+
+(defun %opt-inline-try-call (inst reg-track const-track func-defs candidates
+                              name-to-label profile-data threshold base-idx result)
+  "Attempt to inline vm-call INST using REG-TRACK to resolve its callee to a
+candidate definition. Return (values new-result new-base-idx): either INST
+prepended to RESULT unchanged, or its replacement body spliced on with
+BASE-IDX advanced past freshly renamed registers and REG-TRACK/CONST-TRACK
+invalidated for INST's destination."
+  (let* ((label (gethash (vm-func-reg inst) reg-track))
+         (def (and label (gethash label func-defs))))
+    (if (and def (gethash label candidates))
+        (multiple-value-bind (replacement next-base)
+            (%opt-inline-expand-call
+             inst label def base-idx name-to-label const-track
+             (%opt-inline-effective-threshold def threshold profile-data))
+          (if replacement
+              (progn
+                (setf result (nconc (reverse replacement) result))
+                (when-let ((dst (vm-dst inst)))
+                  (remhash dst reg-track)
+                  (remhash dst const-track))
+                (values result next-base))
+              (values (cons inst result) base-idx)))
+        (values (cons inst result) base-idx))))
+
 (defun %opt-inline-body-bottom-up (body func-defs candidates name-to-label profile-data
                                         threshold base-idx)
   "Inline candidate calls inside BODY using already processed callee bodies."
@@ -85,49 +144,18 @@ The second value is the next fresh register base."
     (dolist (inst body)
       (typecase inst
         ((or vm-closure vm-func-ref)
-         (let ((label (vm-label-name inst)))
-           (if (gethash label func-defs)
-               (setf (gethash (vm-dst inst) reg-track) label)
-               (remhash (vm-dst inst) reg-track)))
-         (remhash (opt-inst-dst inst) const-track)
+         (%opt-inline-track-callee-ref inst func-defs reg-track const-track)
          (push inst result))
         (vm-const
-         (let* ((val (vm-value inst))
-                (label (and (symbolp val) (gethash val name-to-label))))
-           (if (and label (gethash label func-defs))
-               (setf (gethash (vm-dst inst) reg-track) label)
-               (remhash (vm-dst inst) reg-track)))
-         (setf (gethash (vm-dst inst) const-track) (vm-value inst))
+         (%opt-inline-track-const inst name-to-label func-defs reg-track const-track)
          (push inst result))
         (vm-move
-         (multiple-value-bind (label present-p)
-             (gethash (vm-src inst) reg-track)
-           (if present-p
-               (setf (gethash (vm-dst inst) reg-track) label)
-               (remhash (vm-dst inst) reg-track)))
-         (multiple-value-bind (src-const present-p)
-             (gethash (vm-src inst) const-track)
-           (if present-p
-               (setf (gethash (vm-dst inst) const-track) src-const)
-               (remhash (vm-dst inst) const-track)))
+         (%opt-inline-track-move inst reg-track const-track)
          (push inst result))
         (vm-call
-         (let* ((label (gethash (vm-func-reg inst) reg-track))
-                (def (and label (gethash label func-defs))))
-           (if (and def (gethash label candidates))
-               (multiple-value-bind (replacement next-base)
-                   (%opt-inline-expand-call
-                    inst label def base-idx name-to-label const-track
-                    (%opt-inline-effective-threshold def threshold profile-data))
-                 (if replacement
-                     (progn
-                       (setf base-idx next-base)
-                       (setf result (nconc (reverse replacement) result))
-                       (when-let ((dst (vm-dst inst)))
-                         (remhash dst reg-track)
-                         (remhash dst const-track)))
-                     (push inst result)))
-               (push inst result))))
+         (multiple-value-setq (result base-idx)
+           (%opt-inline-try-call inst reg-track const-track func-defs candidates
+                                  name-to-label profile-data threshold base-idx result)))
         (t
          (when-let ((dst (opt-inst-dst inst)))
            (remhash dst reg-track)

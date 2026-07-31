@@ -200,27 +200,33 @@
                                      (cons (copy-dst candidate) temp)
                                      candidate))
                                copies)
-                       result))))
+                       result)))
+           (drain-ready (ready copies result)
+             "Emit a vm-move for every ready copy and drop it from the pending set."
+             (dolist (copy ready)
+               (push (make-vm-move :dst (copy-dst copy) :src (copy-src copy)) result)
+               (setf copies (remove copy copies :test #'equal)))
+             (values copies result))
+           (resolve-stuck (copies result)
+             "No copy is ready, so the pending set contains at least one cycle.
+Emit an XOR-swap for the two-register case, otherwise break one cycle with a
+temporary register so a later round's ready-copies pass can drain it."
+             (multiple-value-bind (left right)
+                 (find-two-register-cycle copies)
+               (if left
+                   (values nil (emit-xor-swap left right result))
+                   (break-cycle copies result)))))
     (let ((copies (remove-if (lambda (copy)
                                (eq (copy-dst copy) (copy-src copy)))
                              (copy-list parallel-copies)))
           (result nil))
       (loop while copies
             do (let ((ready (ready-copies copies)))
-                 (cond
-                   (ready
-                    (dolist (copy ready)
-                      (push (make-vm-move :dst (copy-dst copy) :src (copy-src copy)) result)
-                      (setf copies (remove copy copies :test #'equal))))
-                   (t
-                    (multiple-value-bind (left right)
-                        (find-two-register-cycle copies)
-                      (if left
-                          (progn
-                            (setf result (emit-xor-swap left right result))
-                            (setf copies nil))
-                          (multiple-value-setq (copies result)
-                            (break-cycle copies result))))))))
+                 (if ready
+                     (multiple-value-setq (copies result)
+                       (drain-ready ready copies result))
+                     (multiple-value-setq (copies result)
+                       (resolve-stuck copies result)))))
       (nreverse result))))
 
 ;;; ─── Round-Trip Utility ──────────────────────────────────────────────────

@@ -34,6 +34,49 @@
                   merged)
          merged))))
 
+(defun %sccp-fold-binary-op (inst env tp)
+  "Fold a binary arithmetic/comparison instruction of type TP when both
+operands are known numeric constants in ENV; data-driven via
+*opt-binary-fold-table*/*opt-binary-cmp-fold-table*."
+  (multiple-value-bind (lval lfound) (gethash (vm-lhs inst) env)
+    (multiple-value-bind (rval rfound) (gethash (vm-rhs inst) env)
+      (if (and lfound rfound (numberp lval) (numberp rval))
+          (multiple-value-bind (folded ok) (opt-fold-binop-value inst lval rval)
+            (if ok (make-vm-const :dst (vm-dst inst) :value folded) inst))
+          inst))))
+
+(defun %sccp-fold-unary-op (inst env tp)
+  "Fold a unary arithmetic instruction of type TP when its operand is a known
+constant in ENV eligible for folding; data-driven via *opt-unary-fold-table*."
+  (multiple-value-bind (sval found) (gethash (vm-src inst) env)
+    (if (and found (%fold-unary-constant-eligible-p inst sval))
+        (make-vm-const :dst (vm-dst inst)
+                        :value (funcall (gethash tp *opt-unary-fold-table*) sval))
+        inst)))
+
+(defun %sccp-fold-type-pred (inst env tp)
+  "Fold a type-predicate instruction of type TP when its operand is a known
+constant in ENV; data-driven via *opt-type-pred-fold-table*."
+  (multiple-value-bind (sval found) (gethash (vm-src inst) env)
+    (if found
+        (make-vm-const
+         :dst (vm-dst inst)
+         :value (if (funcall (gethash tp *opt-type-pred-fold-table*) sval) 1 0))
+        inst)))
+
+(defun %sccp-fold-via-table (inst env tp)
+  "Fold INST using whichever data-driven fold table TP's instruction type
+appears in, or return INST unchanged when none applies."
+  (cond
+    ((or (gethash tp *opt-binary-fold-table*)
+         (gethash tp *opt-binary-cmp-fold-table*))
+     (%sccp-fold-binary-op inst env tp))
+    ((gethash tp *opt-unary-fold-table*)
+     (%sccp-fold-unary-op inst env tp))
+    ((gethash tp *opt-type-pred-fold-table*)
+     (%sccp-fold-type-pred inst env tp))
+    (t inst)))
+
 (defun %sccp-fold-inst (inst env)
   (let ((tp (type-of inst)))
     (typecase inst
@@ -73,33 +116,7 @@
                               :value (funcall (gethash 'vm-char *opt-binary-fold-table*)
                                               string index))
                inst))))
-      (t
-       (cond
-         ;; Binary arithmetic/comparison — data-driven
-         ((or (gethash tp *opt-binary-fold-table*)
-              (gethash tp *opt-binary-cmp-fold-table*))
-          (multiple-value-bind (lval lfound) (gethash (vm-lhs inst) env)
-            (multiple-value-bind (rval rfound) (gethash (vm-rhs inst) env)
-              (if (and lfound rfound (numberp lval) (numberp rval))
-                  (multiple-value-bind (folded ok) (opt-fold-binop-value inst lval rval)
-                    (if ok (make-vm-const :dst (vm-dst inst) :value folded) inst))
-                  inst))))
-         ;; Unary arithmetic — data-driven
-         ((gethash tp *opt-unary-fold-table*)
-           (multiple-value-bind (sval found) (gethash (vm-src inst) env)
-             (if (and found (%fold-unary-constant-eligible-p inst sval))
-                 (make-vm-const :dst (vm-dst inst)
-                                :value (funcall (gethash tp *opt-unary-fold-table*) sval))
-                 inst)))
-         ;; Type predicates — data-driven
-         ((gethash tp *opt-type-pred-fold-table*)
-          (multiple-value-bind (sval found) (gethash (vm-src inst) env)
-            (if found
-                (make-vm-const
-                 :dst (vm-dst inst)
-                 :value (if (funcall (gethash tp *opt-type-pred-fold-table*) sval) 1 0))
-                inst)))
-         (t inst))))))
+      (t (%sccp-fold-via-table inst env tp)))))
 
 (defun %sccp-redirect-successors (block new-succs)
   "Update BLOCK's CFG edges to use NEW-SUCCS as its successors."

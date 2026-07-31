@@ -96,6 +96,58 @@ indices and do not carry values between iterations."
   (push (make-vm-jump :label remainder-label) result)
   result)
 
+(defun %opt-autovec-loop-body-at (vec i n)
+  "Return a plist describing the counted-loop body headed at position I in VEC,
+or NIL when the shape does not match a supported counted comparison plus a
+back-edge jump to the header. Does not check induction validity or SIMD
+profitability -- see %opt-autovec-vectorization-plan for that."
+  (let* ((header (aref vec i))
+         (cmp-inst (aref vec (1+ i)))
+         (jz-inst  (aref vec (+ i 2)))
+         (header-name (vm-name header)))
+    (when (and (%opt-autovec-cmp-inst-p cmp-inst)
+               (typep jz-inst 'vm-jump-zero)
+               (eq (vm-reg jz-inst) (vm-dst cmp-inst)))
+      (let* ((exit-name (vm-label-name jz-inst))
+             (exit-pos  (cfg-find-label-position vec n exit-name))
+             (back-pos  (and exit-pos (1- exit-pos)))
+             (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
+        (when (and exit-pos
+                   (> exit-pos (+ i 4))
+                   (typep back-inst 'vm-jump)
+                   (equal (vm-label-name back-inst) header-name)
+                   (not (%opt-has-external-jump-to-label-p vec header-name i exit-pos)))
+          (let* ((body      (loop for j from (+ i 3) below back-pos collect (aref vec j)))
+                 (step-inst (car (last body)))
+                 (const-env (%opt-build-const-env-up-to vec i)))
+            (list :header header
+                  :cmp-inst cmp-inst
+                  :jz-inst jz-inst
+                  :exit-name exit-name
+                  :exit-pos exit-pos
+                  :body body
+                  :step-inst step-inst
+                  :const-env const-env)))))))
+
+(defun %opt-autovec-vectorization-plan (cmp-inst step-inst const-env body)
+  "Return (values VECTOR-LIMIT SIMD-OPS) when STEP-INST is a simple `x += step`
+induction on CMP-INST's compared register and BODY has profitable, independent
+SIMD map operations under CONST-ENV; otherwise NIL."
+  (when (and (typep step-inst 'vm-add)
+             (eq (vm-dst step-inst) (vm-lhs step-inst))
+             (eq (vm-dst step-inst) (vm-lhs cmp-inst)))
+    (let* ((iv-reg  (vm-lhs cmp-inst))
+           (lim-reg (vm-rhs cmp-inst))
+           (step-reg (vm-rhs step-inst))
+           (init    (gethash iv-reg const-env))
+           (limit   (gethash lim-reg const-env))
+           (step    (gethash step-reg const-env))
+           (vector-limit (%opt-autovec-vector-limit
+                          init limit step *opt-simd-lane-count* cmp-inst))
+           (simd-ops (%opt-autovec-find-map-op (butlast body) iv-reg)))
+      (when (and vector-limit simd-ops)
+        (values vector-limit simd-ops)))))
+
 (defun %opt-autovec-try-vectorize-at (vec i n fresh-reg result serial)
   "Attempt to vectorize a counted loop starting at position I in VEC.
 
@@ -103,59 +155,32 @@ Returns (values new-result new-i new-serial vectorized-p).  When the loop at
 position I matches the canonical autovec shape and has profitable SIMD ops,
 new-result contains the rewritten instructions and vectorized-p is T.
 Otherwise new-result is unchanged, new-i is (1+ I), and vectorized-p is NIL."
-  (let* ((cur (aref vec i))
-         (header cur)
-         (cmp-inst (aref vec (1+ i)))
-         (jz-inst  (aref vec (+ i 2)))
-         (header-name (vm-name header)))
+  (let ((cur (aref vec i)))
     (flet ((fail ()
              ;; Emit the current instruction as-is and advance by one position.
              (push cur result)
              (values result (1+ i) serial nil)))
-      (if (and (%opt-autovec-cmp-inst-p cmp-inst)
-               (typep jz-inst 'vm-jump-zero)
-               (eq (vm-reg jz-inst) (vm-dst cmp-inst)))
-          (let* ((exit-name (vm-label-name jz-inst))
-                 (exit-pos  (cfg-find-label-position vec n exit-name))
-                 (back-pos  (and exit-pos (1- exit-pos)))
-                 (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
-            (if (and exit-pos
-                     (> exit-pos (+ i 4))
-                     (typep back-inst 'vm-jump)
-                     (equal (vm-label-name back-inst) header-name)
-                     (not (%opt-has-external-jump-to-label-p vec header-name i exit-pos)))
-                (let* ((body      (loop for j from (+ i 3) below back-pos collect (aref vec j)))
-                       (step-inst (car (last body)))
-                       (const-env (%opt-build-const-env-up-to vec i)))
-                  (if (and (typep step-inst 'vm-add)
-                           (eq (vm-dst step-inst) (vm-lhs step-inst))
-                           (eq (vm-dst step-inst) (vm-lhs cmp-inst)))
-                      (let* ((iv-reg  (vm-lhs cmp-inst))
-                             (lim-reg (vm-rhs cmp-inst))
-                             (step-reg (vm-rhs step-inst))
-                             (init    (gethash iv-reg const-env))
-                             (limit   (gethash lim-reg const-env))
-                             (step    (gethash step-reg const-env))
-                             (vector-limit (%opt-autovec-vector-limit
-                                            init limit step *opt-simd-lane-count* cmp-inst))
-                             (simd-ops (%opt-autovec-find-map-op (butlast body) iv-reg)))
-                        (if (and vector-limit simd-ops)
-                            (let ((vec-limit-reg    (funcall fresh-reg))
-                                  (lane-reg         (funcall fresh-reg))
-                                  (remainder-label
-                                    (format nil "~A~D" *opt-autovec-label-prefix* serial)))
-                              (push (make-vm-const :dst vec-limit-reg :value vector-limit) result)
-                              (push (make-vm-const :dst lane-reg :value *opt-simd-lane-count*)
-                                    result)
-                              (setf result (%opt-autovec-emit-vector-loop
-                                            header cmp-inst jz-inst body step-inst exit-name
-                                            vec-limit-reg lane-reg remainder-label simd-ops result))
-                              (push (aref vec exit-pos) result)
-                              (values result (1+ exit-pos) (1+ serial) t))
-                            (fail)))
-                      (fail)))
-                (fail)))
-          (fail)))))
+      (if-let ((shape (%opt-autovec-loop-body-at vec i n)))
+        (multiple-value-bind (vector-limit simd-ops)
+            (%opt-autovec-vectorization-plan
+             (getf shape :cmp-inst) (getf shape :step-inst)
+             (getf shape :const-env) (getf shape :body))
+          (if (not vector-limit)
+              (fail)
+              (let ((vec-limit-reg    (funcall fresh-reg))
+                    (lane-reg         (funcall fresh-reg))
+                    (remainder-label
+                      (format nil "~A~D" *opt-autovec-label-prefix* serial)))
+                (push (make-vm-const :dst vec-limit-reg :value vector-limit) result)
+                (push (make-vm-const :dst lane-reg :value *opt-simd-lane-count*)
+                      result)
+                (setf result (%opt-autovec-emit-vector-loop
+                              (getf shape :header) (getf shape :cmp-inst) (getf shape :jz-inst)
+                              (getf shape :body) (getf shape :step-inst) (getf shape :exit-name)
+                              vec-limit-reg lane-reg remainder-label simd-ops result))
+                (push (aref vec (getf shape :exit-pos)) result)
+                (values result (1+ (getf shape :exit-pos)) (1+ serial) t))))
+        (fail)))))
 
 (defun opt-pass-auto-vectorization (instructions)
   "FR-226: vectorize independent scalar array ops in counted loops.

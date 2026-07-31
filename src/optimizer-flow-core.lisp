@@ -132,6 +132,63 @@ Returns a plist with linear positions needed by the existing transforms."
       (loop for i from exit-pos below n do (push (aref vec i) result))
       (nreverse result))))
 
+(defun %opt-loop-rotation-candidate-at (vec n i used-labels)
+  "Return a plist describing a linear loop-rotation candidate whose header is
+at position I in VEC, or NIL when the shape at I does not match:
+  Lh: <cond-inst> (vm-jump-zero reg Lexit) <body...> (vm-jump Lh) Lexit:
+
+On a successful match, reserves fresh body/guard label names in USED-LABELS
+as a side effect, mirroring the single-pass linear scan this replaces."
+  (let* ((header (aref vec i))
+         (cond-inst (aref vec (1+ i)))
+         (jz-inst (aref vec (+ i 2)))
+         (header-name (vm-name header)))
+    (when (and (typep jz-inst 'vm-jump-zero)
+               (not (vm-label-p cond-inst)))
+      (let* ((exit-name (vm-label-name jz-inst))
+             (exit-pos (cfg-find-label-position vec n exit-name))
+             (back-pos (and exit-pos (1- exit-pos)))
+             (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
+        (when (and exit-pos
+                   (> exit-pos (+ i 3))
+                   (typep back-inst 'vm-jump)
+                   (equal (vm-label-name back-inst) header-name))
+          (let* ((body-insts (loop for j from (+ i 3) below back-pos
+                                   collect (aref vec j)))
+                 (body-label-name  (%opt-loop-rotation-fresh-label
+                                    (format nil "~A_body" header-name)
+                                    used-labels))
+                 (guard-label-name (%opt-loop-rotation-fresh-label
+                                    (format nil "~A_guard" header-name)
+                                    used-labels)))
+            (setf (gethash body-label-name used-labels) t
+                  (gethash guard-label-name used-labels) t)
+            (list :cond-inst cond-inst
+                  :jz-inst jz-inst
+                  :body-insts body-insts
+                  :body-label-name body-label-name
+                  :body-label (make-vm-label :name body-label-name)
+                  :guard-label-name guard-label-name
+                  :guard-label (make-vm-label :name guard-label-name)
+                  :exit-pos exit-pos)))))))
+
+(defun %opt-loop-rotation-emit-at (vec result candidate)
+  "Push CANDIDATE's rotated guard+do-while instructions onto RESULT, followed
+by VEC's original instruction at CANDIDATE's exit position.  Return (values
+NEW-RESULT NEW-I) where NEW-I is the scan position just past that instruction."
+  (let ((guard-label-name (getf candidate :guard-label-name))
+        (body-label-name (getf candidate :body-label-name))
+        (exit-pos (getf candidate :exit-pos)))
+    (push (make-vm-jump :label guard-label-name) result)
+    (push (getf candidate :body-label) result)
+    (dolist (b (getf candidate :body-insts)) (push b result))
+    (push (getf candidate :guard-label) result)
+    (push (getf candidate :cond-inst) result)
+    (push (getf candidate :jz-inst) result)
+    (push (make-vm-jump :label body-label-name) result)
+    (push (aref vec exit-pos) result)
+    (values result (1+ exit-pos))))
+
 (defun %opt-pass-loop-rotation-linear (instructions)
   "Rotate simple while-shaped loops into guard+do-while form.
 
@@ -152,51 +209,13 @@ The transform is skipped unless all structural checks pass."
     (let ((result nil)
           (i 0))
       (loop while (< i n)
-            do (let ((cur (aref vec i)))
-                 (if (and (vm-label-p cur)
-                          (<= (+ i 4) (1- n)))
-                     (let* ((header       cur)
-                            (cond-inst    (aref vec (1+ i)))
-                            (jz-inst      (aref vec (+ i 2)))
-                            (header-name  (vm-name header)))
-                       (if (and (typep jz-inst 'vm-jump-zero)
-                                (not (vm-label-p cond-inst)))
-                           (let* ((exit-name (vm-label-name jz-inst))
-                                  (exit-pos  (cfg-find-label-position vec n exit-name))
-                                  (back-pos  (and exit-pos (1- exit-pos)))
-                                  (back-inst (and back-pos (>= back-pos 0) (aref vec back-pos))))
-                             (if (and exit-pos
-                                      (> exit-pos (+ i 3))
-                                      (typep back-inst 'vm-jump)
-                                      (equal (vm-label-name back-inst) header-name))
-                                 (let* ((body-insts (loop for j from (+ i 3) below back-pos
-                                                          collect (aref vec j)))
-                                        (body-label-name  (%opt-loop-rotation-fresh-label
-                                                           (format nil "~A_body" header-name)
-                                                           used-labels))
-                                        (guard-label-name (%opt-loop-rotation-fresh-label
-                                                           (format nil "~A_guard" header-name)
-                                                           used-labels))
-                                        (body-label  (make-vm-label :name body-label-name))
-                                        (guard-label (make-vm-label :name guard-label-name)))
-                                   (setf (gethash body-label-name used-labels) t
-                                         (gethash guard-label-name used-labels) t)
-                                   (push (make-vm-jump :label guard-label-name) result)
-                                   (push body-label result)
-                                   (dolist (b body-insts) (push b result))
-                                   (push guard-label result)
-                                   (push cond-inst result)
-                                   (push jz-inst result)
-                                   (push (make-vm-jump :label body-label-name) result)
-                                   (setf i exit-pos)
-                                   (push (aref vec i) result)
-                                   (incf i))
-                                 (progn
-                                   (push cur result)
-                                   (incf i))))
-                           (progn
-                             (push cur result)
-                             (incf i))))
+            do (let* ((cur (aref vec i))
+                      (candidate (and (vm-label-p cur)
+                                      (<= (+ i 4) (1- n))
+                                      (%opt-loop-rotation-candidate-at vec n i used-labels))))
+                 (if candidate
+                     (multiple-value-setq (result i)
+                       (%opt-loop-rotation-emit-at vec result candidate))
                      (progn
                        (push cur result)
                        (incf i)))))

@@ -143,6 +143,40 @@
                                  (%opt-remove-shadowed-bindings current-signature
                                                                 (list place)))))
                (values (cons 'setq (nreverse result)) current-signature)))
+           (substitute-lambda-form (node active-signature)
+             "Substitute within a LAMBDA form's body, shadowing bindings introduced
+by its lambda-list; the lambda-list itself is left untouched and the
+enclosing signature is unaffected by anything the body does."
+             (let* ((lambda-list (second node))
+                    (shadowed (remove nil
+                                      (mapcar #'%opt-lambda-binding-symbol
+                                              lambda-list)))
+                    (body-signature
+                      (%opt-remove-shadowed-bindings active-signature shadowed)))
+               (multiple-value-bind (new-body _)
+                   (substitute-body (cddr node) body-signature)
+                 (declare (ignore _))
+                 (values (list* 'lambda lambda-list new-body)
+                         active-signature))))
+           (substitute-let-form (node active-signature)
+             "Substitute within a LET/LET* form: rewrite the bindings, substitute
+through the body under the resulting body-signature, then merge whatever
+the body did back into the signature visible outside the form."
+             (multiple-value-bind (bindings body-signature outward-signature shadowed)
+                 (%opt-substitute-let-bindings
+                  (second node)
+                  active-signature
+                  (eq (car node) 'let*)
+                  #'substitute-node)
+               (multiple-value-bind (new-body body-updated-signature)
+                   (substitute-body (cddr node) body-signature)
+                 (let ((merged-signature
+                         (%opt-merge-body-effects-into-outer-signature
+                          outward-signature
+                          body-updated-signature
+                          shadowed)))
+                   (values (list* (car node) bindings new-body)
+                           merged-signature)))))
            (substitute-node (node active-signature)
              (cond
                ((symbolp node)
@@ -156,37 +190,13 @@
                ((eq (car node) 'function)
                 (values node active-signature))
                ((eq (car node) 'lambda)
-                (let* ((lambda-list (second node))
-                       (shadowed (remove nil
-                                         (mapcar #'%opt-lambda-binding-symbol
-                                                 lambda-list)))
-                       (body-signature
-                         (%opt-remove-shadowed-bindings active-signature shadowed)))
-                  (multiple-value-bind (new-body _)
-                      (substitute-body (cddr node) body-signature)
-                    (declare (ignore _))
-                    (values (list* 'lambda lambda-list new-body)
-                            active-signature))))
+                (substitute-lambda-form node active-signature))
                ((eq (car node) 'progn)
                 (multiple-value-bind (new-body updated-signature)
                     (substitute-body (cdr node) active-signature)
                   (values (cons 'progn new-body) updated-signature)))
                ((member (car node) '(let let*) :test #'eq)
-                (multiple-value-bind (bindings body-signature outward-signature shadowed)
-                    (%opt-substitute-let-bindings
-                     (second node)
-                     active-signature
-                     (eq (car node) 'let*)
-                     #'substitute-node)
-                  (multiple-value-bind (new-body body-updated-signature)
-                      (substitute-body (cddr node) body-signature)
-                    (let ((merged-signature
-                            (%opt-merge-body-effects-into-outer-signature
-                             outward-signature
-                             body-updated-signature
-                             shadowed)))
-                      (values (list* (car node) bindings new-body)
-                              merged-signature)))))
+                (substitute-let-form node active-signature))
                ((eq (car node) 'setq)
                 (substitute-setq (cdr node) active-signature))
                ((symbolp (car node))
