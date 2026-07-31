@@ -65,53 +65,71 @@ result register."
         (funcall emit inst))
     (%opt-specialize-clear-dst-tracks (opt-inst-dst inst) const-track reg-track)))
 
+(defun %opt-specialize-track-callee-ref (inst reg-track const-track)
+  "Record vm-closure/vm-func-ref INST's destination as a known callee label."
+  (setf (gethash (vm-dst inst) reg-track) (vm-label-name inst))
+  (remhash (vm-dst inst) const-track))
+
+(defun %opt-specialize-track-const (inst const-track reg-track)
+  "Record vm-const INST's destination as a known constant value."
+  (setf (gethash (vm-dst inst) const-track) (vm-value inst))
+  (remhash (vm-dst inst) reg-track))
+
+(defun %opt-specialize-track-move (inst const-track reg-track)
+  "Propagate vm-move INST's source constant/callee tracking to its destination,
+clearing either when the source carries no such tracked fact."
+  (multiple-value-bind (src-const present-p)
+      (gethash (vm-src inst) const-track)
+    (if present-p
+        (setf (gethash (vm-dst inst) const-track) src-const)
+        (remhash (vm-dst inst) const-track)))
+  (multiple-value-bind (label found-p)
+      (gethash (vm-src inst) reg-track)
+    (if found-p
+        (setf (gethash (vm-dst inst) reg-track) label)
+        (remhash (vm-dst inst) reg-track))))
+
+(defun %opt-specialize-process-inst (inst reg-track const-track func-defs
+                                      plan-cache emitted-labels new-reg emit)
+  "Dispatch INST by type: track constants/callee labels through
+vm-closure/vm-func-ref/vm-const/vm-move, specialize known-callee calls, and
+otherwise clear stale tracking and emit INST unchanged via EMIT."
+  (typecase inst
+    ((or vm-closure vm-func-ref)
+     (%opt-specialize-track-callee-ref inst reg-track const-track)
+     (funcall emit inst))
+    (vm-const
+     (%opt-specialize-track-const inst const-track reg-track)
+     (funcall emit inst))
+    (vm-move
+     (%opt-specialize-track-move inst const-track reg-track)
+     (funcall emit inst))
+    ((or vm-call vm-tail-call)
+     (%opt-specialize-handle-call inst reg-track const-track func-defs
+                                  plan-cache emitted-labels new-reg emit))
+    (vm-apply
+     ;; APPLY spreads the final argument list at runtime, so fixed-arity
+     ;; parameter/signature reasoning is not sound here yet.
+     (%opt-specialize-clear-dst-tracks (opt-inst-dst inst) const-track reg-track)
+     (funcall emit inst))
+    (t
+     (%opt-specialize-clear-dst-tracks (opt-inst-dst inst) const-track reg-track)
+     (funcall emit inst))))
+
 (defun opt-pass-specialize-known-args (instructions)
   "Conservatively clone known-callee functions specialized by constant call args."
   (let* ((func-defs (opt-collect-function-defs instructions))
-         (base-idx (1+ (opt-max-reg-index instructions)))
+         (new-reg (%opt-fresh-register-generator instructions))
          (reg-track (make-hash-table :test #'eq))
          (const-track (make-hash-table :test #'eq))
          (plan-cache (make-hash-table :test #'equal))
          (emitted-labels (make-hash-table :test #'equal))
          (result nil))
-    (labels ((new-reg ()
-               (prog1 (intern (format nil "R~A" base-idx) :keyword)
-                 (incf base-idx)))
-             (emit (inst)
+    (labels ((emit (inst)
                (push inst result)))
       (dolist (inst instructions)
-        (typecase inst
-          ((or vm-closure vm-func-ref)
-           (setf (gethash (vm-dst inst) reg-track) (vm-label-name inst))
-           (remhash (vm-dst inst) const-track)
-           (emit inst))
-          (vm-const
-           (setf (gethash (vm-dst inst) const-track) (vm-value inst))
-           (remhash (vm-dst inst) reg-track)
-           (emit inst))
-          (vm-move
-           (multiple-value-bind (src-const present-p)
-               (gethash (vm-src inst) const-track)
-             (if present-p
-                 (setf (gethash (vm-dst inst) const-track) src-const)
-                 (remhash (vm-dst inst) const-track)))
-           (multiple-value-bind (label found-p)
-               (gethash (vm-src inst) reg-track)
-             (if found-p
-                 (setf (gethash (vm-dst inst) reg-track) label)
-                 (remhash (vm-dst inst) reg-track)))
-           (emit inst))
-          ((or vm-call vm-tail-call)
-           (%opt-specialize-handle-call inst reg-track const-track func-defs
-                                        plan-cache emitted-labels #'new-reg #'emit))
-          (vm-apply
-           ;; APPLY spreads the final argument list at runtime, so fixed-arity
-           ;; parameter/signature reasoning is not sound here yet.
-           (%opt-specialize-clear-dst-tracks (opt-inst-dst inst) const-track reg-track)
-           (emit inst))
-          (t
-           (%opt-specialize-clear-dst-tracks (opt-inst-dst inst) const-track reg-track)
-           (emit inst))))
+        (%opt-specialize-process-inst inst reg-track const-track func-defs
+                                       plan-cache emitted-labels new-reg #'emit))
       (nreverse result))))
 
 (defun opt-pass-partial-evaluation (instructions)

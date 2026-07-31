@@ -194,6 +194,23 @@ marker."
   "Return T when GROUP is a non-empty group of adjacent stores."
   (and group (eq (nth-value 0 (%opt-lsc-access (first group))) :store)))
 
+(defun %opt-lsc-coalesce-store-groups (rest acc changed aliases fresh)
+  "Walk REST, packing adjacent store groups found via %OPT-LSC-GROUP-PREFIX
+using FRESH for new registers. ACC accumulates processed instructions in
+reverse order; CHANGED tracks whether any group was packed so far. Returns
+two values: the final instruction list and whether any packing occurred."
+  (cond
+    ((endp rest) (values (nreverse acc) changed))
+    (t
+      (let ((group (%opt-lsc-group-prefix rest aliases)))
+        (if (%opt-lsc-store-group-p group)
+            (%opt-lsc-coalesce-store-groups
+             (nthcdr (length group) rest)
+             (nreconc (%opt-lsc-pack-stores group fresh) acc)
+             t
+             aliases fresh)
+            (%opt-lsc-coalesce-store-groups (cdr rest) (cons (first rest) acc) changed aliases fresh))))))
+
 (defun opt-pass-store-coalescing (instructions &key alias-roots)
   "Combine adjacent narrow stores into packed naturally-aligned wider stores.
 
@@ -204,17 +221,7 @@ power-of-two byte access is naturally aligned.  Groups are never formed across
 intervening instructions, so alias boundaries and side effects remain intact."
   (let ((fresh (%opt-fresh-register-generator instructions))
         (aliases (or alias-roots (opt-compute-heap-aliases instructions))))
-    (labels ((walk (rest acc changed)
-               (cond
-            ((endp rest) (values (nreverse acc) changed))
-            (t
-              (let ((group (%opt-lsc-group-prefix rest aliases)))
-                (if (%opt-lsc-store-group-p group) (walk
-                    (nthcdr (length group) rest)
-                    (nreconc (%opt-lsc-pack-stores group fresh) acc)
-                    t)
-                  (walk (cdr rest) (cons (first rest) acc) changed)))))))
-      (walk instructions nil nil))))
+    (%opt-lsc-coalesce-store-groups instructions nil nil aliases fresh)))
 
 (defun %opt-lsc-widen-or-pack-group (group fresh)
   "Return replacement instructions for GROUP: widened loads for a load group,

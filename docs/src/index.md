@@ -22,7 +22,8 @@ Where to go next:
 - [Quick Start](quick-start.md) to run the optimizer on a small program.
 - [API Reference](api-reference.md) for every exported symbol.
 - [Development](development.md) to build, test, and measure coverage locally.
-- [Changelog](changelog.md) for release history.
+- [Releases](https://github.com/nerima-lisp/cl-cc-optimize/releases) for
+  release history.
 
 This project follows the nerima-lisp org's
 [coding](https://github.com/nerima-lisp/.github/blob/main/CODING_STANDARD.md),

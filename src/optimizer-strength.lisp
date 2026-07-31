@@ -60,23 +60,12 @@ supports intervals that include negative dividends."
     (let ((lo (opt-interval-lo interval))
           (hi (opt-interval-hi interval)))
       (when (and
-          (integerp lo)
-          (integerp hi)
-          (<= lo hi)
-          (<= (abs lo) +opt-strength-reduce-max-verified-dividend-hi+)
-          (<= (abs hi) +opt-strength-reduce-max-verified-dividend-hi+))
-        (let* ((max-abs (max (abs lo) (abs hi)))
-               (max-shift (max 1 (1+ (integer-length (* (max 1 max-abs) (1- divisor)))))))
-          (loop for shift from 1 to max-shift
-                do (let* ((scale (ash 1 shift))
-                   (m-floor (floor scale divisor))
-                   (m-ceil (ceiling scale divisor)))
-              (loop for multiplier in (remove-duplicates (list m-floor m-ceil (1- m-ceil) (1+ m-floor)))
-                    do (let ((bias (%opt-verified-reciprocal-bias-window multiplier scale divisor lo hi)))
-                  (when bias
-                    (return-from
-                      %opt-find-verified-reciprocal-div-params-with-bias
-                      (list multiplier shift bias))))))))))))
+             (integerp lo)
+             (integerp hi)
+             (<= lo hi)
+             (<= (abs lo) +opt-strength-reduce-max-verified-dividend-hi+)
+             (<= (abs hi) +opt-strength-reduce-max-verified-dividend-hi+))
+        (%opt-search-verified-reciprocal-shifts divisor lo hi)))))
 
 (defun %opt-div-by-verified-reciprocal-seq (dst src divisor interval new-reg-fn)
   "Build a verified reciprocal multiply/shift sequence for DST ← floor(SRC / DIVISOR).
@@ -382,3 +371,20 @@ EMIT; NEW-REG allocates a fresh register for the mask constant."
       (when negp
         (push (make-vm-neg :dst dst :src dst) seq))
       (nreverse seq))))
+
+(defun %opt-search-verified-reciprocal-shifts (divisor lo hi)
+  "Search shift/multiplier/bias triples for the affine reciprocal of DIVISOR
+over [LO, HI], returning (MULTIPLIER SHIFT BIAS) for the first exact match
+or NIL when none exists within the bounded shift range."
+  (let* ((max-abs (max (abs lo) (abs hi)))
+         (max-shift (max 1 (1+ (integer-length (* (max 1 max-abs) (1- divisor)))))))
+    (loop for shift from 1 to max-shift
+          do (let* ((scale (ash 1 shift))
+                    (m-floor (floor scale divisor))
+                    (m-ceil (ceiling scale divisor)))
+               (loop for multiplier in (remove-duplicates (list m-floor m-ceil (1- m-ceil) (1+ m-floor)))
+                     do (let ((bias (%opt-verified-reciprocal-bias-window multiplier scale divisor lo hi)))
+                          (when bias
+                            (return-from
+                             %opt-search-verified-reciprocal-shifts
+                             (list multiplier shift bias)))))))))

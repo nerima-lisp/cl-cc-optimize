@@ -1,14 +1,19 @@
+;;;; This form comes FIRST, before any defsystem. ASDF binds *package* to
+;;;; ASDF-USER only for a file it loads itself; read any other way — a REPL
+;;;; `load`, an editor evaluating the buffer, flake.nix parsing :version — the
+;;;; file is read in whatever package happens to be current.
+(in-package #:asdf-user)
+
 (asdf:defsystem "cl-cc-optimize"
   :description "Optimizer subsystem: CFG, SSA, E-graph, peephole, pipeline"
   :author "takeokunn <bararararatty@gmail.com>"
   :maintainer "takeokunn <bararararatty@gmail.com>"
   :license "MIT"
+  :version "0.5.0"
   :homepage "https://github.com/nerima-lisp/cl-cc-optimize"
   :bug-tracker "https://github.com/nerima-lisp/cl-cc-optimize/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-cc-optimize.git")
-  :version "0.5.0"
   :depends-on (:cl-cc-vm :cl-prolog :cl-cc-type :cl-cc-ast :cl-parser-kit)
-  :in-order-to ((test-op (test-op "cl-cc-optimize/test")))
   :pathname "src"
   :serial t
   :components
@@ -177,7 +182,8 @@
         ;; ── Phase 135-140: Advanced Optimization ──
         (:file "static-analysis-135")
         (:file "ghc-transforms-136")
-        (:file "lisp-opt-140")))
+        (:file "lisp-opt-140"))
+  :in-order-to ((test-op (test-op "cl-cc-optimize/test"))))
 
 (asdf:defsystem "cl-cc-optimize/test"
   :description "Module boundary tests for cl-cc-optimize"

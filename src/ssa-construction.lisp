@@ -157,6 +157,77 @@ the real target) collected in EDGE-PADS. Return the updated RESULT."
         (setf result (%ssa-destroy-emit-edge-pads edge-pads result))
         (nreverse result)))))
 
+(defun %ssa-seqcopy-dst (copy) (car copy))
+
+(defun %ssa-seqcopy-src (copy) (cdr copy))
+
+(defun %ssa-seqcopy-register-copy-p (copy)
+  (and (symbolp (%ssa-seqcopy-dst copy))
+       (symbolp (%ssa-seqcopy-src copy))
+       (not (eq (%ssa-seqcopy-dst copy) (%ssa-seqcopy-src copy)))))
+
+(defun %ssa-seqcopy-source-counts (copies)
+  (let ((counts (make-hash-table :test #'eq)))
+    (dolist (copy copies counts)
+      (when (symbolp (%ssa-seqcopy-src copy))
+        (incf (gethash (%ssa-seqcopy-src copy) counts 0))))))
+
+(defun %ssa-seqcopy-ready-copies (copies)
+  (let ((counts (%ssa-seqcopy-source-counts copies)))
+    (loop for copy in copies
+          unless (plusp (gethash (%ssa-seqcopy-dst copy) counts 0))
+            collect copy)))
+
+(defun %ssa-seqcopy-find-two-register-cycle (copies)
+  (when (= (length copies) 2)
+    (destructuring-bind (a b) copies
+      (when (and (%ssa-seqcopy-register-copy-p a)
+                 (%ssa-seqcopy-register-copy-p b)
+                 (eq (%ssa-seqcopy-dst a) (%ssa-seqcopy-src b))
+                 (eq (%ssa-seqcopy-src a) (%ssa-seqcopy-dst b)))
+        (values (%ssa-seqcopy-dst a) (%ssa-seqcopy-src a))))))
+
+(defun %ssa-seqcopy-emit-xor-swap (left right result)
+  (push (make-vm-logxor :dst left :lhs left :rhs right) result)
+  (push (make-vm-logxor :dst right :lhs left :rhs right) result)
+  (push (make-vm-logxor :dst left :lhs left :rhs right) result)
+  result)
+
+(defun %ssa-seqcopy-fresh-temp ()
+  (intern (symbol-name (gensym "SSATMP")) :keyword))
+
+(defun %ssa-seqcopy-break-cycle (copies result)
+  (let* ((copy (find-if #'%ssa-seqcopy-register-copy-p copies))
+         (dst (%ssa-seqcopy-dst copy))
+         (temp (%ssa-seqcopy-fresh-temp)))
+    ;; Preserve the old value of DST, then rewrite all remaining
+    ;; reads of DST to read the temp.  DST is now safe to overwrite,
+    ;; so the normal ready-copy pass will drain the cycle.
+    (push (make-vm-move :dst temp :src dst) result)
+    (values (mapcar (lambda (candidate)
+                       (if (eq (%ssa-seqcopy-src candidate) dst)
+                           (cons (%ssa-seqcopy-dst candidate) temp)
+                           candidate))
+                     copies)
+            result)))
+
+(defun %ssa-seqcopy-drain-ready (ready copies result)
+  "Emit a vm-move for every ready copy and drop it from the pending set."
+  (dolist (copy ready)
+    (push (make-vm-move :dst (%ssa-seqcopy-dst copy) :src (%ssa-seqcopy-src copy)) result)
+    (setf copies (remove copy copies :test #'equal)))
+  (values copies result))
+
+(defun %ssa-seqcopy-resolve-stuck (copies result)
+  "No copy is ready, so the pending set contains at least one cycle.
+Emit an XOR-swap for the two-register case, otherwise break one cycle with a
+temporary register so a later round's ready-copies pass can drain it."
+  (multiple-value-bind (left right)
+      (%ssa-seqcopy-find-two-register-cycle copies)
+    (if left
+        (values nil (%ssa-seqcopy-emit-xor-swap left right result))
+        (%ssa-seqcopy-break-cycle copies result))))
+
 (defun ssa-sequentialize-copies (parallel-copies)
   "Convert a list of parallel copies (dst . src) to a sequential list of
     vm-move instructions that produces the same effect.
@@ -169,79 +240,18 @@ the real target) collected in EDGE-PADS. Return the updated RESULT."
    destination is not read by remaining copies.  Cycles are detected when the
    DAG has no ready leaf."
   (unless parallel-copies (return-from ssa-sequentialize-copies))
-
-  (labels ((copy-dst (copy) (car copy))
-           (copy-src (copy) (cdr copy))
-           (register-copy-p (copy)
-             (and (symbolp (copy-dst copy))
-                  (symbolp (copy-src copy))
-                  (not (eq (copy-dst copy) (copy-src copy)))))
-           (source-counts (copies)
-             (let ((counts (make-hash-table :test #'eq)))
-               (dolist (copy copies counts)
-                 (when (symbolp (copy-src copy))
-                   (incf (gethash (copy-src copy) counts 0))))))
-           (ready-copies (copies)
-             (let ((counts (source-counts copies)))
-               (loop for copy in copies
-                     unless (plusp (gethash (copy-dst copy) counts 0))
-                       collect copy)))
-           (find-two-register-cycle (copies)
-             (when (= (length copies) 2)
-               (destructuring-bind (a b) copies
-                 (when (and (register-copy-p a)
-                            (register-copy-p b)
-                            (eq (copy-dst a) (copy-src b))
-                            (eq (copy-src a) (copy-dst b)))
-                   (values (copy-dst a) (copy-src a))))))
-           (emit-xor-swap (left right result)
-             (push (make-vm-logxor :dst left :lhs left :rhs right) result)
-             (push (make-vm-logxor :dst right :lhs left :rhs right) result)
-             (push (make-vm-logxor :dst left :lhs left :rhs right) result)
-             result)
-           (fresh-temp ()
-             (intern (symbol-name (gensym "SSATMP")) :keyword))
-           (break-cycle (copies result)
-             (let* ((copy (find-if #'register-copy-p copies))
-                    (dst (copy-dst copy))
-                    (temp (fresh-temp)))
-               ;; Preserve the old value of DST, then rewrite all remaining
-               ;; reads of DST to read the temp.  DST is now safe to overwrite,
-               ;; so the normal ready-copy pass will drain the cycle.
-               (push (make-vm-move :dst temp :src dst) result)
-               (values (mapcar (lambda (candidate)
-                                 (if (eq (copy-src candidate) dst)
-                                     (cons (copy-dst candidate) temp)
-                                     candidate))
-                               copies)
-                       result)))
-           (drain-ready (ready copies result)
-             "Emit a vm-move for every ready copy and drop it from the pending set."
-             (dolist (copy ready)
-               (push (make-vm-move :dst (copy-dst copy) :src (copy-src copy)) result)
-               (setf copies (remove copy copies :test #'equal)))
-             (values copies result))
-           (resolve-stuck (copies result)
-             "No copy is ready, so the pending set contains at least one cycle.
-Emit an XOR-swap for the two-register case, otherwise break one cycle with a
-temporary register so a later round's ready-copies pass can drain it."
-             (multiple-value-bind (left right)
-                 (find-two-register-cycle copies)
-               (if left
-                   (values nil (emit-xor-swap left right result))
-                   (break-cycle copies result)))))
-    (let ((copies (remove-if (lambda (copy)
-                               (eq (copy-dst copy) (copy-src copy)))
-                             (copy-list parallel-copies)))
-          (result nil))
-      (loop while copies
-            do (let ((ready (ready-copies copies)))
-                 (if ready
-                     (multiple-value-setq (copies result)
-                       (drain-ready ready copies result))
-                     (multiple-value-setq (copies result)
-                       (resolve-stuck copies result)))))
-      (nreverse result))))
+  (let ((copies (remove-if (lambda (copy)
+                             (eq (%ssa-seqcopy-dst copy) (%ssa-seqcopy-src copy)))
+                           (copy-list parallel-copies)))
+        (result nil))
+    (loop while copies
+          do (let ((ready (%ssa-seqcopy-ready-copies copies)))
+               (if ready
+                   (multiple-value-setq (copies result)
+                     (%ssa-seqcopy-drain-ready ready copies result))
+                   (multiple-value-setq (copies result)
+                     (%ssa-seqcopy-resolve-stuck copies result)))))
+    (nreverse result)))
 
 ;;; ─── Round-Trip Utility ──────────────────────────────────────────────────
 

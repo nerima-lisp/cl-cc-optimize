@@ -124,15 +124,19 @@
       ...
     }:
     let
-      # Only platforms that something actually verifies are declared.
-      # x86_64-linux is what CI runs; aarch64-darwin is the development
-      # machine, so it is verified on every local `nix flake check`. Dropping
-      # aarch64-darwin would make that local run skip every derivation and
-      # still report success. aarch64-linux and x86_64-darwin are declared by
-      # nobody's verification, so they are not declared here either.
+      # CI builds and tests only x86_64-linux, so that is the sole declared
+      # system: the flake never advertises a platform it does not verify.
+      # `nix flake check --all-systems` fails with a platform mismatch on a
+      # platform no runner can build, rather than skipping it.
+      #
+      # Consequence, accepted deliberately on 2026-08-01: `forAllSystems`
+      # below generates EVERY per-system output from this one list -- packages,
+      # checks, apps and devShells alike -- so dropping aarch64-darwin also
+      # drops devShells.aarch64-darwin. `nix develop` and `nix build` therefore
+      # do not work on macOS; development happens on Linux. See
+      # PACKAGE_STANDARD.md, section "systems".
       systems = [
         "x86_64-linux"
-        "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
@@ -186,8 +190,8 @@
           # promotes broken links and unlisted pages to build failures.
           #
           # Invoked from the repository root with -f docs/mkdocs.yml (not `cd
-          # docs`), matching pymdownx.snippets' base_path of "." in
-          # docs/mkdocs.yml, which resolves CHANGELOG.md relative to the root.
+          # docs`), so the config path in the build phase below matches the one
+          # a contributor types by hand.
           docs = pkgs.stdenvNoCC.mkDerivation {
             pname = "cl-cc-optimize-docs";
             inherit version;
@@ -196,7 +200,6 @@
               fileset = pkgs.lib.fileset.unions [
                 ./docs/mkdocs.yml
                 ./docs/src
-                ./CHANGELOG.md
               ];
             };
             nativeBuildInputs = [ pkgs.python3Packages.mkdocs-material ];
