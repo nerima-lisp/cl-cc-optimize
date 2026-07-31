@@ -156,104 +156,123 @@ left untouched, preserving references to the enclosing compilation unit."
         (add (opt-inst-dst inst))))
     renaming))
 
+(defun %opt-inline-expand-candidate-bodies (bottom-up-labels func-defs candidates
+                                             name-to-label profile-data threshold base-idx)
+  "Inline eligible calls inside each candidate function's own body, bottom-up,
+  so later callers see already-reduced callee bodies. Mutates each candidate's
+  :body in FUNC-DEFS in place. Returns the next free register base index."
+  (dolist (label bottom-up-labels base-idx)
+    (when (gethash label candidates)
+      (multiple-value-bind (new-body next-base)
+          (%opt-inline-body-bottom-up (getf (gethash label func-defs) :body)
+                                      func-defs candidates name-to-label profile-data
+                                      threshold base-idx)
+        (setf (getf (gethash label func-defs) :body) new-body
+              base-idx next-base)))))
+
+(defun %opt-inline-rewrite-toplevel (instructions func-defs candidates name-to-label
+                                     threshold profile-data base-idx)
+  "Rewrite INSTRUCTIONS, resolving function-valued registers through const,
+  move, and box/car pass-through, and inlining eligible vm-call sites.
+  Returns the rewritten instruction list."
+  (let ((reg-track (make-hash-table :test #'eq))
+        (box-track (make-hash-table :test #'eq))
+        (const-track (make-hash-table :test #'eq))
+        (result nil))
+    (flet ((process-call (inst)
+             (let* ((label (gethash (vm-func-reg inst) reg-track))
+                    (def   (and label (gethash label func-defs)))
+                    (effective-threshold
+                      (and def
+                           (%opt-inline-effective-threshold def threshold profile-data))))
+               (if (and def
+                        (gethash label candidates))
+                   (multiple-value-bind (replacement next-base)
+                       (%opt-inline-expand-call inst label def base-idx name-to-label
+                                                const-track effective-threshold)
+                     (if replacement
+                         (progn
+                           (setf base-idx next-base)
+                           (setf result (nconc (reverse replacement) result))
+                           (let ((dst (vm-dst inst)))
+                             (when dst
+                               (remhash dst reg-track)
+                               (remhash dst box-track)
+                               (remhash dst const-track))))
+                         (push inst result)))
+                   (push inst result)))))
+      (dolist (inst instructions)
+        (typecase inst
+          ((or vm-closure vm-func-ref)
+           (let ((label (vm-label-name inst)))
+             (when (gethash label func-defs)
+               (setf (gethash (vm-dst inst) reg-track) label)))
+           (let ((dst (opt-inst-dst inst)))
+             (when dst (remhash dst const-track)))
+           (push inst result))
+          (vm-const
+           (let* ((val (vm-value inst))
+                  (label (when (symbolp val) (gethash val name-to-label))))
+             (if (and label (gethash label func-defs))
+                 (setf (gethash (vm-dst inst) reg-track) label)
+                 (remhash (vm-dst inst) reg-track)))
+           (setf (gethash (vm-dst inst) const-track) (vm-value inst))
+           (push inst result))
+          (vm-move
+           (multiple-value-bind (label label-present-p)
+               (gethash (vm-src inst) reg-track)
+             (if label-present-p
+                 (setf (gethash (vm-dst inst) reg-track) label)
+                 (remhash (vm-dst inst) reg-track)))
+           (multiple-value-bind (boxed-label box-present-p)
+               (gethash (vm-src inst) box-track)
+             (if box-present-p
+                 (setf (gethash (vm-dst inst) box-track) boxed-label)
+                 (remhash (vm-dst inst) box-track)))
+           (multiple-value-bind (src-const present-p)
+               (gethash (vm-src inst) const-track)
+             (if present-p
+                 (setf (gethash (vm-dst inst) const-track) src-const)
+                 (remhash (vm-dst inst) const-track)))
+           (push inst result))
+          (vm-rplaca
+           (let ((label (gethash (vm-val-reg inst) reg-track)))
+             (when label
+               (setf (gethash (vm-cons-reg inst) box-track) label)))
+           (push inst result))
+          (vm-car
+           (let ((label (gethash (vm-src inst) box-track)))
+             (if label
+                 (setf (gethash (vm-dst inst) reg-track) label)
+                 (remhash (vm-dst inst) reg-track)))
+           (remhash (vm-dst inst) const-track)
+           (push inst result))
+          (vm-call
+           (process-call inst))
+          (t
+           (let ((dst (opt-inst-dst inst)))
+             (when dst
+               (remhash dst reg-track)
+               (remhash dst box-track)
+               (remhash dst const-track)))
+           (push inst result)))))
+    (nreverse result)))
+
 (defun opt-pass-inline (instructions &key (threshold 15))
   "Replace vm-call of a known small function with the inlined body.
   The function must be: captured-var-free, linear, and have body cost
   ≤ THRESHOLD (not counting the final vm-ret)."
   (let* ((func-defs (opt-collect-function-defs instructions))
-          (name-to-label (opt-build-function-name-map instructions))
-          (call-graph (opt-build-call-graph instructions func-defs name-to-label))
-          (bottom-up-labels (opt-call-graph-bottom-up-labels call-graph))
-          (recursive-labels (opt-call-graph-recursive-labels call-graph))
-          (base-idx  (1+ (opt-max-reg-index instructions)))
-           (reg-track (make-hash-table :test #'eq))
-           (box-track (make-hash-table :test #'eq))
-            (const-track (make-hash-table :test #'eq))
-          (profile-data (opt-inline-profile-data instructions))
-          (candidates (%opt-inline-candidate-labels bottom-up-labels func-defs recursive-labels
-                                                    threshold profile-data))
-           (result nil))
-    (dolist (label bottom-up-labels)
-      (when (gethash label candidates)
-        (multiple-value-bind (new-body next-base)
-            (%opt-inline-body-bottom-up (getf (gethash label func-defs) :body)
-                                        func-defs candidates name-to-label profile-data
-                                        threshold base-idx)
-          (setf (getf (gethash label func-defs) :body) new-body
-                base-idx next-base))))
-    (dolist (inst instructions)
-      (typecase inst
-        ((or vm-closure vm-func-ref)
-         (let ((label (vm-label-name inst)))
-           (when (gethash label func-defs)
-             (setf (gethash (vm-dst inst) reg-track) label)))
-         (let ((dst (opt-inst-dst inst)))
-           (when dst (remhash dst const-track)))
-         (push inst result))
-         (vm-const
-          (let* ((val (vm-value inst))
-                 (label (when (symbolp val) (gethash val name-to-label))))
-            (if (and label (gethash label func-defs))
-                (setf (gethash (vm-dst inst) reg-track) label)
-                (remhash (vm-dst inst) reg-track)))
-           (setf (gethash (vm-dst inst) const-track) (vm-value inst))
-          (push inst result))
-         (vm-move
-          (multiple-value-bind (label label-present-p)
-              (gethash (vm-src inst) reg-track)
-            (if label-present-p
-                (setf (gethash (vm-dst inst) reg-track) label)
-                (remhash (vm-dst inst) reg-track)))
-          (multiple-value-bind (boxed-label box-present-p)
-              (gethash (vm-src inst) box-track)
-            (if box-present-p
-                (setf (gethash (vm-dst inst) box-track) boxed-label)
-                (remhash (vm-dst inst) box-track)))
-          (multiple-value-bind (src-const present-p)
-              (gethash (vm-src inst) const-track)
-            (if present-p
-                (setf (gethash (vm-dst inst) const-track) src-const)
-                (remhash (vm-dst inst) const-track)))
-          (push inst result))
-         (vm-rplaca
-          (let ((label (gethash (vm-val-reg inst) reg-track)))
-            (when label
-              (setf (gethash (vm-cons-reg inst) box-track) label)))
-          (push inst result))
-         (vm-car
-          (let ((label (gethash (vm-src inst) box-track)))
-            (if label
-                (setf (gethash (vm-dst inst) reg-track) label)
-                (remhash (vm-dst inst) reg-track)))
-          (remhash (vm-dst inst) const-track)
-          (push inst result))
-         (vm-call
-          (let* ((label (gethash (vm-func-reg inst) reg-track))
-                 (def   (and label (gethash label func-defs)))
-                 (effective-threshold
-                   (and def
-                        (%opt-inline-effective-threshold def threshold profile-data))))
-            (if (and def
-                     (gethash label candidates))
-                 (multiple-value-bind (replacement next-base)
-                     (%opt-inline-expand-call inst label def base-idx name-to-label
-                                              const-track effective-threshold)
-                   (if replacement
-                       (progn
-                         (setf base-idx next-base)
-                         (setf result (nconc (reverse replacement) result))
-                         (let ((dst (vm-dst inst)))
-                           (when dst
-                             (remhash dst reg-track)
-                             (remhash dst box-track)
-                             (remhash dst const-track))))
-                       (push inst result)))
-                (push inst result))))
-        (t
-         (let ((dst (opt-inst-dst inst)))
-           (when dst
-              (remhash dst reg-track)
-              (remhash dst box-track)
-              (remhash dst const-track)))
-         (push inst result))))
-    (nreverse result)))
+         (name-to-label (opt-build-function-name-map instructions))
+         (call-graph (opt-build-call-graph instructions func-defs name-to-label))
+         (bottom-up-labels (opt-call-graph-bottom-up-labels call-graph))
+         (recursive-labels (opt-call-graph-recursive-labels call-graph))
+         (base-idx (1+ (opt-max-reg-index instructions)))
+         (profile-data (opt-inline-profile-data instructions))
+         (candidates (%opt-inline-candidate-labels bottom-up-labels func-defs recursive-labels
+                                                    threshold profile-data)))
+    (setf base-idx (%opt-inline-expand-candidate-bodies bottom-up-labels func-defs candidates
+                                                         name-to-label profile-data threshold
+                                                         base-idx))
+    (%opt-inline-rewrite-toplevel instructions func-defs candidates name-to-label
+                                  threshold profile-data base-idx)))
