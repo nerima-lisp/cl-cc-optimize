@@ -86,7 +86,7 @@
                             (max (getf entry :loop-depth 0) (gethash i depths 0))))))
                 (let ((dst (opt-inst-dst inst)))
                   (when dst (remhash dst reg-track))))
-               (t (%opt-devirt-track-designator inst name-to-label reg-track))))
+               (t (%opt-track-known-callee-label inst name-to-label reg-track))))
     profile))
 
 (defun %opt-inline-score-features (def)

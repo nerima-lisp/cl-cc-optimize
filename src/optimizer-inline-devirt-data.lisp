@@ -47,4 +47,8 @@
    over all fact tables when propagating register facts across vm-move.")
 
 (defvar *opt-enable-sealed-gf-devirtualization* t
-  "Policy gate for sealed+satiated generic-function static dispatch.")
+  "When NIL, keep sealed generic calls as dynamic `vm-generic-call` instructions.
+
+This optimization is policy-gated because it trades compilation effort and a
+closed-world proof for direct method invocation.  `opt-configure-optimization-policy`
+enables it for SPEED >= 2.")

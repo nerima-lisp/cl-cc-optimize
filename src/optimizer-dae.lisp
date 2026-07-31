@@ -77,26 +77,6 @@
      defs)
     specializations))
 
-(defun %opt-dae-known-label-track (inst name-to-label reg->label)
-  "Track simple register-to-function-label facts through INST."
-  (typecase inst
-    ((or vm-closure vm-func-ref)
-     (setf (gethash (vm-dst inst) reg->label) (vm-label-name inst)))
-    (vm-const
-     (let ((label (and (symbolp (vm-value inst))
-                       (gethash (vm-value inst) name-to-label))))
-       (if label
-           (setf (gethash (vm-dst inst) reg->label) label)
-           (remhash (vm-dst inst) reg->label))))
-    (vm-move
-     (multiple-value-bind (label found-p) (gethash (vm-src inst) reg->label)
-       (if found-p
-           (setf (gethash (vm-dst inst) reg->label) label)
-           (remhash (vm-dst inst) reg->label))))
-    (t
-     (let ((dst (opt-inst-dst inst)))
-       (when dst (remhash dst reg->label))))))
-
 (defun %opt-dae-rewrite-call (inst specialization)
   "Return rewritten call INST and the dropped argument registers."
   (let* ((drop-indexes (getf specialization :drop-indexes))
@@ -166,9 +146,9 @@ inner closure are treated as used and are never removed."
                        (push new-call out)
                        (setf changed t))
                      (push inst out)))
-               (%opt-dae-known-label-track inst name-to-label reg->label))
+               (%opt-track-known-callee-label inst name-to-label reg->label))
               (t
-               (%opt-dae-known-label-track inst name-to-label reg->label)
+               (%opt-track-known-callee-label inst name-to-label reg->label)
                (push inst out))))
           (let ((rewritten (nreverse out)))
             (if changed

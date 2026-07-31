@@ -33,23 +33,24 @@
 
 ;;; ─── Critical edge helpers ────────────────────────────────────────────────
 
-(defun %cfg-replace-successor (block old new)
-  "Rewrite BLOCK's successor list replacing OLD with NEW."
-  (setf (bb-successors block)
-        (mapcar (lambda (succ) (if (eq succ old) new succ))
-                (bb-successors block))))
+(defmacro define-cfg-list-replace (name accessor doc)
+  "Define NAME as a function that replaces an EQ member of a block's ACCESSOR
+list with a new value: (NAME block old new).
+Data: which block field to rewrite and its docstring. Logic: mapcar
+substitution of OLD for NEW in that field, shared by post-dominator and
+critical-edge maintenance below."
+  `(defun ,name (block old new)
+     ,doc
+     (setf (,accessor block)
+           (mapcar (lambda (item) (if (eq item old) new item))
+                   (,accessor block)))))
 
-(defun %cfg-replace-predecessor (block old new)
-  "Rewrite BLOCK's predecessor list replacing OLD with NEW."
-  (setf (bb-predecessors block)
-        (mapcar (lambda (pred) (if (eq pred old) new pred))
-                (bb-predecessors block))))
-
-(defun %cfg-replace-terminator (block old new)
-  "Replace terminator OLD in BLOCK's instruction list with NEW."
-  (setf (bb-instructions block)
-        (mapcar (lambda (inst) (if (eq inst old) new inst))
-                (bb-instructions block))))
+(define-cfg-list-replace %cfg-replace-successor bb-successors
+  "Rewrite BLOCK's successor list replacing OLD with NEW.")
+(define-cfg-list-replace %cfg-replace-predecessor bb-predecessors
+  "Rewrite BLOCK's predecessor list replacing OLD with NEW.")
+(define-cfg-list-replace %cfg-replace-terminator bb-instructions
+  "Replace terminator OLD in BLOCK's instruction list with NEW.")
 
 (defun %cfg-ensure-label (block cfg prefix)
   "Return BLOCK's label, creating and registering a fresh one if absent."

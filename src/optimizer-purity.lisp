@@ -245,7 +245,7 @@ registers is overwritten."
           (t
            (let ((dst (opt-inst-dst inst)))
              (%opt-pure-call-kill-reg call-cse dst)
-             (%opt-devirt-track-designator inst name-to-label reg-track)
+             (%opt-track-known-callee-label inst name-to-label reg-track)
              (push inst result))))))))
 
 (defun %opt-remove-dead-pure-direct-calls (instructions name-to-label pure-labels)
@@ -276,7 +276,7 @@ effects, or no destination are preserved."
                    (remhash dst reg-track)
                    (push inst result)))))
           (t
-           (%opt-devirt-track-designator inst name-to-label reg-track)
+           (%opt-track-known-callee-label inst name-to-label reg-track)
            (push inst result)))))))
 
 (defun opt-pass-pure-call-optimization (instructions)

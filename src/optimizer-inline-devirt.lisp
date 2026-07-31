@@ -9,28 +9,6 @@
 
 (in-package :cl-cc/optimize)
 
-(defun %opt-devirt-track-designator (inst name-to-label reg-track)
-  "Update REG-TRACK with known callee information produced by INST."
-  (typecase inst
-    ((or vm-closure vm-func-ref)
-     (setf (gethash (vm-dst inst) reg-track) (vm-label-name inst)))
-    (vm-const
-     (let ((label (and (symbolp (vm-value inst))
-                       (gethash (vm-value inst) name-to-label))))
-       (if label
-           (setf (gethash (vm-dst inst) reg-track) label)
-           (remhash (vm-dst inst) reg-track))))
-    (vm-move
-     (multiple-value-bind (label found-p)
-         (gethash (vm-move-src inst) reg-track)
-       (if found-p
-           (setf (gethash (vm-dst inst) reg-track) label)
-           (remhash (vm-dst inst) reg-track))))
-    (t
-     (let ((dst (opt-inst-dst inst)))
-       (when dst
-         (remhash dst reg-track))))))
-
 (defun %opt-last-emitted-func-ref-p (result reg label)
   "Return T when RESULT already starts with REG's direct reference to LABEL."
   (let ((last (first result)))
@@ -283,6 +261,6 @@ uses the standard method combination, and has no EQL-specializer ambiguity."
                                  (opt-devirt-facts-reg-closure-label facts)
                                  (opt-devirt-facts-reg-gf-literal facts))))
         (t
-         (%opt-devirt-track-designator inst name-to-label reg-track)
+         (%opt-track-known-callee-label inst name-to-label reg-track)
           (%opt-track-sealed-gf-facts inst class-sealed facts gf-infos)
           (push inst result))))))

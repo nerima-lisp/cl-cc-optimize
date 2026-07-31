@@ -107,12 +107,12 @@ observable summary."
 
 (defun translation-validation-equivalent-p (before after)
   "Conservatively check same observable outputs for same symbolic inputs."
-  (multiple-value-bind (before-legacy before-supported-p before-summary)
+  (multiple-value-bind (before-basic-summary before-supported-p before-summary)
       (tv-symbolic-execute-block before)
-    (declare (ignore before-legacy))
-    (multiple-value-bind (after-legacy after-supported-p after-summary)
+    (declare (ignore before-basic-summary))
+    (multiple-value-bind (after-basic-summary after-supported-p after-summary)
         (tv-symbolic-execute-block after)
-      (declare (ignore after-legacy))
+      (declare (ignore after-basic-summary))
       (and
         before-supported-p
         after-supported-p

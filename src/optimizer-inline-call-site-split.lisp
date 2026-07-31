@@ -107,25 +107,7 @@
   (let ((name-to-label (opt-build-function-name-map instructions))
         (reg-track (make-hash-table :test #'eq)))
     (dolist (inst instructions reg-track)
-      (typecase inst
-        ((or vm-closure vm-func-ref)
-         (setf (gethash (vm-dst inst) reg-track) (vm-label-name inst)))
-        (vm-const
-         (let ((label (and (symbolp (vm-value inst))
-                           (gethash (vm-value inst) name-to-label))))
-           (if label
-               (setf (gethash (vm-dst inst) reg-track) label)
-               (remhash (vm-dst inst) reg-track))))
-        (vm-move
-         (multiple-value-bind (label found-p)
-             (gethash (vm-move-src inst) reg-track)
-           (if found-p
-                (setf (gethash (vm-dst inst) reg-track) label)
-                (remhash (vm-dst inst) reg-track))))
-        (t
-         (let ((dst (opt-inst-dst inst)))
-             (when dst
-               (remhash dst reg-track))))))))
+      (%opt-track-known-callee-label inst name-to-label reg-track))))
 
 (defun %opt-call-site-split-fresh-label (used-labels)
   "Return a fresh after-call label not present in USED-LABELS."

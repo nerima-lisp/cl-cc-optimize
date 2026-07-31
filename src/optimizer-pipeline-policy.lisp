@@ -60,13 +60,6 @@ This hook is used as an optimization-policy gate so frontends can couple the
 pass to `(optimize (speed 3))`-style policy decisions without changing the
 optimizer's pass table wiring.")
 
-(defvar *opt-enable-sealed-gf-devirtualization* t
-  "When NIL, keep sealed generic calls as dynamic `vm-generic-call` instructions.
-
-This optimization is policy-gated because it trades compilation effort and a
-closed-world proof for direct method invocation.  `opt-configure-optimization-policy`
-enables it for SPEED >= 2.")
-
 (defun %maybe-run-pure-call-optimization (instructions)
   "Run pure-call optimization only when policy gate permits it."
   (if *opt-enable-pure-call-optimization*

@@ -77,32 +77,33 @@ If either operand has no known interval, conservatively kills the destination."
         (setf (gethash (vm-dst inst) intervals) (funcall fn src))
         (remhash (vm-dst inst) intervals))))
 
-(defun %opt-update-interval-logand (inst intervals)
-  "Update INTERVALS for LOGAND, preserving non-negative mask bounds when known."
-  (let* ((lhs (gethash (vm-lhs inst) intervals))
-         (rhs (gethash (vm-rhs inst) intervals))
-         (interval (opt-interval-logand lhs rhs)))
-    (if interval
-        (setf (gethash (vm-dst inst) intervals) interval)
-        (remhash (vm-dst inst) intervals))))
+(defmacro define-interval-log-transfer (op doc)
+  "Define %OPT-UPDATE-INTERVAL-OP, an INTERVALS transfer function for a bitwise
+LOGAND/LOGIOR/LOGXOR-family instruction.
 
-(defun %opt-update-interval-logior (inst intervals)
-  "Update INTERVALS for LOGIOR with non-negative known-bits bounds when provable."
-  (let* ((lhs (gethash (vm-lhs inst) intervals))
-         (rhs (gethash (vm-rhs inst) intervals))
-         (interval (opt-interval-logior lhs rhs)))
-    (if interval
-        (setf (gethash (vm-dst inst) intervals) interval)
-        (remhash (vm-dst inst) intervals))))
+Data: the bitwise OP name and its docstring. Logic: look up both operand
+intervals and dispatch to OPT-INTERVAL-OP, which -- unlike
+%OPT-UPDATE-INTERVAL-BINOP -- may still return a bounded interval when one
+operand is unknown (e.g. a known-non-negative mask bounds LOGAND's result even
+when the other operand's range is unknown), so this family cannot share
+%OPT-UPDATE-INTERVAL-BINOP's conservative kill-on-any-unknown-operand rule."
+  (let* ((fn-name (intern (format nil "%OPT-UPDATE-INTERVAL-~A" op)))
+         (interval-fn (intern (format nil "OPT-INTERVAL-~A" op))))
+    `(defun ,fn-name (inst intervals)
+       ,doc
+       (let* ((lhs (gethash (vm-lhs inst) intervals))
+              (rhs (gethash (vm-rhs inst) intervals))
+              (interval (,interval-fn lhs rhs)))
+         (if interval
+             (setf (gethash (vm-dst inst) intervals) interval)
+             (remhash (vm-dst inst) intervals))))))
 
-(defun %opt-update-interval-logxor (inst intervals)
-  "Update INTERVALS for LOGXOR with non-negative known-bits bounds when provable."
-  (let* ((lhs (gethash (vm-lhs inst) intervals))
-         (rhs (gethash (vm-rhs inst) intervals))
-         (interval (opt-interval-logxor lhs rhs)))
-    (if interval
-        (setf (gethash (vm-dst inst) intervals) interval)
-        (remhash (vm-dst inst) intervals))))
+(define-interval-log-transfer logand
+  "Update INTERVALS for LOGAND, preserving non-negative mask bounds when known.")
+(define-interval-log-transfer logior
+  "Update INTERVALS for LOGIOR with non-negative known-bits bounds when provable.")
+(define-interval-log-transfer logxor
+  "Update INTERVALS for LOGXOR with non-negative known-bits bounds when provable.")
 
 (defun %opt-update-interval-ash (inst intervals)
   "Update INTERVALS for ASH when both source and shift ranges are known.

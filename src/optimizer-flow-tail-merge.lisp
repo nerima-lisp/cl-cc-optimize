@@ -36,12 +36,6 @@ Handles both vm-jump (unconditional) and vm-jump-zero (conditional)."
   (list (mapcar #'instruction->sexp (bb-instructions block))
         (%tail-merge-succ-labels block)))
 
-(defun %tail-merge-replace-successor (block old new)
-  "Replace the OLD successor of BLOCK with NEW."
-  (setf (bb-successors block)
-        (mapcar (lambda (succ) (if (eq succ old) new succ))
-                (bb-successors block))))
-
 (defun %tail-merge-merge-duplicates (cfg)
   "Merge duplicate labeled blocks in CFG in-place, rewiring predecessors."
   (let ((canonical-by-sig (make-hash-table :test #'equal)))
@@ -56,7 +50,7 @@ Handles both vm-jump (unconditional) and vm-jump-zero (conditional)."
                   (let ((canon-label (and (bb-label canon) (vm-name (bb-label canon)))))
                     (when (and canon-label label)
                       (dolist (pred (copy-list (bb-predecessors block)))
-                        (%tail-merge-replace-successor pred block canon)
+                        (%cfg-replace-successor pred block canon)
                         (%opt-rewrite-block-terminator pred label canon-label)
                         (pushnew pred (bb-predecessors canon) :test #'eq))
                       (setf (bb-predecessors block) nil)))))))))))
