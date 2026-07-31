@@ -16,8 +16,10 @@ $ nix flake check --print-build-logs
 ```
 
 Runs every `checks.*` output: the cl-weave test suite (`checks.default`),
-Nix formatting (`checks.formatting`), and this documentation site
-(`checks.docs`). `checks.default` runs under a 600-second `timeout` so a hung
+Nix formatting (`checks.formatting`), this documentation site
+(`checks.docs`), and a structural parse-validity gate over every tracked
+Lisp source file (`checks.paredit-lint`, via `nerima-lisp/paredit-cli`'s
+`mkLintCheck`). `checks.default` runs under a 600-second `timeout` so a hung
 test fails the build instead of hanging CI.
 
 To run only the test suite, without formatting or docs:
