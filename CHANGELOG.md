@@ -21,6 +21,44 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-31
+
+### Added
+
+- `it-fuzz` crash-safety check for `optimize-instructions` on short
+  generated instruction streams, using `cl-weave`'s own generators
+  (`gen-integer`/`gen-list`/`gen-map`/`gen-tuple`) — deliberately narrower
+  than the pre-existing, still-blocked FR-753 semantic-equivalence fuzz
+  test, and confirmed not to collide with that test's known unresolved bug.
+- Test coverage: 7 more behavioral tests (LICM hoisting, PRE compensation,
+  GVN commutative merge, idiom recognition, if-conversion, dead-label
+  removal, tail-merge), bringing the suite to 138 tests (137 passing, 1
+  pre-existing tracked todo), up from 130.
+
+### Changed
+
+- Consolidated 4 more duplicated patterns found by a deeper
+  `paredit inspect duplicates`/`similarity` pass: a byte-identical
+  known-callee-label-tracking `typecase` shared across 3 files (now
+  `%opt-track-known-callee-label` in `optimizer-macros.lisp`), a
+  `define-interval-log-transfer` macro for the logand/logior/logxor
+  interval-update trio, a `define-cfg-list-replace` macro for the
+  successor/predecessor/terminator replacement trio, and one deleted
+  function that was identical to an existing shared helper.
+- Investigated `cl-weave`'s `:timeout-ms`/`:retry`/`it-concurrent`/CPS
+  continuation-helper features against this codebase; none had a genuine
+  fit without forcing a mismatch (documented in the corresponding commit),
+  so none were force-applied.
+
+### Fixed
+
+- Two backward-compat/rename leftovers: `optimizer-trans-validate.lisp`
+  bindings still named `before-legacy`/`after-legacy` after the prior
+  round's rename, and a dead duplicate declaration of
+  `*opt-enable-sealed-gf-devirtualization*` in
+  `optimizer-pipeline-policy.lisp` with no forward-reference reason to
+  exist (unlike `*sroa-enabled*`'s documented one).
+
 ## [0.3.0] - 2026-07-31
 
 ### Added
