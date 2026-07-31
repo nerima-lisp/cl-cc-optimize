@@ -35,6 +35,7 @@
 
 (describe-sequential "cl-cc-optimize boundary with cl-cc/vm"
   (it "names no cl-cc/vm internal symbol"
+    (:timeout-ms 2000)
     ;; §5-2 of cl-cc's split design. This started at 75 references and is the
     ;; gate the extraction had to pass; a new one would reintroduce a coupling
     ;; that only shows up as a broken build in this repository.
@@ -55,6 +56,7 @@
 
 (describe-sequential "optimization is behaviour-preserving on a trivial program"
   (it "folds a constant binop and keeps the result register"
+    (:timeout-ms 500)
     ;; The narrowest end-to-end check this repository can make on its own: the
     ;; VM is a dependency, so a program can be built and optimized here, but
     ;; running one belongs to cl-cc's suite.
@@ -101,6 +103,7 @@
   "translation validation symbolic executor"
   (it
     "rejects a changed unsupported opcode"
+    (:timeout-ms 200)
     (expect
       (cl-cc/optimize::translation-validation-equivalent-p
         (list (cl-cc/vm:make-vm-signal-error :error-reg :r0))
@@ -109,6 +112,7 @@
       nil))
   (it
     "rejects identical unsupported opcodes"
+    (:timeout-ms 200)
     (let ((instructions (list (cl-cc/vm:make-vm-signal-error :error-reg :r0))))
       (expect
         (cl-cc/optimize::translation-validation-equivalent-p instructions instructions)
@@ -116,6 +120,7 @@
         nil)))
   (it
     "rejects streams beyond the symbolic step bound"
+    (:timeout-ms 1000)
     (let ((instructions
           (loop repeat 4097
                 collect (cl-cc/vm:make-vm-label :name "step"))))
@@ -125,6 +130,7 @@
         nil)))
   (it
     "compares halt values"
+    (:timeout-ms 200)
     (expect
       (cl-cc/optimize::translation-validation-equivalent-p
         (list (cl-cc/vm:make-vm-halt :reg :r0))
@@ -133,6 +139,7 @@
       nil))
   (it
     "compares print side effects"
+    (:timeout-ms 200)
     (expect
       (cl-cc/optimize::translation-validation-equivalent-p
         (list (cl-cc/vm:make-vm-print :reg :r0) (cl-cc/vm:make-vm-halt :reg :r0))
@@ -413,6 +420,7 @@
                rule (quote (:add :r0 :r1 :r2)) (quote (:halt :r0)))
               :to-be-truthy)))
   (it "processes a stdlib-sized stream without changing unmatched instructions"
+    (:timeout-ms 2000)
     (let* ((pair (list (quote (:add :r0 :r1 :r2))
                        (quote (:const :r3 20))))
            (instructions (loop repeat 800 append (copy-list pair)))
@@ -443,6 +451,7 @@
         (expect (gethash class-id forward-representatives) :to-be :r2)
         (expect (gethash class-id reverse-representatives) :to-be :r2))))
   (it "is idempotent for registers joined by an algebraic identity"
+    (:timeout-ms 1000)
     (let* ((instructions
              (list (cl-cc/vm:make-vm-const :dst :zero :value 0)
                    (cl-cc/vm:make-vm-add :dst :r2 :lhs :r1 :rhs :zero)))

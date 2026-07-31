@@ -91,8 +91,7 @@ refer to a definition that originally appeared later in the instruction stream."
 (defun optimize-with-egraph (instructions &key
                                             (rules (egraph-builtin-rules))
                                             (saturation-limit 30)
-                                            (saturation-fuel 10000)
-                                            (cost-fn (function egraph-default-cost)))
+                                            (saturation-fuel 10000))
   "Optimize a list of VM INSTRUCTIONS using e-graph equality saturation.
    Returns an optimized instruction list.
 
@@ -103,7 +102,6 @@ refer to a definition that originally appeared later in the instruction stream."
 
    This pass is wired into the main optimizer pipeline via :egraph and also
    participates in the broader :prolog-rewrite stage."
-  (declare (ignore cost-fn))
   (when (null instructions) (return-from optimize-with-egraph instructions))
   (let* ((eg (make-e-graph))
          (reg-map (egraph-add-instructions eg instructions)))
