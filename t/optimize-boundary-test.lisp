@@ -643,6 +643,182 @@
       (expect (typep (second optimized) 'cl-cc/vm:vm-rotate) :to-be-truthy)
       (expect (cl-cc/vm:vm-lhs (second optimized)) :to-be :src))))
 
+(describe-sequential
+  "loop-invariant code motion hoists an invariant computation to a preheader"
+  (it
+    "moves a loop-invariant add above the loop header, leaving the
+     loop-variant redefinition inside the loop"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :a :value 10)
+                   (cl-cc/vm:make-vm-const :dst :b :value 20)
+                   (cl-cc/vm:make-vm-const :dst :cond :value 1)
+                   (cl-cc/vm:make-vm-jump :label :header)
+                   (cl-cc/vm:make-vm-label :name :header)
+                   (cl-cc/vm:make-vm-jump-zero :reg :cond :label :exit)
+                   (cl-cc/vm:make-vm-add :dst :inv :lhs :a :rhs :b)
+                   (cl-cc/vm:make-vm-const :dst :cond :value 0)
+                   (cl-cc/vm:make-vm-jump :label :header)
+                   (cl-cc/vm:make-vm-label :name :exit)
+                   (cl-cc/vm:make-vm-ret :reg :inv)))
+           (optimized (cl-cc/optimize::opt-pass-licm instructions))
+           (header-pos (position-if (lambda (i)
+                                       (and (typep i 'cl-cc/vm:vm-label)
+                                            (eq (cl-cc/vm:vm-name i) :header)))
+                                     optimized))
+           (add-pos (position-if (lambda (i) (typep i 'cl-cc/vm:vm-add)) optimized)))
+      (expect add-pos :to-be-truthy)
+      (expect header-pos :to-be-truthy)
+      (expect (< add-pos header-pos) :to-be-truthy))))
+
+(describe-sequential
+  "partial redundancy elimination makes a partially available expression
+   available on every path into its use"
+  (it
+    "inserts a compensating definition on the branch that previously lacked it"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :a :value 3)
+                   (cl-cc/vm:make-vm-const :dst :b :value 4)
+                   (cl-cc/vm:make-vm-const :dst :cond :value 1)
+                   (cl-cc/vm:make-vm-jump-zero :reg :cond :label :else)
+                   (cl-cc/vm:make-vm-label :name :then)
+                   (cl-cc/vm:make-vm-add :dst :x :lhs :a :rhs :b)
+                   (cl-cc/vm:make-vm-jump :label :join)
+                   (cl-cc/vm:make-vm-label :name :else)
+                   (cl-cc/vm:make-vm-jump :label :join)
+                   (cl-cc/vm:make-vm-label :name :join)
+                   (cl-cc/vm:make-vm-add :dst :y :lhs :a :rhs :b)
+                   (cl-cc/vm:make-vm-ret :reg :y)))
+           (optimized (cl-cc/optimize::opt-pass-pre instructions))
+           (else-pos (position-if (lambda (i)
+                                     (and (typep i 'cl-cc/vm:vm-label)
+                                          (eq (cl-cc/vm:vm-name i) :else)))
+                                   optimized))
+           (join-pos (position-if (lambda (i)
+                                     (and (typep i 'cl-cc/vm:vm-label)
+                                          (eq (cl-cc/vm:vm-name i) :join)))
+                                   optimized)))
+      (expect else-pos :to-be-truthy)
+      (expect join-pos :to-be-truthy)
+      (expect (some (function cl-cc/optimize::opt-inst-dst)
+                     (subseq optimized (1+ else-pos) join-pos))
+              :to-be-truthy))))
+
+(describe-sequential
+  "global value numbering merges commutative-equivalent expressions"
+  (it
+    "rewrites the second add of swapped-operand equivalents into a move of
+     the first"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :a :value 3)
+                   (cl-cc/vm:make-vm-const :dst :b :value 4)
+                   (cl-cc/vm:make-vm-add :dst :x :lhs :a :rhs :b)
+                   (cl-cc/vm:make-vm-add :dst :y :lhs :b :rhs :a)
+                   (cl-cc/vm:make-vm-ret :reg :y)))
+           (optimized (cl-cc/optimize::opt-pass-gvn instructions))
+           (y-inst (find-if (lambda (i) (eq (cl-cc/optimize::opt-inst-dst i) :y))
+                             optimized)))
+      (expect y-inst :to-be-truthy)
+      (expect (typep y-inst 'cl-cc/vm:vm-move) :to-be-truthy)
+      (expect (cl-cc/vm:vm-src y-inst) :to-be :x))))
+
+(describe-sequential
+  "loop idiom recognition rewrites a Kernighan popcount loop"
+  (it
+    "collapses the canonical bit-counting loop into a single vm-logcount"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :count :value 0)
+                   (cl-cc/vm:make-vm-label :name :header)
+                   (cl-cc/vm:make-vm-jump-zero :reg :n :label :exit)
+                   (cl-cc/vm:make-vm-const :dst :one :value 1)
+                   (cl-cc/vm:make-vm-sub :dst :n1 :lhs :n :rhs :one)
+                   (cl-cc/vm:make-vm-logand :dst :n2 :lhs :n :rhs :n1)
+                   (cl-cc/vm:make-vm-add :dst :count :lhs :count :rhs :one)
+                   (cl-cc/vm:make-vm-move :dst :n :src :n2)
+                   (cl-cc/vm:make-vm-jump :label :header)
+                   (cl-cc/vm:make-vm-label :name :exit)
+                   (cl-cc/vm:make-vm-ret :reg :count)))
+           (optimized (cl-cc/optimize::opt-pass-idiom-recognition instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (typep (first optimized) 'cl-cc/vm:vm-logcount) :to-be-truthy)
+      (expect (cl-cc/vm:vm-dst (first optimized)) :to-be :count)
+      (expect (cl-cc/vm:vm-src (first optimized)) :to-be :n))))
+
+(describe-sequential
+  "if-conversion rewrites a simple move-diamond into a branchless select"
+  (it
+    "replaces the conditional-branch diamond with one vm-select"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :then-val :value 10)
+                   (cl-cc/vm:make-vm-const :dst :else-val :value 20)
+                   (cl-cc/vm:make-vm-const :dst :cond :value 1)
+                   (cl-cc/vm:make-vm-jump-zero :reg :cond :label :else)
+                   (cl-cc/vm:make-vm-move :dst :result :src :then-val)
+                   (cl-cc/vm:make-vm-jump :label :join)
+                   (cl-cc/vm:make-vm-label :name :else)
+                   (cl-cc/vm:make-vm-move :dst :result :src :else-val)
+                   (cl-cc/vm:make-vm-label :name :join)
+                   (cl-cc/vm:make-vm-ret :reg :result)))
+           (optimized (cl-cc/optimize::opt-pass-if-conversion instructions))
+           (select (find-if (lambda (i) (typep i 'cl-cc/vm:vm-select)) optimized)))
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-jump-zero)) optimized) :to-be-truthy)
+      (expect select :to-be-truthy)
+      (expect (cl-cc/vm:vm-dst select) :to-be :result)
+      (expect (cl-cc/vm:vm-select-cond-reg select) :to-be :cond)
+      (expect (cl-cc/vm:vm-select-then-reg select) :to-be :then-val)
+      (expect (cl-cc/vm:vm-select-else-reg select) :to-be :else-val))))
+
+(describe-sequential
+  "dead-label elimination drops a label with no referencing jump"
+  (it
+    "keeps a jump-referenced label and removes the unreferenced one"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-jump :label :target)
+                   (cl-cc/vm:make-vm-label :name :target)
+                   (cl-cc/vm:make-vm-label :name :orphan)
+                   (cl-cc/vm:make-vm-ret :reg :x)))
+           (optimized (cl-cc/optimize::opt-pass-dead-labels instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (some (lambda (i)
+                       (and (typep i 'cl-cc/vm:vm-label)
+                            (eq (cl-cc/vm:vm-name i) :target)))
+                     optimized)
+              :to-be-truthy)
+      (expect (notany (lambda (i)
+                         (and (typep i 'cl-cc/vm:vm-label)
+                              (eq (cl-cc/vm:vm-name i) :orphan)))
+                       optimized)
+              :to-be-truthy))))
+
+(describe-sequential
+  "tail merge coalesces two structurally identical successor blocks"
+  (it
+    "redirects both predecessors to one canonical block and drops the duplicate"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :cond :value 1)
+                   (cl-cc/vm:make-vm-jump-zero :reg :cond :label :p2)
+                   (cl-cc/vm:make-vm-label :name :p1)
+                   (cl-cc/vm:make-vm-jump :label :a)
+                   (cl-cc/vm:make-vm-label :name :p2)
+                   (cl-cc/vm:make-vm-jump :label :b)
+                   (cl-cc/vm:make-vm-label :name :a)
+                   (cl-cc/vm:make-vm-const :dst :result :value 42)
+                   (cl-cc/vm:make-vm-ret :reg :result)
+                   (cl-cc/vm:make-vm-label :name :b)
+                   (cl-cc/vm:make-vm-const :dst :result :value 42)
+                   (cl-cc/vm:make-vm-ret :reg :result)))
+           (optimized (cl-cc/optimize::opt-pass-tail-merge instructions)))
+      (expect (notany (lambda (i)
+                         (and (typep i 'cl-cc/vm:vm-label)
+                              (eq (cl-cc/vm:vm-name i) :b)))
+                       optimized)
+              :to-be-truthy)
+      (expect (notany (lambda (i)
+                         (and (typep i 'cl-cc/vm:vm-jump)
+                              (eq (cl-cc/vm:vm-label-name i) :b)))
+                       optimized)
+              :to-be-truthy)
+      (expect (count-if (lambda (i) (typep i 'cl-cc/vm:vm-ret)) optimized) :to-equal 1))))
+
 (describe-sequential "value range propagation soundness"
   (it-property
       "the propagated entry range for a constant forwarded across an edge contains the constant"
