@@ -21,6 +21,41 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-01
+
+### Changed
+
+- Readability refactoring rounds 3-11 (9 commits, 112 functions total
+  across the series): systematic depth-first pass over
+  `paredit inspect complexity --output json`, sorted by `max_depth`,
+  extracting deeply-nested `defun` bodies into named top-level helpers.
+  Pure structural refactor, no behavior change -- every function
+  independently verified via `nix build .#checks.aarch64-darwin.default`
+  after each edit.
+  - Depth-15, depth-14, and depth-13 complexity tiers now fully cleared
+    codebase-wide (round 11 corrected an inaccurate round-10 claim that
+    these tiers were already clear: 12 functions had been missed by
+    every prior survey).
+  - Depth-12 tier cut from 30 to 17 remaining functions.
+  - Established technique: prefer top-level `defun` extraction over
+    `labels`/`flet` when the goal is depth reduction (local-function
+    nesting adds a depth level itself); thread mutated accumulators
+    through return values (`(values ...)`) or pass small closures as
+    explicit function parameters, rather than closing over outer
+    mutable state by reference, to avoid silently dropping updates
+    across extracted loop bodies.
+  - Two real correctness hazards caught and avoided during extraction
+    (not shipped as bugs): `%ssa-rename-block`'s `pushed-regs` pop
+    order (round 10) and `opt-build-call-graph`'s `callees` accumulator
+    scope (round 6).
+  - Convergence not yet reached: depth-11 (54 functions) still shows
+    the same nesting-pyramid shapes fixed at every higher tier; no
+    natural floor confirmed above depth-9. Below depth-9, remaining
+    nesting looks like ordinary control flow for this codebase's style,
+    not a readability problem.
+- `paredit-lint` CI gate now covers 17 additional files touched by this
+  round; `paredit inspect check` clean across all 165 `src/*.lisp` files.
+
 ## [0.4.3] - 2026-07-31
 
 ### Fixed

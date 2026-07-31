@@ -6,7 +6,7 @@
   :homepage "https://github.com/nerima-lisp/cl-cc-optimize"
   :bug-tracker "https://github.com/nerima-lisp/cl-cc-optimize/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-cc-optimize.git")
-  :version "0.4.3"
+  :version "0.5.0"
   :depends-on (:cl-cc-vm :cl-prolog :cl-cc-type :cl-cc-ast :cl-parser-kit)
   :in-order-to ((test-op (test-op "cl-cc-optimize/test")))
   :pathname "src"
