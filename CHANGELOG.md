@@ -21,6 +21,37 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-31
+
+### Added
+
+- `paredit-lint` CI gate (`flake.nix`): fails `nix flake check` on any
+  structural (unbalanced-parenthesis) parse error across the tree, via
+  `nerima-lisp/paredit-cli`'s `mkLintCheck`.
+- 9 more real behavioral tests (reassociate, jump-threading,
+  batch-concatenate, global DCE, cons-slot-forward, dominated-type-check-
+  elim, fill/bswap-recognition, safepoint-polling), bringing the suite to
+  147 tests (146 passing, 1 pre-existing tracked todo).
+- `vm-program` test DSL macro and 4 named assertion-predicate helpers in
+  `t/optimize-boundary-test.lisp`, replacing 36 hand-written instruction-
+  list constructions and 28 repeated notany/some/find-if/count-if-over-
+  typep assertions -- a pure test-abstraction refactor, no behavior change.
+
+### Fixed
+
+- `optimize-with-egraph`'s `:cost-fn` parameter, dead on arrival since its
+  introducing commit, removed.
+
+### Investigated, not applied
+
+- A `cl-weave` `--coverage-min-expression`/`--coverage-min-branch` CI gate
+  (the pattern `cl-dataflow`/`cl-weave`'s own flakes use): confirmed
+  empirically that `run-all`'s `:coverage` keyword arrives too late once
+  `cl-cc-optimize` is already loaded via the test system's `:depends-on`
+  chain, producing 0/0 stats. Doing this properly needs either the
+  packaged `cl-weave` CLI (reverting `cl-weave`'s `flake = false`) or a
+  `run-tests.lisp` load-order restructure -- left as a follow-up.
+
 ## [0.4.1] - 2026-07-31
 
 ### Fixed
