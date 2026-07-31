@@ -87,6 +87,13 @@
       flake = false;
     };
 
+    # `flake = true`: checks.paredit-lint below calls its `lib.<system>.mkLintCheck`,
+    # a flake output, not just an ASDF source tree.
+    paredit-cli = {
+      url = "github:nerima-lisp/paredit-cli/v1.3.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -112,6 +119,7 @@
       cl-process-kit,
       cl-json-kit,
       cl-boundary-kit,
+      paredit-cli,
       treefmt-nix,
       ...
     }:
@@ -243,6 +251,16 @@
           # a page missing from the nav fails the build here rather than
           # surfacing later as a failed docs.yml deploy.
           docs = self.packages.${system}.docs;
+
+          # Fails `nix flake check` when any tracked Lisp source has a
+          # structural (unbalanced-parenthesis) parse error -- the same
+          # invariant every `paredit inspect check` call in this project's
+          # own refactoring workflow already enforces per file, now enforced
+          # once over the whole tree as a CI gate.
+          paredit-lint = paredit-cli.lib.${system}.mkLintCheck {
+            src = self;
+            name = "cl-cc-optimize-paredit-lint";
+          };
         }
       );
 
