@@ -453,13 +453,17 @@ inspect its slots\" shape used across the optimizer-pass tests below."
        (a2 (gen-integer :min -500 :max 500))
        (b1 (gen-integer :min -500 :max 500))
        (b2 (gen-integer :min -500 :max 500)))
-    (let* ((lo1 (min a1 a2)) (hi1 (max a1 a2))
-           (lo2 (min b1 b2)) (hi2 (max b1 b2))
-           (result (cl-cc/optimize::opt-interval-add
-                    (cl-cc/optimize::opt-make-interval lo1 hi1)
-                    (cl-cc/optimize::opt-make-interval lo2 hi2))))
-      (and (<= (cl-cc/optimize::opt-interval-lo result) (+ lo1 lo2))
-           (>= (cl-cc/optimize::opt-interval-hi result) (+ hi1 hi2))))))
+    ;; it-property has no options-plist slot in this pinned cl-weave (v1.1.0)
+    ;; to attach :timeout-ms to (confirmed by reading its macro definition),
+    ;; so the whole-run timeout guard is applied directly in the body instead.
+    (sb-ext:with-timeout 5
+      (let* ((lo1 (min a1 a2)) (hi1 (max a1 a2))
+             (lo2 (min b1 b2)) (hi2 (max b1 b2))
+             (result (cl-cc/optimize::opt-interval-add
+                      (cl-cc/optimize::opt-make-interval lo1 hi1)
+                      (cl-cc/optimize::opt-make-interval lo2 hi2))))
+        (and (<= (cl-cc/optimize::opt-interval-lo result) (+ lo1 lo2))
+             (>= (cl-cc/optimize::opt-interval-hi result) (+ hi1 hi2)))))))
 
 (describe-sequential "random-program compiler fuzzing (FR-753)"
   ;; it-todo [#FR-753-fuzz-1]: with a genuinely fixed seed (see the
@@ -995,18 +999,21 @@ inspect its slots\" shape used across the optimizer-pass tests below."
   (it-property
       "the propagated entry range for a constant forwarded across an edge contains the constant"
       ((n (gen-integer :min -1000 :max 1000)))
-    (let* ((instructions
-             (vm-program (const :r0 n)
-                         (jump "L")
-                         (label "L")
-                         (halt :r0)))
-           (cfg (cl-cc/optimize::cfg-build instructions)))
-      (cl-cc/optimize::opt-compute-path-sensitive-ranges cfg)
-      (let* ((succ (first (cl-cc/optimize::bb-successors (cl-cc/optimize::cfg-entry cfg))))
-             (range (cl-cc/optimize::opt-block-reg-range succ :r0)))
-        (and range
-             (<= (cl-cc/optimize::opt-interval-lo range) n)
-             (>= (cl-cc/optimize::opt-interval-hi range) n))))))
+    ;; See the interval-arithmetic soundness test above for why the timeout
+    ;; guard is inline rather than an it-property option.
+    (sb-ext:with-timeout 5
+      (let* ((instructions
+               (vm-program (const :r0 n)
+                           (jump "L")
+                           (label "L")
+                           (halt :r0)))
+             (cfg (cl-cc/optimize::cfg-build instructions)))
+        (cl-cc/optimize::opt-compute-path-sensitive-ranges cfg)
+        (let* ((succ (first (cl-cc/optimize::bb-successors (cl-cc/optimize::cfg-entry cfg))))
+               (range (cl-cc/optimize::opt-block-reg-range succ :r0)))
+          (and range
+               (<= (cl-cc/optimize::opt-interval-lo range) n)
+               (>= (cl-cc/optimize::opt-interval-hi range) n)))))))
 )
 (describe-sequential
   "jump threading collapses a chain of unconditional jumps"
