@@ -96,7 +96,24 @@
            (result (cl-cc/optimize::opt-pass-reassociate instructions)))
       (expect result :to-be-truthy)
       (expect result :to-equal instructions)
-      (expect (every #'eq result instructions) :to-be-truthy))))
+      (expect (every #'eq result instructions) :to-be-truthy)))
+  (it
+    "reassociates a chained add so the earlier constant moves to the later add"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :k :value 2)
+                   (cl-cc/vm:make-vm-add :dst :t1 :lhs :a :rhs :k)
+                   (cl-cc/vm:make-vm-add :dst :t2 :lhs :t1 :rhs :b)
+                   (cl-cc/vm:make-vm-halt :reg :t2)))
+           (optimized (cl-cc/optimize::opt-pass-reassociate instructions))
+           (first-add (nth 1 optimized))
+           (second-add (nth 2 optimized)))
+      (expect (length optimized) :to-equal 4)
+      (expect (typep first-add 'cl-cc/vm:vm-add) :to-be-truthy)
+      (expect (cl-cc/vm:vm-lhs first-add) :to-be :b)
+      (expect (cl-cc/vm:vm-rhs first-add) :to-be :k)
+      (expect (typep second-add 'cl-cc/vm:vm-add) :to-be-truthy)
+      (expect (cl-cc/vm:vm-lhs second-add) :to-be :a)
+      (expect (cl-cc/vm:vm-rhs second-add) :to-be :t1))))
 
 (progn
 (describe-sequential
@@ -891,3 +908,176 @@
              (<= (cl-cc/optimize::opt-interval-lo range) n)
              (>= (cl-cc/optimize::opt-interval-hi range) n))))))
 )
+(describe-sequential
+  "jump threading collapses a chain of unconditional jumps"
+  (it
+    "rewrites a jump-to-jump chain to target the chain's final label and drops the
+     now-unreachable intermediate label"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-jump :label "A")
+                   (cl-cc/vm:make-vm-label :name "A")
+                   (cl-cc/vm:make-vm-jump :label "B")
+                   (cl-cc/vm:make-vm-label :name "B")
+                   (cl-cc/vm:make-vm-halt :reg :r0)))
+           (optimized (cl-cc/optimize::opt-pass-jump instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (count-if (lambda (i) (typep i 'cl-cc/vm:vm-jump)) optimized) :to-equal 1)
+      (expect (cl-cc/vm:vm-label-name (find-if (lambda (i) (typep i 'cl-cc/vm:vm-jump)) optimized))
+              :to-equal
+              "B")
+      (expect (notany (lambda (i)
+                         (and (typep i 'cl-cc/vm:vm-label)
+                              (equal (cl-cc/vm:vm-name i) "A")))
+                       optimized)
+              :to-be-truthy))))
+(describe-sequential
+  "batch concatenation packs a linear vm-concatenate chain"
+  (it
+    "merges two chained concatenations into one instruction carrying every part"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-concatenate :dst :t1 :str1 :a :str2 :b)
+                   (cl-cc/vm:make-vm-concatenate :dst :t2 :str1 :t1 :str2 :c)
+                   (cl-cc/vm:make-vm-ret :reg :t2)))
+           (optimized (cl-cc/optimize::opt-pass-batch-concatenate instructions))
+           (packed (first optimized)))
+      (expect (length optimized) :to-equal 2)
+      (expect (typep packed 'cl-cc/vm:vm-concatenate) :to-be-truthy)
+      (expect (cl-cc/vm:vm-str1 packed) :to-be :a)
+      (expect (cl-cc/vm:vm-str2 packed) :to-be :c)
+      (expect (cl-cc/vm:vm-parts packed) :to-equal (list :a :b :c)))))
+(describe-sequential
+  "global dead-code elimination drops unreachable function definitions"
+  (it
+    "removes an unused function's closure, label, and body while keeping the called one"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-closure :dst :fn-used :label "USED" :params '(:p))
+                   (cl-cc/vm:make-vm-closure :dst :fn-unused :label "UNUSED" :params '(:p))
+                   (cl-cc/vm:make-vm-call :dst :result :func :fn-used :args '(:x))
+                   (cl-cc/vm:make-vm-halt :reg :result)
+                   (cl-cc/vm:make-vm-label :name "USED")
+                   (cl-cc/vm:make-vm-const :dst :out :value 1)
+                   (cl-cc/vm:make-vm-ret :reg :out)
+                   (cl-cc/vm:make-vm-label :name "UNUSED")
+                   (cl-cc/vm:make-vm-const :dst :out2 :value 2)
+                   (cl-cc/vm:make-vm-ret :reg :out2)))
+           (optimized (cl-cc/optimize::opt-pass-global-dce instructions)))
+      (expect (length optimized) :to-equal 6)
+      (expect (notany (lambda (i)
+                         (and (typep i 'cl-cc/vm:vm-label)
+                              (equal (cl-cc/vm:vm-name i) "UNUSED")))
+                       optimized)
+              :to-be-truthy)
+      (expect (notany (lambda (i)
+                         (and (typep i 'cl-cc/vm:vm-closure)
+                              (equal (cl-cc/vm:vm-label-name i) "UNUSED")))
+                       optimized)
+              :to-be-truthy)
+      (expect (some (lambda (i)
+                       (and (typep i 'cl-cc/vm:vm-label)
+                            (equal (cl-cc/vm:vm-name i) "USED")))
+                     optimized)
+              :to-be-truthy))))
+(describe-sequential
+  "cons-slot forwarding turns a fresh car/cdr read into a move"
+  (it
+    "replaces a car of a just-built cons with a move from the original car source"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-cons :dst :cell :car-src :ca :cdr-src :cd)
+                   (cl-cc/vm:make-vm-car :dst :got :src :cell)
+                   (cl-cc/vm:make-vm-ret :reg :got)))
+           (optimized (cl-cc/optimize::opt-pass-cons-slot-forward instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-car)) optimized) :to-be-truthy)
+      (let ((move (second optimized)))
+        (expect (typep move 'cl-cc/vm:vm-move) :to-be-truthy)
+        (expect (cl-cc/vm:vm-move-dst move) :to-be :got)
+        (expect (cl-cc/vm:vm-move-src move) :to-be :ca)))))
+(describe-sequential
+  "dominated type-check elimination reuses an earlier identical predicate result"
+  (it
+    "rewrites a second null-p check on the same source into a move from the first"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-null-p :dst :p1 :src :x)
+                   (cl-cc/vm:make-vm-null-p :dst :p2 :src :x)
+                   (cl-cc/vm:make-vm-ret :reg :p2)))
+           (optimized (cl-cc/optimize::opt-pass-dominated-type-check-elim instructions)))
+      (expect (length optimized) :to-equal 3)
+      (expect (count-if (lambda (i) (typep i 'cl-cc/vm:vm-null-p)) optimized) :to-equal 1)
+      (let ((move (second optimized)))
+        (expect (typep move 'cl-cc/vm:vm-move) :to-be-truthy)
+        (expect (cl-cc/vm:vm-move-dst move) :to-be :p2)
+        (expect (cl-cc/vm:vm-move-src move) :to-be :p1)))))
+(describe-sequential
+  "fill loop recognition collapses a canonical zero-based array fill loop"
+  (it
+    "replaces the length/init/guard/store/increment loop with a single vm-fill"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-array-length :dst :len :src :arr)
+                   (cl-cc/vm:make-vm-const :dst :idx :value 0)
+                   (cl-cc/vm:make-vm-label :name "header")
+                   (cl-cc/vm:make-vm-lt :dst :cond :lhs :idx :rhs :len)
+                   (cl-cc/vm:make-vm-jump-zero :reg :cond :label "exit")
+                   (cl-cc/vm:make-vm-aset :array-reg :arr :index-reg :idx :val-reg :val)
+                   (cl-cc/vm:make-vm-const :dst :one :value 1)
+                   (cl-cc/vm:make-vm-add :dst :next :lhs :idx :rhs :one)
+                   (cl-cc/vm:make-vm-move :dst :idx :src :next)
+                   (cl-cc/vm:make-vm-jump :label "header")
+                   (cl-cc/vm:make-vm-label :name "exit")))
+           (optimized (cl-cc/optimize::opt-pass-fill-recognition instructions)))
+      (expect (length optimized) :to-equal 6)
+      (expect (typep (first optimized) 'cl-cc/vm:vm-array-length) :to-be-truthy)
+      (let ((fill (find-if (lambda (i) (typep i 'cl-cc/vm:vm-fill)) optimized)))
+        (expect fill :to-be-truthy)
+        (expect (cl-cc/vm:vm-array-reg fill) :to-be :arr)
+        (expect (cl-cc/vm:vm-val-reg fill) :to-be :val))
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-aset)) optimized) :to-be-truthy)
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-jump-zero)) optimized) :to-be-truthy)
+      (expect (notany (lambda (i) (typep i 'cl-cc/vm:vm-label)) optimized) :to-be-truthy))))
+(describe-sequential
+  "bswap recognition collapses the canonical 32-bit byte-reversal tree"
+  (it
+    "replaces the four masked-shift-logior sequence with a single vm-bswap"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-const :dst :m0 :value #xFF)
+                   (cl-cc/vm:make-vm-logand :dst :a0 :lhs :src :rhs :m0)
+                   (cl-cc/vm:make-vm-const :dst :sh0 :value 24)
+                   (cl-cc/vm:make-vm-ash :dst :b0 :lhs :a0 :rhs :sh0)
+                   (cl-cc/vm:make-vm-const :dst :m1 :value #xFF00)
+                   (cl-cc/vm:make-vm-logand :dst :a1 :lhs :src :rhs :m1)
+                   (cl-cc/vm:make-vm-const :dst :sh1 :value 8)
+                   (cl-cc/vm:make-vm-ash :dst :b1 :lhs :a1 :rhs :sh1)
+                   (cl-cc/vm:make-vm-const :dst :m2 :value #xFF0000)
+                   (cl-cc/vm:make-vm-logand :dst :a2 :lhs :src :rhs :m2)
+                   (cl-cc/vm:make-vm-const :dst :sh2 :value -8)
+                   (cl-cc/vm:make-vm-ash :dst :b2 :lhs :a2 :rhs :sh2)
+                   (cl-cc/vm:make-vm-const :dst :m3 :value #xFF000000)
+                   (cl-cc/vm:make-vm-logand :dst :a3 :lhs :src :rhs :m3)
+                   (cl-cc/vm:make-vm-const :dst :sh3 :value -24)
+                   (cl-cc/vm:make-vm-ash :dst :b3 :lhs :a3 :rhs :sh3)
+                   (cl-cc/vm:make-vm-logior :dst :o0 :lhs :b0 :rhs :b1)
+                   (cl-cc/vm:make-vm-logior :dst :o1 :lhs :b2 :rhs :b3)
+                   (cl-cc/vm:make-vm-logior :dst :o2 :lhs :o0 :rhs :o1)))
+           (optimized (cl-cc/optimize::opt-pass-bswap-recognition instructions)))
+      (expect (length optimized) :to-equal 1)
+      (expect (typep (first optimized) 'cl-cc/vm:vm-bswap) :to-be-truthy)
+      (expect (cl-cc/vm:vm-dst (first optimized)) :to-be :o2)
+      (expect (cl-cc/vm:vm-src (first optimized)) :to-be :src))))
+(describe-sequential
+  "safepoint polling inserts a poll at the function entry label"
+  (it
+    "adds a get-global flag check before the entry body and is idempotent on a second pass"
+    (let* ((instructions
+             (list (cl-cc/vm:make-vm-label :name "entry")
+                   (cl-cc/vm:make-vm-const :dst :r0 :value 1)
+                   (cl-cc/vm:make-vm-ret :reg :r0)))
+           (optimized (cl-cc/optimize::opt-pass-safepoint-polling instructions)))
+      (expect (> (length optimized) (length instructions)) :to-be-truthy)
+      (expect (some (lambda (i) (typep i 'cl-cc/vm:vm-get-global)) optimized) :to-be-truthy)
+      (expect (some (lambda (i)
+                       (and (typep i 'cl-cc/vm:vm-label)
+                            (let ((name (cl-cc/vm:vm-name i)))
+                              (and (stringp name)
+                                   (search "__clcc_safepoint_poll_site_" name)))))
+                     optimized)
+              :to-be-truthy)
+      (expect (cl-cc/optimize::opt-pass-safepoint-polling optimized) :to-be optimized))))
