@@ -21,6 +21,28 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-31
+
+### Changed
+
+- Readability: extracted named local helpers (pure behavior-preserving
+  refactor, no logic changes) in the 7 most complex functions flagged by
+  this session's code-quality audit —
+  `opt-copy-recognition-match-at` (replaced 12 positional `nth` lookups
+  with one `destructuring-bind`), `%opt-track-sealed-gf-facts`,
+  `%opt-compute-simple-inductions-with-constants`,
+  `opt-pass-specialize-known-args`, `opt-pass-strength-reduce`,
+  `opt-pass-inline` (split into its implicit two phases:
+  per-candidate-body inlining, then whole-instruction-list rewrite), and
+  `ssa-destroy`. `%opt-tree-substitute-constants`'s existing mutual-
+  recursion `labels` structure was reviewed and correctly left as-is — it
+  is already the right idiom for a tree walker.
+- Investigated a `cl-dataflow` (nerima-lisp org) integration for the
+  pass-pipeline trace/reporting machinery; found no genuine fit without
+  building the "weird adapter" the project's own conventions reject (its
+  event/context vocabulary has no analog to this codebase's Chrome-Trace-
+  JSON timing fields) — no dependency added, no changes made.
+
 ## [0.3.1] - 2026-07-31
 
 ### Added
