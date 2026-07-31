@@ -1,5 +1,5 @@
 {
-  description = "cl-cc AST node types and protocol (ast-children, ast-bound-names)";
+  description = "Optimizer subsystem: CFG, SSA, E-graph, peephole, pipeline";
 
   inputs = {
     # nixos-unstable, not nixpkgs-unstable: it advances only after the NixOS
@@ -13,19 +13,22 @@
     # variable; it is a normal flake input now, which is what lets ASDF find
     # cl-weave through CL_SOURCE_REGISTRY like any other dependency.
     cl-cc-ast = {
-      url = "github:nerima-lisp/cl-cc-ast";
+      url = "github:nerima-lisp/cl-cc-ast/v0.1.0";
       flake = false;
     };
     cl-cc-type = {
-      url = "github:nerima-lisp/cl-cc-type";
+      url = "github:nerima-lisp/cl-cc-type/v0.1.0";
       flake = false;
     };
+    # cl-cc-bootstrap has cut no release tags yet, so a commit SHA is the only
+    # immutable reference available; check-conformance.sh accepts a 40-char
+    # SHA as equivalent to a tag pin for exactly this reason.
     cl-cc-bootstrap = {
-      url = "github:nerima-lisp/cl-cc-bootstrap";
+      url = "github:nerima-lisp/cl-cc-bootstrap/b1ff1defbba014ba7b312c882ee8a5e7cabb5cc3";
       flake = false;
     };
     cl-cc-runtime = {
-      url = "github:nerima-lisp/cl-cc-runtime";
+      url = "github:nerima-lisp/cl-cc-runtime/v0.1.0";
       flake = false;
     };
     cl-cc-vm = {
@@ -33,32 +36,55 @@
       flake = false;
     };
     cl-prolog = {
-      url = "github:nerima-lisp/cl-prolog";
+      url = "github:nerima-lisp/cl-prolog/v1.1.0";
       flake = false;
     };
     cl-parser-kit = {
-      url = "github:nerima-lisp/cl-parser-kit";
+      url = "github:nerima-lisp/cl-parser-kit/v1.0.2";
+      flake = false;
+    };
+    # cl-log-kit 2.0.0 drops its zero-runtime-dependency guarantee in favor of
+    # these three nerima-lisp packages, used directly with no adapter layer:
+    # calendar/zone handling, locks/condition-variables/atomics, and
+    # filesystem operations. They are transitive here (cl-cc-runtime pulls in
+    # cl-log-kit) but ASDF resolves by name against CL_SOURCE_REGISTRY, so
+    # they must be declared as siblings even though nothing in this repository
+    # names them directly.
+    cl-date-kit = {
+      url = "github:nerima-lisp/cl-date-kit/v0.2.0";
+      flake = false;
+    };
+    cl-concurrent-kit = {
+      url = "github:nerima-lisp/cl-concurrent-kit/v0.1.0";
+      flake = false;
+    };
+    cl-host-kit = {
+      url = "github:nerima-lisp/cl-host-kit/v0.2.1";
       flake = false;
     };
     cl-log-kit = {
-      url = "github:nerima-lisp/cl-log-kit/v1.0.0";
+      url = "github:nerima-lisp/cl-log-kit/v2.0.0";
       flake = false;
     };
     cl-process-kit = {
-      url = "github:nerima-lisp/cl-process-kit/v1.0.1";
+      url = "github:nerima-lisp/cl-process-kit/v2.0.0";
       flake = false;
     };
     cl-json-kit = {
-      url = "github:nerima-lisp/cl-json-kit/v1.0.0";
+      url = "github:nerima-lisp/cl-json-kit/v1.0.1";
       flake = false;
     };
     cl-boundary-kit = {
-      url = "github:nerima-lisp/cl-boundary-kit";
+      url = "github:nerima-lisp/cl-boundary-kit/v1.0.0";
       flake = false;
     };
+    # Used only as a source tree (`${cl-weave}//` in sourceRegistry below),
+    # never through its flake outputs, so `flake = false` keeps this repo's
+    # lock file from also dragging in cl-weave's own input graph (cl-nix-forge,
+    # treefmt-nix, and their transitive nixpkgs).
     cl-weave = {
-      url = "github:nerima-lisp/cl-weave/v1.0.0";
-      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:nerima-lisp/cl-weave/v1.1.0";
+      flake = false;
     };
 
     treefmt-nix = {
@@ -79,6 +105,9 @@
       cl-cc-vm,
       cl-prolog,
       cl-parser-kit,
+      cl-date-kit,
+      cl-concurrent-kit,
+      cl-host-kit,
       cl-log-kit,
       cl-process-kit,
       cl-json-kit,
@@ -100,7 +129,7 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
       # CL_SOURCE_REGISTRY for the test, coverage and dev environments.
-      sourceRegistry = "${cl-weave}//:${cl-cc-ast}//:${cl-cc-type}//:${cl-cc-bootstrap}//:${cl-cc-runtime}//:${cl-cc-vm}//:${cl-prolog}//:${cl-parser-kit}//:${cl-log-kit}//:${cl-process-kit}//:${cl-json-kit}//:${cl-boundary-kit}//:${self}//";
+      sourceRegistry = "${cl-weave}//:${cl-cc-ast}//:${cl-cc-type}//:${cl-cc-bootstrap}//:${cl-cc-runtime}//:${cl-cc-vm}//:${cl-prolog}//:${cl-parser-kit}//:${cl-date-kit}//:${cl-concurrent-kit}//:${cl-host-kit}//:${cl-log-kit}//:${cl-process-kit}//:${cl-json-kit}//:${cl-boundary-kit}//:${self}//";
 
       # Single source of truth for the package version: the `:version` form in
       # cl-cc-optimize.asd. A release only ever edits the .asd file and every Nix
@@ -147,6 +176,34 @@
           # Build fully offline: Material for MkDocs bundles all of its assets,
           # so no network access is required inside the Nix sandbox. --strict
           # promotes broken links and unlisted pages to build failures.
+          #
+          # Invoked from the repository root with -f docs/mkdocs.yml (not `cd
+          # docs`), matching pymdownx.snippets' base_path of "." in
+          # docs/mkdocs.yml, which resolves CHANGELOG.md relative to the root.
+          docs = pkgs.stdenvNoCC.mkDerivation {
+            pname = "cl-cc-optimize-docs";
+            inherit version;
+            src = pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions [
+                ./docs/mkdocs.yml
+                ./docs/src
+                ./CHANGELOG.md
+              ];
+            };
+            nativeBuildInputs = [ pkgs.python3Packages.mkdocs-material ];
+            buildPhase = ''
+              runHook preBuild
+              mkdocs build --strict --config-file docs/mkdocs.yml --site-dir "$out"
+              runHook postBuild
+            '';
+            dontInstall = true;
+            meta = {
+              description = "Rendered MkDocs (Material) documentation for cl-cc-optimize";
+              homepage = "https://github.com/nerima-lisp/cl-cc-optimize";
+              license = pkgs.lib.licenses.mit;
+            };
+          };
         }
       );
 
@@ -182,6 +239,10 @@
           # turning the formatter into an enforced CI gate.
           formatting = treefmtEval.${system}.config.build.check self;
 
+          # The docs package builds with `mkdocs --strict`, so a broken link or
+          # a page missing from the nav fails the build here rather than
+          # surfacing later as a failed docs.yml deploy.
+          docs = self.packages.${system}.docs;
         }
       );
 

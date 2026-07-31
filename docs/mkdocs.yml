@@ -1,0 +1,89 @@
+site_name: cl-cc-optimize
+site_description: "Optimizer subsystem: CFG, SSA, E-graph, peephole, pipeline"
+site_url: https://nerima-lisp.github.io/cl-cc-optimize/
+repo_url: https://github.com/nerima-lisp/cl-cc-optimize
+repo_name: nerima-lisp/cl-cc-optimize
+edit_uri: edit/main/docs/src/
+copyright: MIT
+
+docs_dir: src
+site_dir: ../site
+use_directory_urls: true
+strict: true
+
+theme:
+  name: material
+  language: en
+  favicon: assets/favicon.svg
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.keys
+  - pymdownx.smartsymbols
+  - attr_list
+  - md_in_html
+  - def_list
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+      title: On this page
+
+# Every page under docs/src/ must appear here: --strict fails the build on an
+# unlisted page. docs/src/ itself stays flat (assets/ and notes/ are the only
+# subdirectories) -- nav expresses reading order, not directory layout. See
+# DOCS_STANDARD.md.
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: installation.md
+      - Quick Start: quick-start.md
+  - Reference:
+      - API Reference: api-reference.md
+  - Project:
+      - Development: development.md
+      - Changelog: changelog.md
+
+not_in_nav: |
+  notes/
