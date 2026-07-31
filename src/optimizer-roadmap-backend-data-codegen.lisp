@@ -1,4 +1,5 @@
-;;;; optimizer-roadmap-backend-data-codegen.lisp -- Code generation, CFG, stack, and tooling evidence
+;;;; optimizer-roadmap-backend-data-codegen.lisp -- Code generation, CFG,
+;;;; stack, and tooling evidence
 ;;;; Split from optimizer-roadmap-backend-data.lisp.
 (in-package :cl-cc/optimize)
 
@@ -183,14 +184,15 @@
            provides-more-precision-near-one-than-near-maxpos
            implements-rounded-arithmetic-in-a-shared-format
            accumulates-products-exactly-and-rounds-only-at-quire-conversion))
-    ((442 442
+    (442 442
          ("packages/emit/src/fpga.lisp"
           "packages/emit/tests/fpga-tests.lisp")
          (("CL-CC/EMIT" . "LOWER-FPGA-HLS")
           ("CL-CC/EMIT" . "EMIT-FPGA-VERILOG"))
          (fpga-hls-builds-a-timed-resource-shared-pipeline
           fpga-hls-lowers-case-to-fsm-ir
-          fpga-hls-rejects-impure-and-unsupported-forms)) 442 ("packages/emit/src/fpga.lisp" "packages/emit/tests/fpga-tests.lisp") (("CL-CC/EMIT" . "LOWER-FPGA-HLS") ("CL-CC/EMIT" . "EMIT-FPGA-VERILOG")) (fpga-hls-builds-a-timed-resource-shared-pipeline fpga-hls-lowers-case-to-fsm-ir fpga-hls-rejects-impure-and-unsupported-forms)) (387 502
+          fpga-hls-rejects-impure-and-unsupported-forms))
+    (387 502
           ("packages/codegen/src/x86-64-codegen-core.lisp"
            "packages/codegen/src/aarch64-codegen.lisp"
            "packages/regalloc/src/regalloc.lisp"

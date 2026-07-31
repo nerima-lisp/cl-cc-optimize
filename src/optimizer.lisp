@@ -1,4 +1,3 @@
-(in-package :cl-cc/optimize)
 ;;; ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ;;; Optimizer — Pass Implementations
 ;;;
@@ -12,73 +11,14 @@
 ;;;   opt-pass-dce         global-usedness dead code elimination (pure insts only)
 ;;;   opt-pass-jump        jump threading + dead jump elimination
 ;;;   opt-pass-unreachable remove instructions after unconditional transfers
-;;; FR-020: Allocation Sinking — delays heap allocations (cons etc.) as late as possible, moving them into conditional branches to reduce GC pressure on fast paths
+;;; FR-020: Allocation Sinking — delays heap allocations (cons etc.) as late
+;;; as possible, moving them into conditional branches to reduce GC pressure
+;;; on fast paths
 ;;; ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-(defvar *optimization-report-stream* nil
-  "When non-NIL, optimizer passes emit one-line optimization reports here.")
-
-(defun %opt-report (kind control &rest args)
-  "Emit one optimizer debugging report line when reporting is enabled."
-  (when *optimization-report-stream*
-    (format *optimization-report-stream* "~&opt-report ~A " kind)
-    (apply #'format *optimization-report-stream* control args)
-    (terpri *optimization-report-stream*)))
+(in-package :cl-cc/optimize)
 
 ;;; ─── Pass 1: Constant Folding + Algebraic Simplification ─────────────────
-
-;;;; ─── FR-179: Sequence Operation Fusion ──────────────────────────────────
-
-(defun %opt-sequence-fusion-callee-name (inst)
-  "Return the normalized callee name for a direct function reference INST."
-  (when (typep inst 'vm-func-ref)
-    (let ((label (vm-label-name inst)))
-      (cond
-        ((symbolp label) (symbol-name label))
-        ((stringp label) (string-upcase label))
-        (t nil)))))
-
-(defun %opt-sequence-op-name-p (name)
-  "Return T when NAME is one of the sequence operations handled by FR-179."
-  (member name '("MAPCAR" "REMOVE-IF" "REMOVE-IF-NOT") :test #'string=))
-
-(defun %opt-sequence-fusion-candidate-p (instructions)
-  "Return T when INSTRUCTIONS still contain an unfused direct sequence-op chain.
-
-The normal FR-179 implementation is source preserving: compiler macros in the
-expander rewrite visible sequence chains before MAPCAR/REMOVE-IF expand into
-loops.  This predicate is retained in the optimizer so pass tracing can identify
-late direct-call chains produced by non-stdlib frontends without risking an
-incorrect closure synthesis at VM level."
-  (let ((func-refs (make-hash-table :test #'eq))
-        (sequence-call-dsts nil))
-    (dolist (inst instructions nil)
-      (typecase inst
-        (vm-func-ref
-         (let ((name (%opt-sequence-fusion-callee-name inst)))
-           (when (%opt-sequence-op-name-p name)
-             (setf (gethash (vm-dst inst) func-refs) name))))
-        (vm-call
-         (let ((callee (gethash (vm-func-reg inst) func-refs)))
-           (when (%opt-sequence-op-name-p callee)
-             (when (some (lambda (arg) (member arg sequence-call-dsts :test #'eq))
-                         (vm-args inst))
-               (return-from %opt-sequence-fusion-candidate-p t))
-             (pushnew (vm-dst inst) sequence-call-dsts :test #'eq))))))))
-
-(defun opt-pass-sequence-fusion (instructions)
-  "FR-179: fuse chained sequence operations.
-
-Source-level compiler macros lower MAPCAR/REMOVE-IF chains into one explicit
-loop before macro expansion, so the instruction stream normally arrives here
-already fused.  The optimizer pass is intentionally conservative: it recognizes
-late direct-call chains for reporting, but does not synthesize new closures from
-VM bytecode.  Macro-expanded loop streams are therefore preserved exactly after
-their intermediate allocation has already been eliminated upstream."
-  (when (%opt-sequence-fusion-candidate-p instructions)
-    (%opt-report :sequence-fusion
-                 "late direct sequence call chain left unchanged; source fusion unavailable"))
-  instructions)
 
 (defun opt-fold-binop-value (inst lval rval)
   "Fold binary INST with numeric constants LVAL and RVAL.
@@ -415,16 +355,26 @@ their intermediate allocation has already been eliminated upstream."
                (remhash reg producer-facts)))
       (dolist (inst instructions)
         (typecase inst
-          (vm-label    (%fold-vm-label      inst env low-bit-facts producer-facts #'emit target-labels))
-          (vm-const    (%fold-vm-const      inst env low-bit-facts producer-facts #'emit))
-          (vm-move     (%fold-vm-move       inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
+          (vm-label
+           (%fold-vm-label inst env low-bit-facts producer-facts #'emit target-labels))
+          (vm-const
+           (%fold-vm-const inst env low-bit-facts producer-facts #'emit))
+          (vm-move
+           (%fold-vm-move inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
           (vm-jump-zero (%fold-vm-jump-zero inst env #'emit))
           (t
             (cond
-                ((typep inst 'vm-char)             (%fold-vm-char       inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
-                ((opt-binary-lhs-rhs-p inst)      (%fold-binary-inst    inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
-               ((opt-foldable-unary-arith-p inst) (%fold-unary-inst     inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
-               ((opt-foldable-type-pred-p inst)   (%fold-type-pred-inst inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
-               (t                                 (%fold-default-inst   inst env low-bit-facts producer-facts #'emit #'clear))))))
+              ((typep inst 'vm-char)
+               (%fold-vm-char inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
+              ((opt-binary-lhs-rhs-p inst)
+               (%fold-binary-inst
+                inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
+              ((opt-foldable-unary-arith-p inst)
+               (%fold-unary-inst inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
+              ((opt-foldable-type-pred-p inst)
+               (%fold-type-pred-inst
+                inst env low-bit-facts producer-facts #'emit #'emit-const #'clear))
+              (t
+               (%fold-default-inst inst env low-bit-facts producer-facts #'emit #'clear))))))
     (nreverse result))))
 

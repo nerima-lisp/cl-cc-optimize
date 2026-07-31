@@ -1,4 +1,12 @@
-;;;; optimizer-pipeline-roadmap.lisp — Optimizer roadmap document evidence infrastructure
+;;;; optimizer-roadmap-evidence-data.lisp — roadmap evidence records
+;;;;
+;;;; The two evidence record types (optimizer and backend roadmaps) and
+;;;; their global registries: a feature-ID keyed table of which module,
+;;;; test anchors, and API symbols back a roadmap doc's claim that a
+;;;; feature is implemented. optimizer-roadmap-evidence-check.lisp verifies
+;;;; a registered record still holds; optimizer-roadmap-query.lisp is the
+;;;; public read API.
+
 (in-package :cl-cc/optimize)
 
 ;;; ─── Optimize roadmap implementation evidence and speculative helpers ─────
@@ -25,148 +33,6 @@
 
 (defvar *opt-backend-roadmap-evidence-registry* (make-hash-table :test #'equal)
   "Maps docs/notes/optimize-backend.md FR ids to implementation evidence.")
-
-(defun %opt-roadmap-doc-pathname ()
-  "Return the canonical docs/notes/optimize-passes.md pathname when available."
-  (let ((checkout-path (merge-pathnames #P"docs/notes/optimize-passes.md" (uiop:getcwd))))
-    (or (probe-file checkout-path)
-        (ignore-errors (asdf:system-relative-pathname :cl-cc "docs/notes/optimize-passes.md"))
-        checkout-path)))
-
-(defun %opt-backend-roadmap-doc-pathname ()
-  "Return the canonical docs/notes/optimize-backend.md pathname when available."
-  (let ((checkout-path (merge-pathnames #P"docs/notes/optimize-backend.md" (uiop:getcwd))))
-    (or (probe-file checkout-path)
-        (ignore-errors (asdf:system-relative-pathname :cl-cc "docs/notes/optimize-backend.md"))
-        checkout-path)))
-
-(defun %opt-roadmap-heading-p (line)
-  "Return T when LINE is an optimize roadmap FR heading."
-  (and (>= (length line) 7)
-       (string= "####" (subseq line 0 4))
-       (search "FR-" line)))
-
-(defun %opt-roadmap-fr-id-from-line (line)
-  "Extract the FR-#### id from LINE."
-  (let ((pos (search "FR-" line)))
-    (when pos
-      (let ((end (+ pos 3)))
-        (loop while (and (< end (length line))
-                         (digit-char-p (char line end)))
-              do (incf end))
-        (when (> end (+ pos 3))
-          (subseq line pos end))))))
-
-(defun %opt-roadmap-trim-title (text)
-  "Normalize a roadmap heading title."
-  (string-trim '(#\Space #\Tab #\Newline #\Return)
-               (let* ((marks (remove nil
-                                      (mapcar (lambda (marker) (search marker text))
-                                              '("✅" "🔶" "❌"))))
-                      (mark (and marks (reduce #'min marks))))
-                 (if mark (subseq text 0 mark) text))))
-
-(defun %opt-roadmap-status-from-line (line)
-  "Return the implementation status marker encoded in roadmap heading LINE."
-  (cond
-    ((search "✅" line) :implemented)
-    ((search "🔶" line) :partial)
-    ((search "❌" line) :planned)
-    (t :unknown)))
-
-(defun %opt-roadmap-title-from-line (line)
-  "Extract the human-readable title from an FR heading LINE."
-  (let* ((colon (position #\: line))
-         (start (and colon (1+ colon))))
-    (%opt-roadmap-trim-title (if start (subseq line start) line))))
-
-(defun optimize-roadmap-doc-features (&optional (pathname (%opt-roadmap-doc-pathname)))
-  "Parse docs/notes/optimize-passes.md and return all FR features in document order."
-  (let ((features nil))
-    (loop for line in (uiop:split-string (uiop:read-file-string pathname)
-                                         :separator '(#\Newline))
-          for line-no from 1
-          when (%opt-roadmap-heading-p line)
-            do (let ((feature-id (%opt-roadmap-fr-id-from-line line)))
-                 (when feature-id
-                    (push (make-opt-roadmap-feature
-                           :id feature-id
-                           :title (%opt-roadmap-title-from-line line)
-                           :line line-no
-                           :status (%opt-roadmap-status-from-line line)
-                           :marked-complete-p (not (null (search "✅" line))))
-                          features))))
-    (nreverse features)))
-
-(defun optimize-roadmap-doc-fr-ids (&optional (pathname (%opt-roadmap-doc-pathname)))
-  "Return all optimize roadmap FR ids in document order."
-  (mapcar #'opt-roadmap-feature-id (optimize-roadmap-doc-features pathname)))
-
-(defun optimize-backend-roadmap-doc-features
-    (&optional (pathname (%opt-backend-roadmap-doc-pathname)))
-  "Parse docs/notes/optimize-backend.md and return all FR features in document order."
-  (optimize-roadmap-doc-features pathname))
-
-(defun optimize-backend-roadmap-doc-fr-ids
-    (&optional (pathname (%opt-backend-roadmap-doc-pathname)))
-  "Return all optimize-backend roadmap FR ids in document order."
-  (mapcar #'opt-roadmap-feature-id
-          (optimize-backend-roadmap-doc-features pathname)))
-
-(defun optimize-backend-roadmap-status-summary
-    (&optional (pathname (%opt-backend-roadmap-doc-pathname)))
-  "Return status counts for docs/notes/optimize-backend.md FR headings.
-
-Returned plist keys:
-  :total        total FR heading count
-  :implemented  count of ✅ headings
-  :partial      count of 🔶 headings
-  :planned      count of explicit ❌ headings
-  :unknown      count of unmarked headings"
-  (let ((implemented 0)
-        (partial 0)
-        (planned 0)
-        (unknown 0)
-        (total 0))
-    (dolist (feature (optimize-backend-roadmap-doc-features pathname))
-      (incf total)
-      (case (opt-roadmap-feature-status feature)
-        (:implemented (incf implemented))
-        (:partial (incf partial))
-        (:planned (incf planned))
-        (otherwise (incf unknown))))
-    (list :total total
-          :implemented implemented
-          :partial partial
-          :planned planned
-          :unknown unknown)))
-
-(defun optimize-backend-roadmap-all-fr-complete-p
-    (&optional (pathname (%opt-backend-roadmap-doc-pathname)))
-  "Return T only when every optimize-backend FR is marked ✅ and has complete evidence."
-  (let* ((summary (optimize-backend-roadmap-status-summary pathname))
-         (features (optimize-backend-roadmap-doc-features pathname)))
-    (and (> (getf summary :total 0) 0)
-         (= (getf summary :implemented 0)
-            (getf summary :total 0))
-         (every (lambda (feature)
-                  (and (eq (opt-roadmap-feature-status feature) :implemented)
-                       (optimize-backend-roadmap-implementation-evidence-complete-p
-                        (lookup-opt-backend-roadmap-evidence
-                         (opt-roadmap-feature-id feature)))))
-                features))))
-
-(defun optimize-backend-roadmap-fr-ids-by-status
-    (status &optional (pathname (%opt-backend-roadmap-doc-pathname)))
-  "Return optimize-backend FR IDs filtered by STATUS.
-
-Accepted STATUS keywords: :implemented, :partial, :planned, :unknown."
-  (check-type status (member :implemented :partial :planned :unknown))
-  (let ((ids nil))
-    (dolist (feature (optimize-backend-roadmap-doc-features pathname))
-      (when (eq (opt-roadmap-feature-status feature) status)
-        (push (opt-roadmap-feature-id feature) ids)))
-    (nreverse ids)))
 
 (defparameter *opt-roadmap-extracted-package-systems*
   '(("packages/ast/"     . :cl-cc-ast)
@@ -197,115 +63,6 @@ would lose the continuity the roadmap is for. The source moved to a standalone
 repository, so the prefix is stripped and the remainder resolved against that
 system instead of this checkout. The check stays a real file-existence check
 rather than being weakened to a pattern match.")
-
-(defun %opt-roadmap-extracted-module-pathname (path)
-  "Resolve PATH against the standalone system that now owns it, or NIL."
-  (loop for (prefix . system) in *opt-roadmap-extracted-package-systems*
-        when (and (>= (length path) (length prefix))
-                  (string= prefix path :end2 (length prefix)))
-          return (ignore-errors
-                   (probe-file
-                    (asdf:system-relative-pathname
-                     system (subseq path (length prefix)))))))
-
-(defun %opt-roadmap-module-present-p (path)
-  "Return T when PATH identifies a checkout file."
-  (labels ((present-p (candidate)
-             (or (ignore-errors (probe-file (asdf:system-relative-pathname :cl-cc candidate)))
-                 (probe-file (merge-pathnames candidate (uiop:getcwd)))
-                 (%opt-roadmap-extracted-module-pathname candidate))))
-    (and (stringp path)
-         (or (present-p path)
-             (and (string= path "packages/optimize/src/optimizer-speculative-ic.lisp")
-                  (every #'present-p
-                         '("packages/optimize/src/optimizer-speculative-ic.lisp"
-                           "packages/optimize/src/optimizer-speculative-profile.lisp"
-                           "packages/optimize/src/optimizer-speculative-shape.lisp"
-                           "packages/optimize/src/optimizer-speculative-concurrency.lisp"
-                           "packages/optimize/src/optimizer-speculative-security.lisp"
-                           "packages/optimize/src/optimizer-speculative-wasm.lisp"
-                           "packages/optimize/src/optimizer-speculative-debug.lisp"
-                           "packages/optimize/src/optimizer-speculative-atomics.lisp"
-                           "packages/optimize/src/optimizer-speculative-peval.lisp"
-                           "packages/optimize/src/optimizer-speculative-passes.lisp")))))))
-
-(defun %opt-roadmap-test-anchor-registered-p (anchor)
-  "Return T when ANCHOR exactly names a test in the loaded cl-weave plan, or
-when a plan path element starts with ANCHOR followed by a space.
-Returns NIL when cl-weave or its public test-plan inspection API is unavailable,
-so cl-weave remains an optional dependency."
-  (let ((cl-weave-package (find-package :cl-weave)))
-    (when cl-weave-package
-      (let* ((list-tests (find-symbol "LIST-TESTS" cl-weave-package))
-             (test-plan-entry-path
-               (find-symbol "TEST-PLAN-ENTRY-PATH" cl-weave-package))
-             (anchor-name (symbol-name anchor))
-             (anchor-length (length anchor-name)))
-        (when (and list-tests
-                   test-plan-entry-path
-                   (fboundp list-tests)
-                   (fboundp test-plan-entry-path))
-          (loop for entry in (funcall list-tests
-                                      :stream (make-broadcast-stream)
-                                      :name-filter nil)
-                thereis (some (lambda (path-element)
-                                (let* ((path-element-name (string path-element))
-                                       (path-length (length path-element-name)))
-                                  (and (<= anchor-length path-length)
-                                       (string-equal anchor-name path-element-name
-                                                     :end2 anchor-length)
-                                       (or (= anchor-length path-length)
-                                           (char= #\Space
-                                                  (char path-element-name
-                                                        anchor-length))))))
-                              (funcall test-plan-entry-path entry))))))))
-
-(defun %opt-roadmap-api-entry-fbound-p (entry)
-  "Return T when ENTRY names a checkable API evidence target.
-ENTRY may be a symbol in the current image or a cons of
-(package-name-string . symbol-name-string) for external packages.
-Evidence anchors include functions and special variables."
-  (cond
-    ((symbolp entry)
-     (or (fboundp entry)
-         (boundp entry)))
-    ((and (consp entry)
-           (stringp (car entry))
-           (stringp (cdr entry)))
-      (let* ((pkg (find-package (car entry)))
-             (sym (and pkg (find-symbol (cdr entry) pkg))))
-        (and sym
-             (or (fboundp sym)
-                 (boundp sym)))))
-    (t
-      nil)))
-
-(defun optimize-roadmap-evidence-well-formed-p (evidence)
-  "Return T when EVIDENCE is a checkable roadmap implementation record."
-  (and evidence
-       (member (opt-roadmap-evidence-status evidence) '(:implemented :partial :planned))
-       (consp (opt-roadmap-evidence-modules evidence))
-       (every #'%opt-roadmap-module-present-p
-               (opt-roadmap-evidence-modules evidence))
-       (consp (opt-roadmap-evidence-api-symbols evidence))
-       (every #'%opt-roadmap-api-entry-fbound-p
-              (opt-roadmap-evidence-api-symbols evidence))
-       (every #'%opt-roadmap-test-anchor-registered-p
-              (opt-roadmap-evidence-test-anchors evidence))
-       (plusp (length (opt-roadmap-evidence-summary evidence)))))
-
-(defun %opt-roadmap-feature-number (feature-id)
-  "Return numeric part of FEATURE-ID, or NIL when it is malformed."
-  (when (and (stringp feature-id) (>= (length feature-id) 4))
-    (parse-integer feature-id :start 3 :junk-allowed t)))
-
-
-(defun %opt-roadmap-evidence-status (feature)
-  "Return FEATURE evidence status, mapping unmarked roadmap headings to :planned."
-  (let ((status (opt-roadmap-feature-status feature)))
-    (case status
-      (:unknown :planned)
-      (otherwise status))))
 
 (defparameter +opt-roadmap-evidence-profile-ranges+
   ;; Each entry: (lo hi modules api-symbols test-anchors)
@@ -544,26 +301,3 @@ Evidence anchors include functions and special variables."
   "Alist of (lo hi modules api-symbols test-anchors) range entries for
 `%opt-roadmap-evidence-profile'.  Entries are checked in order; NIL hi means
 open-ended (>= lo).  The default fallback is handled by the function itself.")
-
-(defun %opt-roadmap-evidence-profile (feature-id)
-  "Return module/API/test profile for FEATURE-ID.
-The profile is intentionally coarse-grained by subsystem, but no longer uses a
-single all-FR placeholder: each roadmap cluster points at the subsystem that
-currently carries its implementation evidence."
-  (let ((n (%opt-roadmap-feature-number feature-id)))
-    (let ((entry (and n
-                      (find-if (lambda (e)
-                                 (destructuring-bind (lo hi . _rest) e
-                                   (declare (ignore _rest))
-                                   (and (<= lo n)
-                                        (or (null hi) (<= n hi)))))
-                               +opt-roadmap-evidence-profile-ranges+))))
-      (if entry
-          (destructuring-bind (_lo _hi modules api-symbols test-anchors) entry
-            (declare (ignore _lo _hi))
-            (values modules api-symbols test-anchors))
-          (values '("packages/optimize/src/optimizer-pipeline.lisp"
-                    "packages/optimize/tests/optimizer-pipeline-tests.lisp")
-                  '(optimize-roadmap-doc-features
-                    optimize-roadmap-register-doc-evidence)
-                  '(optimize-roadmap-evidence-covers-doc-fr-list))))))

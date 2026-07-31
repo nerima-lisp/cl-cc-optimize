@@ -5,10 +5,9 @@
 ;;; Constructs a CFG from a flat list of VM instructions by splitting at
 ;;; leaders (first instruction, jump targets, fall-through after branches).
 ;;;
-;;; Also computes:
-;;;   - Reverse post-order (RPO) for iterative algorithms
-;;;   - Immediate dominators via Cooper et al. 2001 simple iterative algorithm
-;;;   - Dominance frontiers (used for phi-node placement in SSA construction)
+;;; Reverse post-order, forward dominators, and loop-depth analysis are in
+;;; cfg-dominance.lisp; the data dependence graph is in cfg-ddg.lisp (both
+;;; load after this file).
 ;;;
 ;;; References:
 ;;;   Cooper, Harvey, Kennedy (2001). "A Simple, Fast Dominance Algorithm"
@@ -45,7 +44,8 @@
   (next-id    0   :type fixnum))
 
 ;;; ─── CFG Construction ────────────────────────────────────────────────────
-;;; FR-017 (dependency): CFG construction provides the control-flow graph needed for alias analysis and memory disambiguation
+;;; FR-017 (dependency): CFG construction provides the control-flow graph
+;;; needed for alias analysis and memory disambiguation
 
 (defun cfg-new-block (cfg &key label)
   "Allocate a new basic-block in CFG and return it."
@@ -166,27 +166,6 @@ Algorithm:
   "Return the basic-block for the given LABEL-NAME, or NIL."
   (gethash label-name (cfg-label->block cfg)))
 
-(defun cfg-loop-ranges-from-backedges (instructions)
-  "Return conservative natural-loop ranges as (START . END) instruction indices.
-
-Each range is identified from a backward VM-JUMP or VM-JUMP-ZERO edge to a
-VM-LABEL.  This lightweight helper is intentionally linear and side-effect free
-so loop-local optimizer passes can share one back-edge detector without building
-full loop forests."
-  (let ((labels (make-hash-table :test #'equal))
-        (ranges nil))
-    (loop for inst in instructions
-          for i from 0
-          when (typep inst 'vm-label)
-            do (setf (gethash (vm-name inst) labels) i))
-    (loop for inst in instructions
-          for i from 0
-          when (typep inst '(or vm-jump vm-jump-zero))
-            do (let ((target (gethash (vm-label-name inst) labels)))
-                 (when (and target (< target i))
-                   (pushnew (cons target i) ranges :test #'equal))))
-    (sort ranges #'< :key #'car)))
-
 (defun cfg-mark-osr-loop-headers (cfg)
   "Annotate loop-header blocks with FR-521 VM OSR entry metadata.
 
@@ -206,206 +185,3 @@ CL-CC/VM:*OSR-ENABLED* is true."
                              :label (and (bb-label header) (vm-name (bb-label header))))))
                headers)))
   cfg)
-
-;;; ─── Reverse Post-Order ──────────────────────────────────────────────────
-
-(defun %cfg-rpo-dfs (b visited post-order-cell)
-  "Post-order DFS from B; results are consed onto (car POST-ORDER-CELL)."
-  (unless (gethash b visited)
-    (setf (gethash b visited) t)
-    (dolist (s (bb-successors b))
-      (%cfg-rpo-dfs s visited post-order-cell))
-    (push b (car post-order-cell))))
-
-(defun cfg-compute-rpo (cfg)
-  "Compute reverse post-order (RPO) for CFG blocks starting from entry.
-   Sets bb-rpo-index for each reachable block.
-   Returns a list of blocks in RPO order."
-  (let ((visited        (make-hash-table :test #'eq))
-        (post-order-cell (list nil)))
-    (when (cfg-entry cfg)
-      (%cfg-rpo-dfs (cfg-entry cfg) visited post-order-cell))
-    ;; `push` prepends, so the last-pushed node (entry) is at the front.
-    ;; post-order already holds blocks in RPO order — no nreverse needed.
-    (let ((post-order (car post-order-cell)))
-      (loop for b in post-order for i from 0
-            do (setf (bb-rpo-index b) i))
-      post-order)))
-
-;;; ─── Dominator Tree (Cooper et al. 2001) ─────────────────────────────────
-
-(defun cfg-compute-dominators (cfg)
-  "Compute immediate dominators for all blocks in CFG using Cooper et al.'s
-   simple iterative algorithm (2001).  Sets bb-idom for each block.
-   Returns the entry block (root of the dominator tree)."
-  (let* ((rpo    (cfg-compute-rpo cfg))
-         (entry  (cfg-entry cfg)))
-    (unless entry (return-from cfg-compute-dominators nil))
-
-    ;; Dominator computation is called by multiple analyses; keep the tree
-    ;; idempotent instead of appending duplicate children across recomputes.
-    (loop for b across (cfg-blocks cfg)
-          do (setf (bb-idom b) nil
-                   (bb-dom-children b) nil))
-
-    ;; Initialize: entry dominates itself; all others are undefined (nil)
-    (setf (bb-idom entry) entry)
-
-    ;; Iterate until stable
-    (let ((changed t))
-      (loop while changed
-            do (setf changed nil)
-               (dolist (b rpo)
-                 (unless (eq b entry)
-                   (let ((new-idom nil))
-                     ;; new-idom = first processed predecessor
-                     (dolist (p (bb-predecessors b))
-                       (when (bb-idom p)
-                         (if (null new-idom)
-                             (setf new-idom p)
-                             (setf new-idom (cfg-intersect p new-idom)))))
-                     (when (and new-idom (not (eq new-idom (bb-idom b))))
-                       (setf (bb-idom b) new-idom
-                             changed t)))))))
-
-    ;; Build dom-children lists
-    (loop for b across (cfg-blocks cfg)
-          when (and (bb-idom b) (not (eq b entry)))
-          do (push b (bb-dom-children (bb-idom b))))
-
-    entry))
-
-(defun cfg-intersect (b1 b2)
-  "Find the common dominator of B1 and B2 using the RPO-indexed finger walk.
-   Called during iterative dominator computation."
-  (let ((f1 b1) (f2 b2))
-    (loop until (eq f1 f2)
-          do (loop while (> (bb-rpo-index f1) (bb-rpo-index f2))
-                   do (setf f1 (bb-idom f1)))
-             (loop while (> (bb-rpo-index f2) (bb-rpo-index f1))
-                   do (setf f2 (bb-idom f2))))
-    f1))
-
-;;; ─── Dominator-based analysis helpers ───────────────────────────────────────
-;;; cfg-post-dominates-p, %cfg-replace-*, %cfg-ensure-label, %cfg-split-edge,
-;;; and cfg-split-critical-edges live in cfg-analysis.lisp (loads after this file).
-
-(defun %cfg-tree-ancestor-p (a b idom-fn)
-  "Return T if A is an ancestor of B in the tree defined by IDOM-FN."
-  (or (eq a b)
-      (let ((idom (funcall idom-fn b)))
-        (and idom (not (eq b idom))
-             (%cfg-tree-ancestor-p a idom idom-fn)))))
-
-(defun cfg-dominates-p (a b)
-  "T if block A dominates block B (A is an ancestor of B in the dominator tree)."
-  (%cfg-tree-ancestor-p a b #'bb-idom))
-
-(defun cfg-collect-natural-loop (header tail)
-  "Return the natural loop blocks for a backedge TAIL → HEADER."
-  (let ((members (make-hash-table :test #'eq))
-        (worklist (list tail)))
-    (setf (gethash header members) t)
-    (loop while worklist
-          do (let ((b (pop worklist)))
-               (unless (gethash b members)
-                 (setf (gethash b members) t)
-                 (dolist (p (bb-predecessors b))
-                   (unless (gethash p members)
-                     (push p worklist))))))
-    (loop for b being the hash-keys of members collect b)))
-
-(defun cfg-compute-loop-depths (cfg)
-  "Annotate each block with a simple natural-loop nesting depth.
-    A backedge is any edge whose target dominates its source."
-  (loop for b across (cfg-blocks cfg)
-        do (setf (bb-loop-depth b) 0))
-  (loop for b across (cfg-blocks cfg)
-        do (dolist (s (bb-successors b))
-             (when (cfg-dominates-p s b)
-               (dolist (member (cfg-collect-natural-loop s b))
-                  (incf (bb-loop-depth member))))))
-  cfg)
-
-;;; ─── Data Dependence Graph (DDG) ─────────────────────────────────────────
-;;; FR-200 dependency: software pipelining needs loop-body dependence edges and
-;;; a conservative minimum initiation interval (MII) estimate.
-
-(defstruct (opt-ddg-node (:conc-name opt-ddg-node-))
-  "Node in a loop-body data dependence graph.  DISTANCE is stored on edges, so
-   loop-carried dependencies can contribute to recurrence MII."
-  index
-  inst
-  (latency 1 :type fixnum)
-  (predecessors nil :type list)
-  (successors nil :type list))
-
-(defun cfg-ddg-add-edge (nodes from to &key (distance 0))
-  "Add a DDG edge FROM → TO over NODES with loop-carried DISTANCE metadata."
-  (let ((edge (list :from from :to to :distance distance)))
-    (pushnew edge (opt-ddg-node-successors (aref nodes from)) :test #'equal)
-    (pushnew edge (opt-ddg-node-predecessors (aref nodes to)) :test #'equal)
-    edge))
-
-(defun cfg-build-ddg (instructions &key (latency-fn (lambda (_inst) (declare (ignore _inst)) 1)))
-  "Build a conservative DDG for a straight-line loop body.
-
-Edges encode RAW, WAR, and WAW register hazards in program order.  If the last
-definition of a register in the body feeds an earlier use/definition in the next
-iteration, a loop-carried edge with DISTANCE=1 is added for recurrence-MII."
-  (let* ((vec (coerce instructions 'vector))
-         (n (length vec))
-         (nodes (make-array n)))
-    (loop for i from 0 below n
-          do (setf (aref nodes i)
-                   (make-opt-ddg-node :index i
-                                      :inst (aref vec i)
-                                      :latency (max 1 (funcall latency-fn (aref vec i))))))
-    (loop for i from 0 below n do
-      (loop for j from (1+ i) below n
-            for earlier = (aref vec i)
-            for later = (aref vec j)
-            for earlier-reads = (opt-inst-read-regs earlier)
-            for earlier-writes = (%opt-inst-write-regs earlier)
-            for later-reads = (opt-inst-read-regs later)
-            for later-writes = (%opt-inst-write-regs later)
-            when (or (%opt-reg-intersect-p earlier-writes later-reads)
-                     (%opt-reg-intersect-p earlier-reads later-writes)
-                     (%opt-reg-intersect-p earlier-writes later-writes))
-              do (cfg-ddg-add-edge nodes i j :distance 0)))
-    (loop for i from 0 below n do
-      (loop for j from 0 below i
-            for later = (aref vec i)
-            for earlier-next = (aref vec j)
-            when (or (%opt-reg-intersect-p (%opt-inst-write-regs later)
-                                           (opt-inst-read-regs earlier-next))
-                     (%opt-reg-intersect-p (%opt-inst-write-regs later)
-                                           (%opt-inst-write-regs earlier-next)))
-              do (cfg-ddg-add-edge nodes i j :distance 1)))
-    nodes))
-
-(defun cfg-ddg-edges (nodes)
-  "Return all unique DDG edges in NODES."
-  (remove-duplicates
-   (loop for node across nodes append (opt-ddg-node-successors node))
-   :test #'equal))
-
-(defun cfg-compute-mii (nodes &key (issue-width 1))
-  "Compute a conservative minimum initiation interval for DDG NODES.
-
-MII = max(resource MII, recurrence MII).  Resource MII is the total latency per
-iteration divided by ISSUE-WIDTH.  Recurrence MII considers explicit loop-carried
-edges and rounds producer latency / dependence distance upward."
-  (let* ((resource-mii (max 1 (ceiling (loop for node across nodes
-                                             sum (opt-ddg-node-latency node))
-                                        (max 1 issue-width))))
-         (recurrence-mii
-           (loop for edge in (cfg-ddg-edges nodes)
-                 for distance = (getf edge :distance)
-                 when (and distance (plusp distance))
-                   maximize (ceiling (opt-ddg-node-latency
-                                      (aref nodes (getf edge :from)))
-                                     distance)
-                     into best
-                 finally (return (or best 1)))))
-    (max resource-mii recurrence-mii)))
