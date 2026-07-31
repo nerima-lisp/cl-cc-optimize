@@ -21,6 +21,8 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-31
+
 ### Added
 
 - Nerima-lisp org package conformance: string `defsystem` name, pinned
