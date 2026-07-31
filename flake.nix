@@ -13,7 +13,7 @@
     # variable; it is a normal flake input now, which is what lets ASDF find
     # cl-weave through CL_SOURCE_REGISTRY like any other dependency.
     cl-cc-ast = {
-      url = "github:nerima-lisp/cl-cc-ast/v0.1.0";
+      url = "github:nerima-lisp/cl-cc-ast/v0.2.0";
       flake = false;
     };
     cl-cc-type = {
@@ -55,7 +55,7 @@
       flake = false;
     };
     cl-concurrent-kit = {
-      url = "github:nerima-lisp/cl-concurrent-kit/v0.1.0";
+      url = "github:nerima-lisp/cl-concurrent-kit/v0.2.0";
       flake = false;
     };
     cl-host-kit = {
@@ -75,7 +75,7 @@
       flake = false;
     };
     cl-boundary-kit = {
-      url = "github:nerima-lisp/cl-boundary-kit/v1.0.0";
+      url = "github:nerima-lisp/cl-boundary-kit/v2.0.0";
       flake = false;
     };
     # Used only as a source tree (`${cl-weave}//` in sourceRegistry below),

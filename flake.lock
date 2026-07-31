@@ -3,16 +3,16 @@
     "cl-boundary-kit": {
       "flake": false,
       "locked": {
-        "lastModified": 1785007911,
-        "narHash": "sha256-wfG8DV7pSYyWDmEGgIxP4i9sM1MS6FqPWHj52dUpFQ0=",
+        "lastModified": 1785474056,
+        "narHash": "sha256-tJ/CLAGtlDnbJlwLqSTSNJzGqGB1n0QFrudFuKz33nY=",
         "owner": "nerima-lisp",
         "repo": "cl-boundary-kit",
-        "rev": "d4c47739556d405e7d8ead2dc43a6580f5fe281d",
+        "rev": "479b27a1ba67695b3f9e486cb70e9637f6208c44",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v1.0.0",
+        "ref": "v2.0.0",
         "repo": "cl-boundary-kit",
         "type": "github"
       }
@@ -20,16 +20,16 @@
     "cl-cc-ast": {
       "flake": false,
       "locked": {
-        "lastModified": 1785011885,
-        "narHash": "sha256-bNIm9MoXeBVSWkkv7mr6YEkoIk/dhej0Xz+ofAQc5tk=",
+        "lastModified": 1785484061,
+        "narHash": "sha256-UkonaEkOJr6SDHcu9vooVqY5X3kWK0+9vYps1K2sMhg=",
         "owner": "nerima-lisp",
         "repo": "cl-cc-ast",
-        "rev": "e50181a3bef4fb6c4b808866a79eae54a509d103",
+        "rev": "25375954dd13037d608b8e427a6dd86588207153",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v0.1.0",
+        "ref": "v0.2.0",
         "repo": "cl-cc-ast",
         "type": "github"
       }
@@ -105,16 +105,16 @@
     "cl-concurrent-kit": {
       "flake": false,
       "locked": {
-        "lastModified": 1785417148,
-        "narHash": "sha256-apRS0wJhN0uUhC1n0wyHqQ5k1FkjfRytRt3XXgLveeg=",
+        "lastModified": 1785484460,
+        "narHash": "sha256-9HlGpgUOye1S51OapvyhrVJZdh9cfuhU04mB34j8IkQ=",
         "owner": "nerima-lisp",
         "repo": "cl-concurrent-kit",
-        "rev": "4018d20b99385b764f183466ade1cbfaa8d905c6",
+        "rev": "e79804a97bef55308d67e9a8cf99931a7ded6590",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v0.1.0",
+        "ref": "v0.2.0",
         "repo": "cl-concurrent-kit",
         "type": "github"
       }

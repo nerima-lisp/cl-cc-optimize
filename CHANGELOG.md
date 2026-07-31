@@ -21,6 +21,38 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+### Changed
+
+- `flake.nix` bumps three nerima-lisp sibling flake inputs to their latest
+  tagged releases, each verified independently with
+  `nix build .#checks.aarch64-darwin.default`:
+  - `cl-cc-ast`: `v0.1.0` -> `v0.2.0`. This is `cl-cc-optimize`'s only
+    direct (non-transitive) bump of the three; `cl-cc-optimize.asd` depends
+    on it directly. Upstream's 0.2.0 is an internal CPS/refactor release
+    (closure-analysis helpers gained an `&optional (k #'identity)`
+    continuation argument, defaulting to direct-style behavior) with no
+    call-site changes required here.
+  - `cl-concurrent-kit`: `v0.1.0` -> `v0.2.0`. Only a transitive input here
+    (pulled in for `cl-log-kit` 2.0.0's dependency graph, not called
+    directly by this codebase). Upstream added `promise-then`,
+    `promise-race`, `promise-all-settled`, further promise combinators
+    (`promise-catch`/`-finally`/`-all`/`-any`/`-timeout`), countdown
+    latches/barriers, executor observability/backpressure, and a reactive
+    stream layer — all additive, nothing consumed here.
+  - `cl-boundary-kit`: `v1.0.0` -> `v2.0.0` (major, breaking upstream
+    changes: `make-environment`'s `:set-fn`/`:unset-fn` now default to a
+    real `cl-host-kit`-backed implementation instead of `nil`, and the
+    optional `cl-boundary-kit/process-kit` and `cl-boundary-kit/json`
+    systems were removed). Also only a transitive input; `cl-cc-optimize`
+    does not call `cl-boundary-kit` directly, and none of the removed
+    exports or changed defaults are referenced anywhere in `src/` or `t/`,
+    so no source changes were needed.
+  - These are maintenance-only version bumps: no new capability from any of
+    the three packages is exercised by `cl-cc-optimize` yet, since none is
+    a direct dependency of the optimizer's own code paths (only
+    `cl-cc-ast` is a direct dependency, and its 0.2.0 release added no new
+    public API surface — only internal refactoring).
+
 ## [0.2.0] - 2026-07-31
 
 ### Added
