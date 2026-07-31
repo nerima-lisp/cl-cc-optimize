@@ -112,6 +112,30 @@
 
 ;;; ─── Phi Placement (Cytron Algorithm) ───────────────────────────────────
 
+(defun %ssa-collect-def-sites-and-uses (cfg)
+  "Return (values def-sites used-regs): DEF-SITES maps register -> list of
+defining blocks; USED-REGS maps register -> T when read anywhere in CFG."
+  (let ((def-sites (make-hash-table :test #'eq))
+        (used-regs (make-hash-table :test #'eq)))
+    (loop for b across (cfg-blocks cfg)
+          do (dolist (inst (bb-instructions b))
+               (dolist (r (opt-inst-read-regs inst))
+                 (when r
+                   (setf (gethash r used-regs) t)))
+               (when-let ((dst (ignore-errors (vm-dst inst))))
+                 (pushnew b (gethash dst def-sites) :test #'eq))))
+    (values def-sites used-regs)))
+
+(defun %ssa-place-phis-for-reg (reg blocks live-in phi-map)
+  "Insert a phi stub for REG at each block in IDF(BLOCKS) where REG is
+live-in and not already covered by an existing phi in PHI-MAP."
+  (let ((idf (cfg-idf blocks)))
+    (dolist (f idf)
+      (when (and (member reg (gethash f live-in) :test #'eq)
+                 (not (find-if (lambda (p) (eq (phi-reg p) reg))
+                               (gethash f phi-map))))
+        (push (make-ssa-phi :reg reg) (gethash f phi-map))))))
+
 (defun ssa-place-phis (cfg)
   "Insert phi-node stubs at dominance frontiers of definition sites.
    Returns a hash-table: block → list of ssa-phi stubs (with nil DST/ARGS,
@@ -124,31 +148,15 @@
        if v is not already live-in there"
   ;; Step 1: collect all registers, their definition blocks, and live-in uses.
   ;; Pruned SSA: if a variable is not live-in at a frontier block, skip phi placement.
-  (let ((def-sites  (make-hash-table :test #'eq))  ; reg → list of blocks
-        (used-regs  (make-hash-table :test #'eq))  ; reg → t when read anywhere
-        (live-in    (%ssa-compute-live-in cfg))
-        (phi-map    (make-hash-table :test #'eq))) ; block → list of ssa-phi
-
-    (loop for b across (cfg-blocks cfg)
-          do (dolist (inst (bb-instructions b))
-               (dolist (r (opt-inst-read-regs inst))
-                 (when r
-                   (setf (gethash r used-regs) t)))
-               (when-let ((dst (ignore-errors (vm-dst inst))))
-                 (pushnew b (gethash dst def-sites) :test #'eq))))
-
+  (let ((live-in  (%ssa-compute-live-in cfg))
+        (phi-map  (make-hash-table :test #'eq))) ; block → list of ssa-phi
     ;; Step 2: for each register, place phis at IDF(def-sites)
-    (maphash
-     (lambda (reg blocks)
-       (when (gethash reg used-regs)
-         (let ((idf (cfg-idf blocks)))
-           (dolist (f idf)
-             (when (and (member reg (gethash f live-in) :test #'eq)
-                        (not (find-if (lambda (p) (eq (phi-reg p) reg))
-                                      (gethash f phi-map))))
-               (push (make-ssa-phi :reg reg) (gethash f phi-map)))))))
-     def-sites)
-
+    (multiple-value-bind (def-sites used-regs) (%ssa-collect-def-sites-and-uses cfg)
+      (maphash
+       (lambda (reg blocks)
+         (when (gethash reg used-regs)
+           (%ssa-place-phis-for-reg reg blocks live-in phi-map)))
+       def-sites))
     phi-map))
 
 (defun %ssa-ensure-phi (phi-map block reg &optional (kind :normal))

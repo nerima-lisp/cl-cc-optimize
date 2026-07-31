@@ -45,6 +45,52 @@
          (equal (vm-label-name term) label-name)
          term)))
 
+(defun %loop-rotate-single-latch-header-name (header latch)
+  "Return HEADER's label name when HEADER/LATCH form a natural loop with
+exactly one back-edge (LATCH), else NIL. Rotation only handles single-latch
+loops; multi-latch loops are left for other passes."
+  (when (and (cfg-dominates-p header latch) (bb-label header))
+    (let* ((header-name (vm-name (bb-label header)))
+           (members (cfg-collect-natural-loop header latch))
+           (latches (remove-if-not
+                     (lambda (block) (%loop-rotate-last-jump-to block header-name))
+                     members)))
+      (and (= (length latches) 1) header-name))))
+
+(defun %loop-rotate-build-candidate (header latch header-name label-pos vec)
+  "Build the rotation candidate plist for HEADER-NAME's while-header loop, or
+NIL when the header/back-edge shape does not match the safe rotation pattern
+(non-label condition, jump-zero branch, contiguous body with no internal
+labels)."
+  (let* ((header-insts (bb-instructions header))
+         (cond-inst (first header-insts))
+         (branch-inst (second header-insts))
+         (back-inst (%loop-rotate-last-jump-to latch header-name))
+         (header-pos (gethash header-name label-pos))
+         (exit-pos (and (typep branch-inst 'vm-jump-zero)
+                        (gethash (vm-label-name branch-inst) label-pos)))
+         (back-pos (%loop-rotate-position vec back-inst)))
+    (when (and cond-inst
+               (not (vm-label-p cond-inst))
+               (typep branch-inst 'vm-jump-zero)
+               header-pos exit-pos back-pos
+               (< header-pos back-pos exit-pos)
+               (notany #'vm-label-p
+                       (loop for i from (+ header-pos 3) below back-pos
+                             collect (aref vec i))))
+      (list :header-name header-name
+            :header-pos header-pos
+            :exit-pos exit-pos
+            :back-pos back-pos
+            :cond-inst cond-inst
+            :branch-inst branch-inst))))
+
+(defun %loop-rotate-header-candidate (header latch label-pos vec)
+  "Return the rotation candidate for HEADER/LATCH, or NIL if this pair is not
+a safe single-latch while-header rotation site."
+  (let ((header-name (%loop-rotate-single-latch-header-name header latch)))
+    (and header-name (%loop-rotate-build-candidate header latch header-name label-pos vec))))
+
 (defun %loop-rotate-candidate (instructions)
   "Find one safe while-header natural loop rotation candidate.
 
@@ -57,38 +103,7 @@ The result is a plist containing linear positions. NIL means no safe candidate."
         (loop for latch across (cfg-blocks cfg)
               thereis
               (loop for header in (bb-successors latch)
-                    thereis
-                    (when (and (cfg-dominates-p header latch)
-                               (bb-label header))
-                      (let* ((header-name (vm-name (bb-label header)))
-                             (members (cfg-collect-natural-loop header latch))
-                             (latches (remove-if-not
-                                       (lambda (block)
-                                         (%loop-rotate-last-jump-to block header-name))
-                                       members)))
-                        (when (= (length latches) 1)
-                          (let* ((header-insts (bb-instructions header))
-                                 (cond-inst (first header-insts))
-                                 (branch-inst (second header-insts))
-                                 (back-inst (%loop-rotate-last-jump-to latch header-name))
-                                 (header-pos (gethash header-name label-pos))
-                                 (exit-pos (and (typep branch-inst 'vm-jump-zero)
-                                                (gethash (vm-label-name branch-inst) label-pos)))
-                                 (back-pos (%loop-rotate-position vec back-inst)))
-                            (when (and cond-inst
-                                       (not (vm-label-p cond-inst))
-                                       (typep branch-inst 'vm-jump-zero)
-                                       header-pos exit-pos back-pos
-                                       (< header-pos back-pos exit-pos)
-                                       (notany #'vm-label-p
-                                               (loop for i from (+ header-pos 3) below back-pos
-                                                     collect (aref vec i))))
-                              (list :header-name header-name
-                                    :header-pos header-pos
-                                    :exit-pos exit-pos
-                                    :back-pos back-pos
-                                    :cond-inst cond-inst
-                                    :branch-inst branch-inst)))))))))
+                    thereis (%loop-rotate-header-candidate header latch label-pos vec))))
     (error () nil)))
 
 (defun %loop-rotate-rewrite-entry-jump (inst header-name guard-name)

@@ -114,24 +114,39 @@ NRECONC rather than growing the host/control stack.")
                         (car (last (cddr form))) function-name worker acc-var))))
         (t (%opt-trmc-base-return form acc-var)))))
 
+(defun %opt-trmc-split-declarations (body)
+  "Split leading (DECLARE ...) forms off BODY. Returns (values decls rest-body)."
+  (let ((decls nil)
+        (rest body))
+    (loop while (and rest (consp (first rest)) (eq (caar rest) 'declare))
+          do (push (pop rest) decls))
+    (values (nreverse decls) rest)))
+
+(defun %opt-trmc-build-worker-defun (name lambda-list decls body)
+  "Build the TRMC-transformed DEFUN form for NAME: an accumulator-passing
+WORKER function wrapped by a public entry point with the original name."
+  (let ((worker (gensym (format nil "~A-TRMC" name)))
+        (acc-var (gensym "TRMC-ACC")))
+    `(defun ,name ,lambda-list
+       ,@decls
+       (labels ((,worker ,(append lambda-list (list acc-var))
+                  ,@(append (butlast body)
+                            (list (opt-trmc-transform-tail-form
+                                   (car (last body)) name worker acc-var)))))
+         ,(%opt-trmc-worker-call worker lambda-list nil)))))
+
 (defun opt-trmc-transform-defun-form (form &key force)
   "Transform a DEFUN form with TRMC when enabled by declaration or FORCE."
-  (if (and *opt-enable-trmc* (consp form) (eq (car form) 'defun)) (destructuring-bind (_defun name lambda-list &rest body) form
+  (if (and *opt-enable-trmc* (consp form) (eq (car form) 'defun))
+      (destructuring-bind (_defun name lambda-list &rest body) form
         (declare (ignore _defun))
-        (let* ((decls (loop while (and body (consp (first body)) (eq (caar body) 'declare))
-                            collect (pop body)))
-               (enabled (or force (opt-trmc-enabled-declaration-p decls))))
-          (if (and enabled
-                        (every #'symbolp lambda-list)
-                        (opt-trmc-body-candidate-p body name)) (let ((worker (gensym (format nil "~A-TRMC" name)))
-                    (acc-var (gensym "TRMC-ACC")))
-                `(defun ,name ,lambda-list
-                   ,@decls
-                   (labels ((,worker ,(append lambda-list (list acc-var))
-                              ,@(append (butlast body)
-                                        (list (opt-trmc-transform-tail-form
-                                               (car (last body)) name worker acc-var)))))
-                     ,(%opt-trmc-worker-call worker lambda-list nil)))) form))) form))
+        (multiple-value-bind (decls rest-body) (%opt-trmc-split-declarations body)
+          (if (and (or force (opt-trmc-enabled-declaration-p decls))
+                   (every #'symbolp lambda-list)
+                   (opt-trmc-body-candidate-p rest-body name))
+              (%opt-trmc-build-worker-defun name lambda-list decls rest-body)
+              form)))
+      form))
 
 (defun opt-trmc-transform-form (form)
   "Transform DEFUN forms and recursively scan top-level PROGN/EVAL-WHEN wrappers."

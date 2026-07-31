@@ -50,24 +50,32 @@ analysis."
   "Return TARGET's EQ position in LINEAR-INSTS, or NIL."
   (position target linear-insts :test #'eq))
 
+(defun %opt-code-sinking-use-alias-safe-p (inst use def-pos linear-insts alias-roots type-facts)
+  "Return T when no write that may alias INST lies between DEF-POS and USE's
+position in LINEAR-INSTS."
+  (let* ((use-inst (third use))
+         (use-pos (%opt-code-sinking-linear-index linear-insts use-inst)))
+    (and use-pos
+         (let ((lo (min def-pos use-pos))
+               (hi (max def-pos use-pos)))
+           (notany (lambda (candidate)
+                     (and (not (eq candidate inst))
+                          (opt-memory-write-inst-p candidate)
+                          (opt-memory-accesses-may-alias-p inst candidate
+                                                           alias-roots
+                                                           type-facts)))
+                   (subseq linear-insts (1+ lo) hi))))))
+
 (defun %opt-code-sinking-alias-safe-p (inst uses linear-insts alias-roots type-facts)
   "Return T when sinking INST to USES does not cross an aliased write."
-  (if (opt-memory-read-inst-p inst) (let ((def-pos (%opt-code-sinking-linear-index linear-insts inst)))
+  (if (opt-memory-read-inst-p inst)
+      (let ((def-pos (%opt-code-sinking-linear-index linear-insts inst)))
         (and def-pos
              (every (lambda (use)
-                      (let* ((use-inst (third use))
-                             (use-pos (%opt-code-sinking-linear-index linear-insts use-inst)))
-                        (and use-pos
-                             (let ((lo (min def-pos use-pos))
-                                   (hi (max def-pos use-pos)))
-                               (notany (lambda (candidate)
-                                         (and (not (eq candidate inst))
-                                              (opt-memory-write-inst-p candidate)
-                                              (opt-memory-accesses-may-alias-p inst candidate
-                                                                               alias-roots
-                                                                               type-facts)))
-                                       (subseq linear-insts (1+ lo) hi))))))
-                    uses))) t))
+                      (%opt-code-sinking-use-alias-safe-p
+                       inst use def-pos linear-insts alias-roots type-facts))
+                    uses)))
+      t))
 
 (defun %opt-block-terminator-index (insts)
   "Return the index of the first terminator in INSTS, or NIL."
@@ -152,6 +160,36 @@ analysis."
               (%opt-insert-before-index (bb-instructions sink-block) insert-index (list inst)))
         t))))
 
+(defun %opt-code-sinking-try-sink (cfg block index inst dst constant-regs sunk-regs linear-insts alias-roots type-facts)
+  "Attempt to sink INST (at INDEX in BLOCK, defining DST) toward its uses.
+Returns T and mutates BLOCK/successor instruction lists and SUNK-REGS when
+the sink succeeds, else NIL."
+  (when (and dst
+             (= (%opt-code-sinking-definition-count cfg dst) 1)
+             (%opt-code-sinking-candidate-p inst constant-regs sunk-regs))
+    (let ((uses (%opt-code-sinking-locations cfg dst)))
+      (when (and uses
+                 (%opt-code-sinking-alias-safe-p inst uses linear-insts
+                                                 alias-roots type-facts))
+        (when (or (%opt-sink-duplicate-into-conditional-successors
+                    block index inst dst uses)
+                  (and (= (length uses) 1)
+                       (%opt-sink-inst-before-uses block index inst dst uses)))
+          (setf (gethash dst sunk-regs) t)
+          t)))))
+
+(defun %opt-code-sinking-process-block (cfg block constant-regs sunk-regs linear-insts alias-roots type-facts)
+  "Try sinking one candidate instruction out of BLOCK, scanning from the last
+instruction to the first. Returns T as soon as a sink succeeds, matching the
+pass's original one-sink-per-block-per-pass scan."
+  (let ((insts (bb-instructions block)))
+    (loop for index downfrom (1- (length insts)) to 0
+          for inst = (nth index insts)
+          for dst = (opt-inst-dst inst)
+          thereis (%opt-code-sinking-try-sink cfg block index inst dst
+                                              constant-regs sunk-regs
+                                              linear-insts alias-roots type-facts))))
+
 (defun opt-pass-code-sinking (instructions)
   "Sink selected pure/read-only values closer to their CFG uses.
 
@@ -171,24 +209,9 @@ instructions are never moved."
             (sunk-regs (make-hash-table :test #'eq))
             (changed nil))
       (dolist (block blocks)
-        (let ((insts (bb-instructions block)))
-          (loop for index downfrom (1- (length insts)) to 0
-                for inst = (nth index insts)
-                for dst = (opt-inst-dst inst)
-                do (when (and dst
-                              (= (%opt-code-sinking-definition-count cfg dst) 1)
-                              (%opt-code-sinking-candidate-p inst constant-regs sunk-regs))
-                     (let ((uses (%opt-code-sinking-locations cfg dst)))
-                        (when (and uses
-                                   (%opt-code-sinking-alias-safe-p inst uses linear-insts
-                                                                  alias-roots type-facts))
-                          (when (or (%opt-sink-duplicate-into-conditional-successors
-                                     block index inst dst uses)
-                                   (and (= (length uses) 1)
-                                        (%opt-sink-inst-before-uses block index inst dst uses)))
-                           (setf (gethash dst sunk-regs) t
-                                 changed t)
-                           (return))))))))
+        (when (%opt-code-sinking-process-block cfg block constant-regs sunk-regs
+                                                linear-insts alias-roots type-facts)
+          (setf changed t)))
       (if changed
           (cfg-flatten (cfg-build (cfg-flatten cfg)))
           (cfg-flatten cfg)))))

@@ -116,7 +116,32 @@ critical-edge maintenance below."
            (cfg-post-dominates-p a (bb-post-idom b)))))
 
 ;;; ─── Critical Edge Splitting ─────────────────────────────────────────────
- (defun cfg-split-critical-edges (cfg)
+ (defun %cfg-split-edge-if-critical (cfg pred term succ)
+  "Split the PRED -> SUCC edge if SUCC has multiple predecessors (i.e. the
+edge is critical), inserting a landing-pad block and rewiring PRED's
+terminator TERM to target it when TERM is the vm-jump-zero branch to SUCC."
+  (when (> (length (bb-predecessors succ)) 1)
+    (let ((target-label (%cfg-ensure-label succ cfg "SPLIT_TARGET_")))
+      (cond
+        ((and (typep term 'vm-jump-zero)
+              (equal (vm-label-name term) (vm-name (bb-label succ))))
+         (let ((pad (%cfg-split-edge cfg pred succ target-label)))
+           (%cfg-replace-terminator pred term
+                                    (make-vm-jump-zero :reg (vm-reg term)
+                                                       :label (vm-name (bb-label pad))))))
+        (t
+         (%cfg-split-edge cfg pred succ target-label))))))
+
+(defun %cfg-split-critical-edges-from (cfg pred)
+  "Split every critical edge out of PRED. Only a block with multiple
+successors can have a critical outgoing edge."
+  (when (> (length (bb-successors pred)) 1)
+    (let ((term (find-if (lambda (i) (typep i '(or vm-jump vm-jump-zero)))
+                         (reverse (bb-instructions pred)))))
+      (dolist (succ (copy-list (bb-successors pred)))
+        (%cfg-split-edge-if-critical cfg pred term succ)))))
+
+(defun cfg-split-critical-edges (cfg)
   "Split critical edges by inserting empty landing-pad blocks.
 
    A critical edge is an edge from a block with multiple successors to a block
@@ -124,21 +149,7 @@ critical-edge maintenance below."
    edge and rewires the CFG so later SSA / code-motion passes can place code on
    the split edge without duplicating it along other incoming paths."
   (dolist (pred (coerce (cfg-blocks cfg) 'list) cfg)
-    (when (> (length (bb-successors pred)) 1)
-      (let ((term (find-if (lambda (i) (typep i '(or vm-jump vm-jump-zero)))
-                           (reverse (bb-instructions pred)))))
-        (dolist (succ (copy-list (bb-successors pred)))
-          (when (> (length (bb-predecessors succ)) 1)
-            (let ((target-label (%cfg-ensure-label succ cfg "SPLIT_TARGET_")))
-              (cond
-                ((and (typep term 'vm-jump-zero)
-                      (equal (vm-label-name term) (vm-name (bb-label succ))))
-                 (let ((pad (%cfg-split-edge cfg pred succ target-label)))
-                   (%cfg-replace-terminator pred term
-                                            (make-vm-jump-zero :reg (vm-reg term)
-                                                               :label (vm-name (bb-label pad))))))
-                (t
-                 (%cfg-split-edge cfg pred succ target-label))))))))))
+    (%cfg-split-critical-edges-from cfg pred)))
 
 ;;; ─── Dominance Frontiers ─────────────────────────────────────────────────
 

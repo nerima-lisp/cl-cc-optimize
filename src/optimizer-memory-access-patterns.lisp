@@ -60,6 +60,39 @@
 ;;; FR-309: Memory Access Pattern Analysis — classifies memory accesses as
 ;;; sequential/strided/random; provides data for prefetch insertion and
 ;;; loop tiling
+(defun %opt-memory-access-induction-step (index-reg inductions)
+  "Return the loop-induction step tracked for INDEX-REG across INDUCTIONS'
+per-block summaries, or NIL if no summary tracks it with a numeric step."
+  (loop for ivs being the hash-values of inductions
+        for iv = (gethash index-reg ivs)
+        when (and iv (numberp (opt-iv-step iv)))
+          return (opt-iv-step iv)))
+
+(defun %opt-memory-access-stride (index-reg index-value last inductions)
+  "Return the access stride for INDEX-REG: prefer a loop induction step, else
+fall back to the delta between INDEX-VALUE and the previous access recorded
+in LAST for the same array."
+  (or (%opt-memory-access-induction-step index-reg inductions)
+      (when (and index-value last (getf last :index-value))
+        (- index-value (getf last :index-value)))))
+
+(defun %opt-memory-access-process-inst (inst block metadata constants last-by-array inductions memory-ssa)
+  "Record a memory-access-pattern entry for INST if it is an array load/store
+with a known array and index register, else fold INST into the running
+constant-value tracking used to resolve constant index registers."
+  (let ((array-reg (%opt-memory-access-array-reg inst))
+        (index-reg (%opt-memory-access-index-reg inst)))
+    (if (and array-reg index-reg)
+        (let* ((last (gethash array-reg last-by-array))
+               (index-value (gethash index-reg constants))
+               (stride (%opt-memory-access-stride index-reg index-value last inductions)))
+          (%opt-memory-pattern-record
+           metadata inst block array-reg index-reg stride
+           :memory-entry (and memory-ssa (gethash inst memory-ssa)))
+          (setf (gethash array-reg last-by-array)
+                (list :inst inst :index-reg index-reg :index-value index-value)))
+        (%opt-update-memory-pattern-constants inst constants))))
+
 (defun opt-analyze-memory-access-patterns (cfg-or-instructions memory-ssa)
   "Analyze array memory accesses and classify their access patterns.
 
@@ -82,26 +115,8 @@ constant index registers, and simple loop induction summaries."
           do (let ((constants (make-hash-table :test #'eq))
                    (last-by-array (make-hash-table :test #'eq)))
                (dolist (inst (bb-instructions block))
-                 (let ((array-reg (%opt-memory-access-array-reg inst))
-                       (index-reg (%opt-memory-access-index-reg inst)))
-                   (if (and array-reg index-reg)
-                       (let* ((last (gethash array-reg last-by-array))
-                              (index-value (gethash index-reg constants))
-                              (iv-step (loop for ivs being the hash-values of inductions
-                                             for iv = (gethash index-reg ivs)
-                                             when (and iv (numberp (opt-iv-step iv)))
-                                               return (opt-iv-step iv)))
-                              (stride (cond
-                                        (iv-step iv-step)
-                                        ((and index-value last (getf last :index-value))
-                                         (- index-value (getf last :index-value)))
-                                        (t nil))))
-                         (%opt-memory-pattern-record
-                          metadata inst block array-reg index-reg stride
-                          :memory-entry (and memory-ssa (gethash inst memory-ssa)))
-                         (setf (gethash array-reg last-by-array)
-                               (list :inst inst :index-reg index-reg :index-value index-value)))
-                       (%opt-update-memory-pattern-constants inst constants))))))
+                 (%opt-memory-access-process-inst
+                  inst block metadata constants last-by-array inductions memory-ssa))))
     (setf (gethash :cfg metadata) cfg
           (gethash :instructions metadata) instructions)
     metadata))

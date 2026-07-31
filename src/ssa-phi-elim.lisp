@@ -90,33 +90,27 @@ For an argument (P . B) in A = phi(...), when B is the destination of a phi
 located in predecessor block P, replace B with that phi's argument for P."
   (let ((new-map (make-hash-table :test #'eq))
         (changed nil))
-    (maphash
-     (lambda (blk phis)
-       (setf (gethash blk new-map)
-             (mapcar
-              (lambda (phi)
-                (let ((new-args
-                        (mapcar
-                         (lambda (arg)
-                           (let* ((pred (car arg))
-                                  (value (cdr arg))
-                                  (producer (%ssa-phi-by-dst-in-block phi-map pred value))
-                                  (producer-arg (and producer
-                                                     (assoc pred (phi-args producer)
-                                                            :test #'eq))))
-                             (if producer-arg
-                                 (let ((shortcut (cdr producer-arg)))
-                                   (unless (eq value shortcut)
-                                     (setf changed t))
-                                   (cons pred shortcut))
-                                 arg)))
-                         (phi-args phi))))
-                  (make-ssa-phi :dst (phi-dst phi)
-                                :args new-args
-                                :reg (phi-reg phi)
-                                :kind (phi-kind phi))))
-              phis)))
-     phi-map)
+    (labels ((shortcut-arg (arg)
+               (let* ((pred (car arg))
+                      (value (cdr arg))
+                      (producer (%ssa-phi-by-dst-in-block phi-map pred value))
+                      (producer-arg (and producer
+                                          (assoc pred (phi-args producer) :test #'eq))))
+                 (if producer-arg
+                     (let ((shortcut (cdr producer-arg)))
+                       (unless (eq value shortcut)
+                         (setf changed t))
+                       (cons pred shortcut))
+                     arg)))
+             (shortcut-phi (phi)
+               (make-ssa-phi :dst (phi-dst phi)
+                             :args (mapcar #'shortcut-arg (phi-args phi))
+                             :reg (phi-reg phi)
+                             :kind (phi-kind phi))))
+      (maphash
+       (lambda (blk phis)
+         (setf (gethash blk new-map) (mapcar #'shortcut-phi phis)))
+       phi-map))
     (values new-map changed)))
 
 (defun ssa-eliminate-trivial-phis (phi-map renamed-map)

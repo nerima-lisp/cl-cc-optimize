@@ -32,6 +32,26 @@ both NIL and numeric zero are false."
               (char= (char name 0) #\R)
               (every #'digit-char-p (subseq name 1))))))
 
+(defun %vm-dst-accessor-for-class (cname)
+  "Return the fbound CL-CC/VM package accessor function for struct class CNAME
+(e.g. VM-ADD -> #'VM-ADD-DST), or NIL if none is defined."
+  (let ((acc (find-symbol
+              (concatenate 'string (symbol-name cname) "-DST")
+              :cl-cc/vm)))
+    (and acc (fboundp acc) (symbol-function acc))))
+
+(defun %vm-dst-register-subtree (ht visited class fn)
+  "Register FN in HT for CLASS and every unvisited direct/indirect subclass of
+CLASS, unless a more-specific accessor is already registered. Marks each
+visited class in VISITED so shared subclasses are not walked twice."
+  (unless (gethash class visited)
+    (setf (gethash class visited) t)
+    (dolist (sub (sb-mop:class-direct-subclasses class))
+      (let ((sub-name (class-name sub)))
+        (unless (gethash sub-name ht)
+          (setf (gethash sub-name ht) fn))
+        (%vm-dst-register-subtree ht visited sub fn)))))
+
 (defun %build-vm-dst-table ()
   "Build a struct-type-name → dst-accessor-fn table from vm-dst CLOS methods.
 Must be called in the main thread (at load time) before workers are spawned.
@@ -51,22 +71,11 @@ builds and runs only under SBCL (see flake.nix's pkgs.sbcl.buildASDFSystem
       (handler-case
           (let* ((spec  (car (sb-mop:method-specializers method)))
                  (cname (class-name spec))
-                 (acc   (find-symbol
-                         (concatenate 'string (symbol-name cname) "-DST")
-                         :cl-cc/vm)))
-            (when (and acc (fboundp acc))
-              (let ((fn (symbol-function acc)))
-                (unless (gethash cname ht)
-                  (setf (gethash cname ht) fn))
-                (labels ((visit (class)
-                           (unless (gethash class visited)
-                             (setf (gethash class visited) t)
-                             (dolist (sub (sb-mop:class-direct-subclasses class))
-                               (let ((sub-name (class-name sub)))
-                                 (unless (gethash sub-name ht)
-                                   (setf (gethash sub-name ht) fn))
-                                 (visit sub))))))
-                  (visit spec)))))
+                 (fn    (%vm-dst-accessor-for-class cname)))
+            (when fn
+              (unless (gethash cname ht)
+                (setf (gethash cname ht) fn))
+              (%vm-dst-register-subtree ht visited spec fn)))
         (error nil)))
     ht))
 

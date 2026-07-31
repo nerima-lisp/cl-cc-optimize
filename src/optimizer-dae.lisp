@@ -113,6 +113,39 @@
              specializations)
     (append instructions (nreverse bodies))))
 
+(defun %opt-dae-rewrite-known-call (inst spec out)
+  "Return OUT with INST's call to its specialization pushed as a func-ref plus
+rewritten call pair, after dropping the trailing argument-setup moves for
+INST's now-removed arguments."
+  (multiple-value-bind (new-call dropped-args) (%opt-dae-rewrite-call inst spec)
+    (list* new-call
+           (make-vm-func-ref :dst (vm-func-reg inst)
+                             :label (getf spec :new-label)
+                             :params (copy-list (getf spec :new-params)))
+           (%opt-dae-drop-trailing-arg-sets out dropped-args))))
+
+(defun %opt-dae-process-call (inst name-to-label reg->label specializations out changed)
+  "Handle one VM-CALL/VM-TAIL-CALL instruction in the pass's rewrite loop.
+Returns (values new-out new-changed)."
+  (let* ((label (gethash (vm-func-reg inst) reg->label))
+         (spec (and label (gethash label specializations))))
+    (multiple-value-bind (new-out new-changed)
+        (if (and spec (= (length (vm-args inst))
+                         (length (getf spec :old-params))))
+            (values (%opt-dae-rewrite-known-call inst spec out) t)
+            (values (cons inst out) changed))
+      (%opt-track-known-callee-label inst name-to-label reg->label)
+      (values new-out new-changed))))
+
+(defun %opt-dae-process-inst (inst name-to-label reg->label specializations out changed)
+  "Process one instruction of the pass's main rewrite loop, returning
+(values new-out new-changed)."
+  (if (typep inst '(or vm-call vm-tail-call))
+      (%opt-dae-process-call inst name-to-label reg->label specializations out changed)
+      (progn
+        (%opt-track-known-callee-label inst name-to-label reg->label)
+        (values (cons inst out) changed))))
+
 (defun opt-pass-dead-argument-elimination (instructions)
   "FR-606: create specialized functions with unused positional parameters removed.
 
@@ -129,26 +162,9 @@ inner closure are treated as used and are never removed."
               (out nil)
               (changed nil))
           (dolist (inst instructions)
-            (cond
-              ((typep inst '(or vm-call vm-tail-call))
-               (let* ((label (gethash (vm-func-reg inst) reg->label))
-                      (spec (and label (gethash label specializations))))
-                 (if (and spec (= (length (vm-args inst))
-                                  (length (getf spec :old-params))))
-                     (multiple-value-bind (new-call dropped-args)
-                         (%opt-dae-rewrite-call inst spec)
-                       (setf out (%opt-dae-drop-trailing-arg-sets out dropped-args))
-                       (push (make-vm-func-ref :dst (vm-func-reg inst)
-                                               :label (getf spec :new-label)
-                                               :params (copy-list (getf spec :new-params)))
-                             out)
-                       (push new-call out)
-                       (setf changed t))
-                     (push inst out)))
-               (%opt-track-known-callee-label inst name-to-label reg->label))
-              (t
-               (%opt-track-known-callee-label inst name-to-label reg->label)
-               (push inst out))))
+            (multiple-value-bind (new-out new-changed)
+                (%opt-dae-process-inst inst name-to-label reg->label specializations out changed)
+              (setf out new-out changed new-changed)))
           (let ((rewritten (nreverse out)))
             (if changed
                 (%opt-dae-append-specialized-bodies rewritten specializations)
