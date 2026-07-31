@@ -21,6 +21,20 @@ Added / Changed / Deprecated / Removed / Fixed / Security
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-31
+
+### Changed
+
+- Introduced `when-let`/`if-let` (Alexandria-style named-binding anaphoric
+  macros) and converted 194 `(let ((x e)) (when x ...))`/`(let ((x e)) (if
+  x ...))` sites across ~90 files to use them, found via a structural
+  (not textual) search for this codebase's dominant "bind once, branch on
+  that binding" idiom. Investigated 3 more macro categories from the On
+  Lisp catalog (forced dynamic-variable save/restore, a gethash-cache
+  idiom, a generic walk/dispatch/accumulate skeleton) and found no
+  instance count or shape uniform enough to justify a macro for any of
+  them — reported plainly rather than forced.
+
 ## [0.3.2] - 2026-07-31
 
 ### Changed
