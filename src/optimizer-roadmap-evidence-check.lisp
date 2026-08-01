@@ -8,14 +8,22 @@
 (in-package :cl-cc/optimize)
 
 (defun %opt-roadmap-extracted-module-pathname (path)
-  "Resolve PATH against the standalone system that now owns it, or NIL."
+  "Resolve PATH against the standalone system that now owns it, or NIL.
+Legacy cl-cc-optimize test paths resolve to its consolidated boundary test."
   (loop for (prefix . system) in *opt-roadmap-extracted-package-systems*
         when (and
-      (>= (length path) (length prefix))
-      (string= prefix path :end2 (length prefix)))
-          return (ignore-errors
-      (probe-file
-        (asdf:system-relative-pathname system (subseq path (length prefix)))))))
+              (>= (length path) (length prefix))
+              (string= prefix path :end2 (length prefix)))
+        return
+        (ignore-errors
+         (let* ((relative-path (subseq path (length prefix)))
+                (candidate
+                 (if (and (eq system :cl-cc-optimize)
+                          (>= (length relative-path) 6)
+                          (string= "tests/" relative-path :end2 6))
+                     "t/optimize-boundary-test.lisp"
+                     relative-path)))
+           (probe-file (asdf:system-relative-pathname system candidate))))))
 
 (defun %opt-roadmap-module-present-p (path)
   "Return T when PATH identifies a checkout file."
