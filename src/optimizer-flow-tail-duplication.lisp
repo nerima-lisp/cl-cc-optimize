@@ -104,6 +104,39 @@
   "Return a fresh tail-duplication label name."
   (format nil "TAIL_DUP_~D" counter))
 
+(defun %tail-dup-process-inst (inst candidates insertions counter out changed)
+  "Process one INST for tail duplication against CANDIDATES, recording a
+vm-jump-zero's duplicated tail under INSERTIONS until its target label is
+reached. Returns three values: the updated OUT (reverse order), the updated
+CHANGED flag, and COUNTER for fresh label naming."
+  (cond
+    ((and (typep inst 'vm-jump)
+          (assoc (vm-label-name inst) candidates :test #'equal))
+     (dolist (copy (mapcar #'%tail-dup-copy-inst
+                           (cdr (assoc (vm-label-name inst) candidates :test #'equal))))
+       (push copy out))
+     (values out t counter))
+    ((and (typep inst 'vm-jump-zero)
+          (assoc (vm-label-name inst) candidates :test #'equal))
+     (let* ((target (vm-label-name inst))
+            (tail (cdr (assoc target candidates :test #'equal)))
+            (fresh (%tail-dup-fresh-label-name (incf counter))))
+       (push (make-vm-jump-zero :reg (vm-reg inst) :label fresh) out)
+       (push (cons (make-vm-label :name fresh)
+                   (mapcar #'%tail-dup-copy-inst tail))
+             (gethash target insertions))
+       (values out t counter)))
+    ((and (vm-label-p inst) (gethash (vm-name inst) insertions))
+     (dolist (entry (nreverse (gethash (vm-name inst) insertions)))
+       (push (car entry) out)
+       (dolist (copy (cdr entry))
+         (push copy out)))
+     (push inst out)
+     (values out changed counter))
+    (t
+     (push inst out)
+     (values out changed counter))))
+
 (defun %tail-dup-linear (instructions candidates)
   "Apply tail duplication to INSTRUCTIONS while preserving linear layout."
   (let ((insertions (make-hash-table :test #'equal))
@@ -111,31 +144,8 @@
         (out nil)
         (changed nil))
     (dolist (inst instructions)
-      (cond
-        ((and (typep inst 'vm-jump)
-              (assoc (vm-label-name inst) candidates :test #'equal))
-         (dolist (copy (mapcar #'%tail-dup-copy-inst
-                               (cdr (assoc (vm-label-name inst) candidates :test #'equal))))
-           (push copy out))
-         (setf changed t))
-        ((and (typep inst 'vm-jump-zero)
-              (assoc (vm-label-name inst) candidates :test #'equal))
-         (let* ((target (vm-label-name inst))
-                (tail (cdr (assoc target candidates :test #'equal)))
-                (fresh (%tail-dup-fresh-label-name (incf counter))))
-           (push (make-vm-jump-zero :reg (vm-reg inst) :label fresh) out)
-           (push (cons (make-vm-label :name fresh)
-                       (mapcar #'%tail-dup-copy-inst tail))
-                 (gethash target insertions))
-           (setf changed t)))
-        ((and (vm-label-p inst) (gethash (vm-name inst) insertions))
-         (dolist (entry (nreverse (gethash (vm-name inst) insertions)))
-           (push (car entry) out)
-           (dolist (copy (cdr entry))
-             (push copy out)))
-         (push inst out))
-        (t
-         (push inst out))))
+      (multiple-value-setq (out changed counter)
+        (%tail-dup-process-inst inst candidates insertions counter out changed)))
     (values (nreverse out) changed)))
 
 (defun opt-pass-tail-duplication (instructions)

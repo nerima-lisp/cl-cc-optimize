@@ -22,6 +22,36 @@
                     window)
           (values rewritten consumed))))))
 
+(defun %opt-idiom-copy-validate-and-build (instructions pos consumed)
+  "Validate the fixed-role instructions of a candidate unit-stride memcpy
+window at POS against the canonical add-by-one/update shape, and build the
+vm-copy-vector plus index-fixup replacement, or NIL when they don't match."
+  (let* ((cmp   (nth (+ pos 2) instructions))
+         (load  (nth (+ pos 4) instructions))
+         (store (nth (+ pos 5) instructions))
+         (one   (nth (+ pos 6) instructions))
+         (inc   (nth (+ pos 7) instructions))
+         (step  (nth (+ pos 8) instructions)))
+    (when (and (typep cmp 'vm-lt)
+               (typep load 'vm-aref)
+               (typep store 'vm-aset)
+               (typep one 'vm-const)
+               (eql (vm-value one) 1)
+               ;; Unit stride only.  Strided or scaled address forms do not
+               ;; match this canonical add-by-one/update sequence.
+               (or (and (eq (vm-lhs inc) (vm-index-reg load))
+                        (eq (vm-rhs inc) (vm-dst one)))
+                   (and (eq (vm-rhs inc) (vm-index-reg load))
+                        (eq (vm-lhs inc) (vm-dst one))))
+               (eq (vm-dst step) (vm-index-reg load))
+               (eq (vm-src step) (vm-dst inc)))
+      (values (list (make-vm-copy-vector :dst-array-reg (vm-array-reg store)
+                                         :src-array-reg (vm-array-reg load)
+                                         :len-reg (vm-rhs cmp))
+                    ;; Preserve the loop's observable exit index.
+                    (make-vm-move :dst (vm-index-reg load) :src (vm-rhs cmp)))
+              consumed))))
+
 (defun %opt-idiom-copy-match-at (instructions pos alias-roots)
   "Recognize DOTIMES unit-stride memcpy loops and lower them to vm-copy-vector."
   (multiple-value-bind (rewritten consumed)
@@ -29,31 +59,7 @@
     (declare (ignore rewritten))
     (let ((end (+ pos 11)))
       (when (and consumed (= consumed 11) (<= end (length instructions)))
-        (let* ((cmp   (nth (+ pos 2) instructions))
-               (load  (nth (+ pos 4) instructions))
-               (store (nth (+ pos 5) instructions))
-               (one   (nth (+ pos 6) instructions))
-               (inc   (nth (+ pos 7) instructions))
-               (step  (nth (+ pos 8) instructions)))
-          (when (and (typep cmp 'vm-lt)
-                     (typep load 'vm-aref)
-                     (typep store 'vm-aset)
-                     (typep one 'vm-const)
-                     (eql (vm-value one) 1)
-                     ;; Unit stride only.  Strided or scaled address forms do not
-                     ;; match this canonical add-by-one/update sequence.
-                     (or (and (eq (vm-lhs inc) (vm-index-reg load))
-                              (eq (vm-rhs inc) (vm-dst one)))
-                         (and (eq (vm-rhs inc) (vm-index-reg load))
-                              (eq (vm-lhs inc) (vm-dst one))))
-                     (eq (vm-dst step) (vm-index-reg load))
-                     (eq (vm-src step) (vm-dst inc)))
-            (values (list (make-vm-copy-vector :dst-array-reg (vm-array-reg store)
-                                               :src-array-reg (vm-array-reg load)
-                                               :len-reg (vm-rhs cmp))
-                          ;; Preserve the loop's observable exit index.
-                          (make-vm-move :dst (vm-index-reg load) :src (vm-rhs cmp)))
-                    consumed)))))))
+        (%opt-idiom-copy-validate-and-build instructions pos consumed)))))
 
 (defun %opt-strlen-window-shape-valid-p (init header char nul cmp body-jump exit-jump body-label one inc step back-jump exit-label)
   "T when the fixed-role instructions in a candidate strlen window have the

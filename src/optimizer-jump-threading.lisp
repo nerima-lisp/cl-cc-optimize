@@ -198,6 +198,40 @@ successors."
           (append branch-fact (list :value value :constants constants)))
         live-fact)))
 
+(defun %opt-jump-rewrite-inst-with-fact (inst live-fact constants new-insts)
+  "Rewrite INST using LIVE-FACT/CONSTANTS tracked so far, propagating known
+constant values through redundant comparisons and copies. Returns three
+values: the updated LIVE-FACT, CONSTANTS, and NEW-INSTS (reverse order)."
+  (let ((dst (opt-inst-dst inst)))
+    (when (%opt-jump-fact-killed-p live-fact dst)
+      (setf live-fact nil))
+    (when dst
+      (setf constants (%opt-jump-kill-constant dst constants)))
+    (cond
+      ((and (typep inst 'vm-const) dst)
+       (setf constants (%opt-jump-put-constant dst (vm-value inst) constants))
+       (push inst new-insts))
+      ((%opt-jump-same-comparison-p inst live-fact)
+       (let ((value (getf live-fact :value)))
+         (setf constants (%opt-jump-put-constant dst value constants))
+         (push (make-vm-const :dst dst :value value) new-insts)))
+      ((and (%opt-jump-comparison-p inst) dst)
+       ;; Do not independently fold fresh comparisons here.  This pass only
+       ;; propagates branch-edge comparison facts; folding a comparison after
+       ;; either source register has been redefined would erase the required
+       ;; new comparison and conflate this pass with general constant folding.
+       (push inst new-insts))
+      ((and (typep inst 'vm-move) dst)
+       (multiple-value-bind (value ok) (%opt-jump-known-constant (vm-src inst) constants)
+         (if ok
+             (progn
+               (setf constants (%opt-jump-put-constant dst value constants))
+               (push (make-vm-const :dst dst :value value) new-insts))
+             (push inst new-insts))))
+      (t
+       (push inst new-insts)))
+    (values live-fact constants new-insts)))
+
 (defun %opt-jump-rewrite-block-with-fact (block fact)
   "Rewrite redundant comparisons in BLOCK using incoming FACT.
 Returns the still-live fact after scanning the block."
@@ -205,34 +239,8 @@ Returns the still-live fact after scanning the block."
         (constants (%opt-jump-constant-facts fact))
         (new-insts nil))
     (dolist (inst (bb-instructions block))
-      (let ((dst (opt-inst-dst inst)))
-        (when (%opt-jump-fact-killed-p live-fact dst)
-          (setf live-fact nil))
-        (when dst
-          (setf constants (%opt-jump-kill-constant dst constants)))
-        (cond
-          ((and (typep inst 'vm-const) dst)
-           (setf constants (%opt-jump-put-constant dst (vm-value inst) constants))
-           (push inst new-insts))
-          ((%opt-jump-same-comparison-p inst live-fact)
-           (let ((value (getf live-fact :value)))
-             (setf constants (%opt-jump-put-constant dst value constants))
-             (push (make-vm-const :dst dst :value value) new-insts)))
-          ((and (%opt-jump-comparison-p inst) dst)
-           ;; Do not independently fold fresh comparisons here.  This pass only
-           ;; propagates branch-edge comparison facts; folding a comparison after
-           ;; either source register has been redefined would erase the required
-           ;; new comparison and conflate this pass with general constant folding.
-           (push inst new-insts))
-          ((and (typep inst 'vm-move) dst)
-           (multiple-value-bind (value ok) (%opt-jump-known-constant (vm-src inst) constants)
-             (if ok
-                 (progn
-                   (setf constants (%opt-jump-put-constant dst value constants))
-                   (push (make-vm-const :dst dst :value value) new-insts))
-                 (push inst new-insts))))
-          (t
-           (push inst new-insts)))))
+      (multiple-value-setq (live-fact constants new-insts)
+        (%opt-jump-rewrite-inst-with-fact inst live-fact constants new-insts)))
     (setf (bb-instructions block) (nreverse new-insts))
     (when (or live-fact constants)
       (append live-fact (list :constants constants)))))

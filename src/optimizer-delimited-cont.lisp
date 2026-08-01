@@ -43,14 +43,7 @@ recognizes source-like RESET forms and lowers SHIFT occurrences by CPS rewriting
     ((and (consp form) (eq (first form) 'reset))
      (%dc-apply-continuation k (%dc-reset->direct (rest form))))
     ((and (consp form) (eq (first form) 'shift))
-     (destructuring-bind (_shift (captured-k) &body body) form
-       (declare (ignore _shift))
-       (let ((arg (gensym "SHIFT-VALUE")))
-         (%dc-reset->direct
-          (mapcar (lambda (body-form)
-                    (%dc-substitute body-form captured-k
-                                    `(lambda (,arg) ,(%dc-apply-continuation k arg))))
-                  body)))))
+     (%dc-cps-shift form k))
     ((and (consp form) (eq (first form) 'if) (= (length form) 4))
      `(if ,(second form)
           ,(%dc-cps (third form) k)
@@ -58,14 +51,7 @@ recognizes source-like RESET forms and lowers SHIFT occurrences by CPS rewriting
     ((and (consp form) (eq (first form) 'progn))
      (%dc-cps-progn (rest form) k))
     ((and (consp form) (eq (first form) 'let))
-     (destructuring-bind (_let bindings &body body) form
-       (declare (ignore _let))
-       `(let ,(mapcar (lambda (binding)
-                        (if (consp binding)
-                            (list (first binding) (%dc-walk (second binding)))
-                            binding))
-                      bindings)
-          ,(%dc-cps-progn body k))))
+     (%dc-cps-let form k))
     (t
      (%dc-apply-continuation k (mapcar #'%dc-walk form)))))
 
@@ -98,3 +84,27 @@ the default optimizer convergence pipeline."
            (not (every (lambda (x) (typep x 'vm-instruction)) instructions)))
       (opt-delimited-continuations-form instructions)
       instructions))
+
+(defun %dc-cps-shift (form k)
+  "CPS-lower a (SHIFT (CAPTURED-K) . BODY) FORM under continuation K, splicing
+the reified capture lambda in for CAPTURED-K within an implicit RESET."
+  (destructuring-bind (_shift (captured-k) &body body) form
+    (declare (ignore _shift))
+    (let ((arg (gensym "SHIFT-VALUE")))
+      (%dc-reset->direct
+       (mapcar (lambda (body-form)
+                 (%dc-substitute body-form captured-k
+                                 `(lambda (,arg) ,(%dc-apply-continuation k arg))))
+               body)))))
+
+(defun %dc-cps-let (form k)
+  "CPS-lower a (LET BINDINGS . BODY) FORM under continuation K, walking each
+binding's init form and continuing the body under K."
+  (destructuring-bind (_let bindings &body body) form
+    (declare (ignore _let))
+    `(let ,(mapcar (lambda (binding)
+                      (if (consp binding)
+                          (list (first binding) (%dc-walk (second binding)))
+                          binding))
+                    bindings)
+       ,(%dc-cps-progn body k))))

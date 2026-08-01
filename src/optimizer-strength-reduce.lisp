@@ -95,6 +95,39 @@ NIL when its final step does not match CMP-INST's induction variable."
           (when exit-pos
             (%opt-counted-loop-candidate-plist vec index header cmp-inst jz-inst exit-pos)))))))
 
+(defun %opt-sr-emit-iv-reduction-body (vec start candidate const-env new-reg-fn result mul-inst iv-reg step-value)
+  "Emit the induction-variable reduction rewrite for CANDIDATE once a
+strength-reducible multiply MUL-INST by IV-REG has been found under
+STEP-VALUE. Returns three values: the updated RESULT, the next scan
+position, and T for done."
+  (destructuring-bind (mul-dst ignored constant)
+      (%opt-sr-mul-by-iv-constant-p mul-inst iv-reg const-env)
+    (declare (ignore mul-dst ignored))
+    (let* ((acc-reg (funcall new-reg-fn))
+           (inc-reg (funcall new-reg-fn))
+           (header-pos start)
+           (exit-pos (getf candidate :exit-pos))
+           (back-pos (getf candidate :back-pos))
+           (step-inst (getf candidate :step))
+           (rewritten-body (%opt-sr-rewrite-body-mul (getf candidate :body) mul-inst acc-reg)))
+      ;; Preserve original loop entry and compute the derived induction value once.
+      (push (make-vm-mul :dst acc-reg :lhs iv-reg :rhs (if (eq (vm-lhs mul-inst) iv-reg)
+                                                           (vm-rhs mul-inst)
+                                                           (vm-lhs mul-inst)))
+            result)
+      (loop for j from header-pos to (+ header-pos 2)
+            do (push (aref vec j) result))
+      (dolist (inst rewritten-body)
+        (if (eq inst step-inst)
+            (progn
+              (push (make-vm-const :dst inc-reg :value (* step-value constant)) result)
+              (push (make-vm-add :dst acc-reg :lhs acc-reg :rhs inc-reg) result)
+              (push inst result))
+            (push inst result)))
+      (loop for j from back-pos to exit-pos
+            do (push (aref vec j) result))
+      (values result (1+ exit-pos) t))))
+
 (defun %opt-sr-emit-iv-reduction (vec start candidate const-env new-reg-fn result)
   "Emit IV strength reduction for CANDIDATE, returning (VALUES RESULT NEXT-POS DONE-P)."
   (let* ((body (getf candidate :body))
@@ -105,33 +138,7 @@ NIL when its final step does not match CMP-INST's induction variable."
                               (%opt-sr-mul-by-iv-constant-p inst iv-reg const-env))
                             body)))
     (if (and step-value mul-inst)
-        (destructuring-bind (mul-dst ignored constant)
-            (%opt-sr-mul-by-iv-constant-p mul-inst iv-reg const-env)
-          (declare (ignore mul-dst ignored))
-          (let* ((acc-reg (funcall new-reg-fn))
-                 (inc-reg (funcall new-reg-fn))
-                 (header-pos start)
-                 (exit-pos (getf candidate :exit-pos))
-                 (back-pos (getf candidate :back-pos))
-                 (step-inst (getf candidate :step))
-                 (rewritten-body (%opt-sr-rewrite-body-mul body mul-inst acc-reg)))
-            ;; Preserve original loop entry and compute the derived induction value once.
-            (push (make-vm-mul :dst acc-reg :lhs iv-reg :rhs (if (eq (vm-lhs mul-inst) iv-reg)
-                                                                 (vm-rhs mul-inst)
-                                                                 (vm-lhs mul-inst)))
-                  result)
-            (loop for j from header-pos to (+ header-pos 2)
-                  do (push (aref vec j) result))
-            (dolist (inst rewritten-body)
-              (if (eq inst step-inst)
-                  (progn
-                    (push (make-vm-const :dst inc-reg :value (* step-value constant)) result)
-                    (push (make-vm-add :dst acc-reg :lhs acc-reg :rhs inc-reg) result)
-                    (push inst result))
-                  (push inst result)))
-            (loop for j from back-pos to exit-pos
-                  do (push (aref vec j) result))
-            (values result (1+ exit-pos) t)))
+        (%opt-sr-emit-iv-reduction-body vec start candidate const-env new-reg-fn result mul-inst iv-reg step-value)
         (values result start nil))))
 
 (defun opt-pass-iv-strength-reduce (instructions)

@@ -18,6 +18,15 @@
                   a)
          same)))
 
+(defun %sccp-env-merge-prune-key (k v merged other-envs)
+  "Remove K from MERGED unless every hash-table in OTHER-ENVS also binds K to
+a value EQUAL to V."
+  (dolist (env other-envs)
+    (multiple-value-bind (ov found) (gethash k env)
+      (unless (and found (equal ov v))
+        (remhash k merged)
+        (return)))))
+
 (defun %sccp-env-merge (envs)
   "Intersect constant bindings across all ENVs."
   (cond
@@ -25,12 +34,7 @@
     ((null (cdr envs)) (%sccp-env-copy (car envs)))
     (t (let ((merged (%sccp-env-copy (car envs))))
          (maphash (lambda (k v)
-                    (dolist (env (cdr envs))
-                      (multiple-value-bind (ov found) (gethash k env)
-                        (unless (and found (equal ov v))
-                          (remhash k merged)
-                          (return))))
-                    )
+                    (%sccp-env-merge-prune-key k v merged (cdr envs)))
                   merged)
          merged))))
 
@@ -83,39 +87,13 @@ appears in, or return INST unchanged when none applies."
       (vm-const inst)
       (vm-label inst)
       (vm-jump-zero
-       (multiple-value-bind (val found) (gethash (vm-reg inst) env)
-         (cond
-           ((and found (opt-falsep val)) (make-vm-jump :label (vm-label-name inst)))
-           (found nil)
-           (t inst))))
+       (%sccp-fold-vm-jump-zero inst env))
       (vm-move
-       (multiple-value-bind (val found) (gethash (vm-src inst) env)
-         (if found
-             (make-vm-const :dst (vm-dst inst) :value val)
-             inst)))
+       (%sccp-fold-vm-move inst env))
       (vm-concatenate
-       (let ((parts (or (vm-parts inst) (list (vm-str1 inst) (vm-str2 inst)))))
-         (if (every (lambda (reg)
-                       (multiple-value-bind (val found) (gethash reg env)
-                         (and found (stringp val))))
-                    parts)
-             (make-vm-const :dst (vm-dst inst)
-                             :value (apply #'concatenate 'string
-                                           (mapcar (lambda (reg) (gethash reg env)) parts)))
-             inst)))
+       (%sccp-fold-vm-concatenate inst env))
       (vm-char
-       (multiple-value-bind (string found-string) (gethash (vm-string-reg inst) env)
-         (multiple-value-bind (index found-index) (gethash (vm-index inst) env)
-           (if (and (gethash 'vm-char *opt-binary-fold-table*)
-                    found-string found-index
-                    (stringp string)
-                    (integerp index)
-                    (<= 0 index)
-                    (< index (length string)))
-               (make-vm-const :dst (vm-dst inst)
-                              :value (funcall (gethash 'vm-char *opt-binary-fold-table*)
-                                              string index))
-               inst))))
+       (%sccp-fold-vm-char inst env))
       (t (%sccp-fold-via-table inst env tp)))))
 
 (defun %sccp-redirect-successors (block new-succs)
@@ -134,25 +112,32 @@ appears in, or return INST unchanged when none applies."
       (vm-const (setf (gethash dst env) (vm-value inst)))
       (t (remhash dst env)))))
 
+(defun %sccp-process-block-inst (inst block env new-insts)
+  "Fold INST under ENV within BLOCK, redirecting BLOCK's CFG edges when a
+vm-jump-zero resolves to always/never taken, and updating ENV's bindings for
+any instruction that is kept. Returns the updated NEW-INSTS (reverse order)."
+  (let ((folded (%sccp-fold-inst inst env)))
+    (cond
+      ((and (typep inst 'vm-jump-zero) (null folded))
+       (%sccp-redirect-successors block
+                                   (let ((succs (bb-successors block)))
+                                     (if (second succs) (list (second succs)))))
+       new-insts)
+      ((and (typep inst 'vm-jump-zero) (typep folded 'vm-jump))
+       (%sccp-redirect-successors block (list (first (bb-successors block))))
+       (%sccp-update-env-for-inst folded env)
+       (cons folded new-insts))
+      ((null folded) new-insts)
+      (t
+       (%sccp-update-env-for-inst folded env)
+       (cons folded new-insts)))))
+
 (defun %sccp-process-block (block in-env)
   "Fold BLOCK's instructions under IN-ENV; return the resulting out-env."
-  (let ((env       (%sccp-env-copy in-env))
+  (let ((env (%sccp-env-copy in-env))
         (new-insts nil))
     (dolist (inst (bb-instructions block))
-      (let ((folded (%sccp-fold-inst inst env)))
-        (cond
-          ((and (typep inst 'vm-jump-zero) (null folded))
-           (%sccp-redirect-successors block
-                                      (let ((succs (bb-successors block)))
-                                        (if (second succs) (list (second succs))))))
-          ((and (typep inst 'vm-jump-zero) (typep folded 'vm-jump))
-           (%sccp-redirect-successors block (list (first (bb-successors block))))
-           (push folded new-insts)
-           (%sccp-update-env-for-inst folded env))
-          ((null folded) nil)
-          (t
-           (push folded new-insts)
-           (%sccp-update-env-for-inst folded env)))))
+      (setf new-insts (%sccp-process-block-inst inst block env new-insts)))
     (setf (bb-instructions block) (nreverse new-insts))
     env))
 
@@ -201,3 +186,50 @@ the updated WORKLIST."
 
 ;;; (opt-map-tree, %opt-copy-prop-* helpers, and opt-pass-copy-prop
 ;;;  are in optimizer-copyprop.lisp which loads after this file.)
+
+(defun %sccp-fold-vm-char (inst env)
+  "Fold a vm-char INST into a vm-const when its string/index operands are
+known constants in ENV, otherwise return INST unchanged."
+  (multiple-value-bind (string found-string) (gethash (vm-string-reg inst) env)
+    (multiple-value-bind (index found-index) (gethash (vm-index inst) env)
+      (if (and (gethash 'vm-char *opt-binary-fold-table*)
+               found-string found-index
+               (stringp string)
+               (integerp index)
+               (<= 0 index)
+               (< index (length string)))
+          (make-vm-const :dst (vm-dst inst)
+                         :value (funcall (gethash 'vm-char *opt-binary-fold-table*)
+                                         string index))
+          inst))))
+
+(defun %sccp-fold-vm-concatenate (inst env)
+  "Fold a vm-concatenate INST into a vm-const when every part is a known
+string constant in ENV, otherwise return INST unchanged."
+  (let ((parts (or (vm-parts inst) (list (vm-str1 inst) (vm-str2 inst)))))
+    (if (every (lambda (reg)
+                 (multiple-value-bind (val found) (gethash reg env)
+                   (and found (stringp val))))
+               parts)
+        (make-vm-const :dst (vm-dst inst)
+                        :value (apply #'concatenate 'string
+                                      (mapcar (lambda (reg) (gethash reg env)) parts)))
+        inst)))
+
+(defun %sccp-fold-vm-move (inst env)
+  "Fold a vm-move INST into a vm-const when its source is a known constant
+in ENV, otherwise return INST unchanged."
+  (multiple-value-bind (val found) (gethash (vm-src inst) env)
+    (if found
+        (make-vm-const :dst (vm-dst inst) :value val)
+        inst)))
+
+(defun %sccp-fold-vm-jump-zero (inst env)
+  "Fold a vm-jump-zero INST when its tested register is a known constant in
+ENV: rewrite to an unconditional vm-jump when provably taken, drop the
+instruction when provably not taken, else return INST unchanged."
+  (multiple-value-bind (val found) (gethash (vm-reg inst) env)
+    (cond
+      ((and found (opt-falsep val)) (make-vm-jump :label (vm-label-name inst)))
+      (found nil)
+      (t inst))))

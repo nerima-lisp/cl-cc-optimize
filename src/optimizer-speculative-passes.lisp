@@ -9,6 +9,31 @@
                   (equal (vm-name inst) name))
         do (return i)))
 
+(defun %opt-canonical-loop-body-and-step (vec i back-idx cmp jz exit-label exit-idx)
+  "Build the OPT-CANONICAL-LOOP for a validated loop header at index I whose
+back-edge jump is at BACK-IDX, or NIL when the trailing instruction of the
+collected body doesn't match the expected self-update induction step shape."
+  (let* ((body (loop for k from (+ i 3) below back-idx
+                     collect (aref vec k)))
+         (step (car (last body))))
+    (when (and (typep step 'vm-add)
+               (eq (vm-dst step) (vm-lhs step))
+               (eq (vm-dst step) (vm-lhs cmp))
+               (eq (vm-reg jz) (vm-dst cmp)))
+      (make-opt-canonical-loop
+       :head-index i
+       :cmp-index (1+ i)
+       :jz-index (+ i 2)
+       :back-index back-idx
+       :exit-index exit-idx
+       :head-label (vm-name (aref vec i))
+       :exit-label exit-label
+       :iv-reg (vm-lhs cmp)
+       :limit-reg (vm-rhs cmp)
+       :step-reg (vm-rhs step)
+       :cond-reg (vm-dst cmp)
+       :body body))))
+
 (defun %opt-parse-canonical-loop-at (vec i)
   "Parse canonical loop shape at label index I.
 
@@ -20,10 +45,9 @@ Returns OPT-CANONICAL-LOOP or NIL."
              (typep (aref vec i) 'vm-label)
              (typep (aref vec (1+ i)) 'vm-lt)
              (typep (aref vec (+ i 2)) 'vm-jump-zero))
-    (let* ((head (aref vec i))
-           (cmp  (aref vec (1+ i)))
+    (let* ((cmp  (aref vec (1+ i)))
            (jz   (aref vec (+ i 2)))
-           (head-label (vm-name head))
+           (head-label (vm-name (aref vec i)))
            (exit-label (vm-label-name jz))
            (exit-idx (%opt-find-label-index vec exit-label (+ i 3))))
       (when (and exit-idx (> exit-idx (+ i 4)))
@@ -31,26 +55,7 @@ Returns OPT-CANONICAL-LOOP or NIL."
                (back (aref vec back-idx)))
           (when (and (typep back 'vm-jump)
                      (equal (vm-label-name back) head-label))
-            (let* ((body (loop for k from (+ i 3) below back-idx
-                               collect (aref vec k)))
-                   (step (car (last body))))
-              (when (and (typep step 'vm-add)
-                         (eq (vm-dst step) (vm-lhs step))
-                         (eq (vm-dst step) (vm-lhs cmp))
-                         (eq (vm-reg jz) (vm-dst cmp)))
-                (make-opt-canonical-loop
-                 :head-index i
-                 :cmp-index (1+ i)
-                 :jz-index (+ i 2)
-                 :back-index back-idx
-                 :exit-index exit-idx
-                 :head-label head-label
-                 :exit-label exit-label
-                 :iv-reg (vm-lhs cmp)
-                 :limit-reg (vm-rhs cmp)
-                 :step-reg (vm-rhs step)
-                 :cond-reg (vm-dst cmp)
-                 :body body)))))))))
+            (%opt-canonical-loop-body-and-step vec i back-idx cmp jz exit-label exit-idx)))))))
 
 (defun %opt-find-canonical-loops (instructions)
   (let* ((vec (coerce instructions 'vector))
@@ -206,6 +211,37 @@ Control instructions and IV update remain untouched."
         :constraints (copy-list constraints)
         :objective (or objective :latency-min)))
 
+(defun %opt-polyhedral-schedule-loop-at (vec i lp emit changed)
+  "Process one canonical loop LP found at index I in VEC: sort its pure body
+instructions by ascending static cost via %OPT-SCHEDULE-CORE-WITH-DEPS and
+emit the full loop shape (header, body, step, back-edge, exit) via EMIT.
+Returns two values: the updated CHANGED flag and the next index."
+  (let* ((body (opt-loop-body lp))
+         (step (car (last body)))
+         (body-core (butlast body))
+         (sortable (every #'opt-inst-cse-eligible-p body-core))
+         (sorted body-core)
+         (sorted-changed nil)
+         (plan (opt-polyhedral-schedule-plan
+                :statements body-core
+                :constraints (list :canonical-loop)
+                :objective :latency-min)))
+    (declare (ignore plan))
+    (when sortable
+      (multiple-value-setq (sorted sorted-changed)
+        (%opt-schedule-core-with-deps body-core)))
+    (when sorted-changed
+      (setf changed t))
+    (funcall emit (aref vec i))
+    (funcall emit (aref vec (1+ i)))
+    (funcall emit (aref vec (+ i 2)))
+    (dolist (inst sorted)
+      (funcall emit inst))
+    (funcall emit step)
+    (funcall emit (aref vec (opt-loop-back-index lp)))
+    (funcall emit (aref vec (opt-loop-exit-index lp)))
+    (values changed (1+ (opt-loop-exit-index lp)))))
+
 (defun opt-pass-polyhedral-schedule (instructions)
   "Apply a conservative schedule optimization inside canonical loops.
 
@@ -219,31 +255,10 @@ leaving control-flow and induction update in place."
     (labels ((emit (x) (push x out)))
       (loop while (< i n)
             do (let ((lp (%opt-parse-canonical-loop-at vec i)))
-                 (if lp (let* ((body (opt-loop-body lp))
-                            (step (car (last body)))
-                            (body-core (butlast body))
-                            (sortable (every #'opt-inst-cse-eligible-p body-core))
-                            (sorted body-core)
-                            (sorted-changed nil)
-                            (plan (opt-polyhedral-schedule-plan
-                                   :statements body-core
-                                   :constraints (list :canonical-loop)
-                                   :objective :latency-min)))
-                        (declare (ignore plan))
-                       (when sortable
-                         (multiple-value-setq (sorted sorted-changed)
-                           (%opt-schedule-core-with-deps body-core)))
-                       (when sorted-changed
-                         (setf changed t))
-                       (emit (aref vec i))
-                       (emit (aref vec (1+ i)))
-                       (emit (aref vec (+ i 2)))
-                       (dolist (inst sorted)
-                         (emit inst))
-                       (emit step)
-                       (emit (aref vec (opt-loop-back-index lp)))
-                       (emit (aref vec (opt-loop-exit-index lp)))
-                       (setf i (1+ (opt-loop-exit-index lp)))) (progn
+                 (if lp
+                     (multiple-value-setq (changed i)
+                       (%opt-polyhedral-schedule-loop-at vec i lp #'emit changed))
+                     (progn
                        (emit (aref vec i))
                        (incf i)))))
       (if changed (nreverse out) instructions))))
