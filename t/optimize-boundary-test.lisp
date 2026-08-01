@@ -842,13 +842,34 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                          (ret :inv)))
            (optimized (cl-cc/optimize::opt-pass-licm instructions))
            (header-pos (position-if (lambda (i)
-                                       (and (typep i 'cl-cc/vm:vm-label)
+                                       (and (typep i (quote cl-cc/vm:vm-label))
                                             (eq (cl-cc/vm:vm-name i) :header)))
                                      optimized))
-           (add-pos (position-if (lambda (i) (typep i 'cl-cc/vm:vm-add)) optimized)))
+           (add-pos (position-if (lambda (i) (typep i (quote cl-cc/vm:vm-add))) optimized)))
       (expect add-pos :to-be-truthy)
       (expect header-pos :to-be-truthy)
-      (expect (< add-pos header-pos) :to-be-truthy))))
+      (expect (< add-pos header-pos) :to-be-truthy)))
+  (it
+    "handles a fall-through predecessor ending in a non-branch instruction"
+    (let* ((instructions
+             (vm-program (const :a 10)
+                         (const :b 20)
+                         (const :cond 1)
+                         (label :header)
+                         (jump-zero :cond :exit)
+                         (add :inv :a :b)
+                         (const :cond 0)
+                         (jump :header)
+                         (label :exit)
+                         (ret :inv)))
+           (optimized (cl-cc/optimize::opt-pass-licm instructions)))
+      (expect (some (lambda (i)
+                      (and (typep i (quote cl-cc/vm:vm-label))
+                           (let ((name (cl-cc/vm:vm-name i)))
+                             (and (stringp name)
+                                  (search "LICM_PREHEADER_" name)))))
+                    optimized)
+              :to-be-truthy))))
 
 (describe-sequential
   "partial redundancy elimination makes a partially available expression
