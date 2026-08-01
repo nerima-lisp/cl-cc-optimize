@@ -1173,9 +1173,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
       (expect (typep (first optimized) 'cl-cc/vm:vm-bswap) :to-be-truthy)
       (expect (cl-cc/vm:vm-dst (first optimized)) :to-be :o2)
       (expect (cl-cc/vm:vm-src (first optimized)) :to-be :src))))
-(describe-sequential
-  "safepoint polling inserts a poll at the function entry label"
-  (it
+(progn (describe-sequential "safepoint polling inserts a poll at the function entry label" (it
     "adds a get-global flag check before the entry body and is idempotent on a second pass"
     (let* ((instructions
              (vm-program (label "entry")
@@ -1191,4 +1189,4 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                                    (search "__clcc_safepoint_poll_site_" name)))))
                      optimized)
               :to-be-truthy)
-      (expect (cl-cc/optimize::opt-pass-safepoint-polling optimized) :to-be optimized))))
+      (expect (cl-cc/optimize::opt-pass-safepoint-polling optimized) :to-be optimized)))) (describe-sequential "prefetch insertion" (it "uses a VM-CDR source register as the prefetch base" (let* ((instructions (list (cl-cc/vm:make-vm-label :name "loop") (cl-cc/vm:make-vm-cdr :dst :tail :src :cons) (cl-cc/vm:make-vm-jump :label "loop"))) (optimized (cl-cc/optimize::opt-pass-prefetch-insertion instructions)) (prefetch (%find-instruction-of-type optimized (quote cl-cc/vm:vm-prefetch)))) (expect prefetch :to-be-truthy) (expect (cl-cc/vm:vm-prefetch-base-reg prefetch) :to-be :cons) (expect (cl-cc/vm:vm-prefetch-kind prefetch) :to-be :list-cdr)))))

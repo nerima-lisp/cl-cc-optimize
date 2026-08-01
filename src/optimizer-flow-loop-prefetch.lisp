@@ -48,7 +48,7 @@
 
 (defun %opt-list-cdr-prefetch (inst)
   "Build PREFETCHT0/PLDL1KEEP for the next CDR slot of the current cons cell."
-  (make-vm-prefetch :base-reg (vm-cons-reg inst)
+  (make-vm-prefetch :base-reg (vm-src inst)
                     :offset 8
                     :locality :t0
                     :kind :list-cdr))
