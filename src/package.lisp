@@ -83,7 +83,7 @@
     #:vm-array-has-fill-pointer-p #:vm-array-length #:vm-array-reg #:vm-aset #:vm-ash
     #:vm-asin-inst #:vm-atan-inst #:vm-b #:vm-binop #:vm-boundp #:vm-bswap #:vm-butlast #:vm-c
     #:vm-call #:vm-call-next-method #:vm-captured-vars #:vm-car #:vm-car-reg
-    #:vm-catch-handler-label #:vm-cdr #:vm-cdr-reg #:vm-ceiling-inst #:vm-cerror #:vm-char
+    #:vm-catch-handler-label #:vm-cdr #:vm-cdr-reg #:vm-ceiling-inst #:vm-cerror #:vm-char #:vm-char=
     #:vm-char1 #:vm-char2 #:vm-cl-div #:vm-class-def #:vm-class-name-sym #:vm-class-reg
     #:vm-clear-hash-cons-table #:vm-closure #:vm-closure-entry-label #:vm-closure-inline-policy
     #:vm-closure-inst-dispatch-tag #:vm-closure-key-params #:vm-closure-object
