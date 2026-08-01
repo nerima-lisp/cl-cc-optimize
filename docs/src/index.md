@@ -18,10 +18,11 @@ optimization.
 
 Where to go next:
 
-- [Installation](installation.md) to add this system as a dependency.
-- [Quick Start](quick-start.md) to run the optimizer on a small program.
-- [API Reference](api-reference.md) for every exported symbol.
-- [Development](development.md) to build, test, and measure coverage locally.
+- [Getting Started](getting-started.md) to add this system as a dependency
+  and run the optimizer on a small program.
+- [API Reference](reference/api.md) for every exported symbol.
+- [Development](project/development.md) to build, test, and measure coverage
+  locally.
 - [Releases](https://github.com/nerima-lisp/cl-cc-optimize/releases) for
   release history.
 

@@ -68,18 +68,17 @@ markdown_extensions:
       title: On this page
 
 # Every page under docs/src/ must appear here: --strict fails the build on an
-# unlisted page. docs/src/ itself stays flat (assets/ and notes/ are the only
-# subdirectories) -- nav expresses reading order, not directory layout. See
-# DOCS_STANDARD.md.
+# unlisted page. docs/src/ is split into guide/ reference/ project/, with only
+# index.md, getting-started.md and assets/ at the root, per the 2026-08-01
+# revision of DOCS_STANDARD.md. There is no guide/ page yet, so that section is
+# omitted rather than stubbed.
 nav:
   - Home: index.md
-  - Getting Started:
-      - Installation: installation.md
-      - Quick Start: quick-start.md
+  - Getting Started: getting-started.md
   - Reference:
-      - API Reference: api-reference.md
+      - API: reference/api.md
   - Project:
-      - Development: development.md
+      - Development: project/development.md
 
 not_in_nav: |
   notes/

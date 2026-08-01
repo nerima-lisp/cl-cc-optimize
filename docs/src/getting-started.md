@@ -1,9 +1,48 @@
-# Quick Start
+# Getting Started
 
-This walks through optimizing a small instruction stream: two constants, an
-add that folds them, and a redundant copy that dead-code elimination removes.
+`cl-cc-optimize` is distributed as source only, through the nerima-lisp Nix
+flake ecosystem. There is no Quicklisp distribution.
+
+## Add the flake input
+
+```nix
+cl-cc-optimize = {
+  url = "github:nerima-lisp/cl-cc-optimize/v0.1.0";
+  flake = false;
+};
+```
+
+Append `${cl-cc-optimize}//` to your `CL_SOURCE_REGISTRY` so ASDF can find it,
+the same way `cl-cc-optimize`'s own `flake.nix` lists its siblings.
+
+## Add the ASDF dependency
+
+```lisp
+(asdf:defsystem "your-system"
+  :depends-on ("cl-cc-optimize")
+  ...)
+```
+
+## Load and verify
+
+```lisp
+(asdf:load-system "cl-cc-optimize")
+;; => T
+
+(cl-cc/optimize:optimize-instructions
+ (list (cl-cc/vm:make-vm-const :dst :r0 :value 1)
+       (cl-cc/vm:make-vm-halt :reg :r0)))
+;; => a non-empty instruction list
+```
+
+If `asdf:load-system` signals `missing-dependency`, the sibling naming
+`missing-dependency`'s `:requires` slot is absent from your source registry;
+add its flake input the same way as `cl-cc-optimize` itself.
 
 ## Build the instruction stream
+
+The rest of this page optimizes a small instruction stream: two constants, an
+add that folds them, and a redundant copy that dead-code elimination removes.
 
 ```lisp
 (defparameter *instructions*
@@ -63,16 +102,9 @@ A single basic block, since nothing here branches.
 `x + 0` rewrites to a move, one of the algebraic identities registered as an
 e-graph rewrite rule.
 
-## The complete example
+## Next steps
 
-```lisp
-(cl-cc/optimize:optimize-instructions
- (list (cl-cc/vm:make-vm-const :dst :r0 :value 2)
-       (cl-cc/vm:make-vm-const :dst :r1 :value 3)
-       (cl-cc/vm:make-vm-add :dst :r2 :lhs :r0 :rhs :r1)
-       (cl-cc/vm:make-vm-move :dst :r3 :src :r2)
-       (cl-cc/vm:make-vm-halt :reg :r2)))
-```
-
-For what each pass does and how to read `api-reference.md`'s categories, see
-[API Reference](api-reference.md).
+- [API Reference](reference/api.md) for every exported symbol and what each
+  pass does.
+- [Development](project/development.md) for building and testing this
+  repository from a checkout rather than as a dependency.
