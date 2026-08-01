@@ -10,18 +10,17 @@
 ;;; ─── Block terminator rewriter (shared by tail-merge and jump-threading) ───
 
 (defun %opt-rewrite-block-terminator (block old-label new-label)
-  "Rewrite the jump terminator of BLOCK from OLD-LABEL to NEW-LABEL when it matches.
-Handles both vm-jump (unconditional) and vm-jump-zero (conditional)."
+  "Rewrite matching jump terminator labels in BLOCK."
   (when-let ((cell (last (bb-instructions block))))
     (let ((term (car cell)))
-      (when (equal (vm-label-name term) old-label)
-        (setf (car cell)
-              (typecase term
-                (vm-jump
-                 (make-vm-jump :label new-label))
-                (vm-jump-zero
-                 (make-vm-jump-zero :reg (vm-reg term) :label new-label))
-                (t (return-from %opt-rewrite-block-terminator))))))))
+      (typecase term
+        (vm-jump
+         (when (equal (vm-label-name term) old-label)
+           (setf (car cell) (make-vm-jump :label new-label))))
+        (vm-jump-zero
+         (when (equal (vm-label-name term) old-label)
+           (setf (car cell)
+                 (make-vm-jump-zero :reg (vm-reg term) :label new-label))))))))
 
 ;;; ─── Tail merge helpers ───────────────────────────────────────────────────
 
