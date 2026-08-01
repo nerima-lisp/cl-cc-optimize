@@ -46,10 +46,10 @@
     # cl-log-kit 2.0.0 drops its zero-runtime-dependency guarantee in favor of
     # these three nerima-lisp packages, used directly with no adapter layer:
     # calendar/zone handling, locks/condition-variables/atomics, and
-    # filesystem operations. They are transitive here (cl-cc-runtime pulls in
-    # cl-log-kit) but ASDF resolves by name against CL_SOURCE_REGISTRY, so
-    # they must be declared as siblings even though nothing in this repository
-    # names them directly.
+    # filesystem operations. cl-date-kit and cl-concurrent-kit reach this
+    # repository only transitively (cl-cc-runtime pulls in cl-log-kit) but ASDF
+    # resolves by name against CL_SOURCE_REGISTRY, so they must be declared as
+    # siblings even though nothing in this repository names them directly.
     cl-date-kit = {
       url = "github:nerima-lisp/cl-date-kit/v0.2.0";
       flake = false;
@@ -58,6 +58,8 @@
       url = "github:nerima-lisp/cl-concurrent-kit/v0.2.0";
       flake = false;
     };
+    # cl-host-kit is also a direct :depends-on of cl-cc-optimize: the roadmap
+    # doc readers call host-kit:getcwd/read-file-string/split-string.
     cl-host-kit = {
       url = "github:nerima-lisp/cl-host-kit/v0.2.1";
       flake = false;

@@ -9,14 +9,14 @@
 
 (defun %opt-roadmap-doc-pathname ()
   "Return the canonical docs/notes/optimize-passes.md pathname when available."
-  (let ((checkout-path (merge-pathnames #P"docs/notes/optimize-passes.md" (uiop:getcwd))))
+  (let ((checkout-path (merge-pathnames #P"docs/notes/optimize-passes.md" (host-kit:getcwd))))
     (or (probe-file checkout-path)
         (ignore-errors (asdf:system-relative-pathname :cl-cc "docs/notes/optimize-passes.md"))
         checkout-path)))
 
 (defun %opt-backend-roadmap-doc-pathname ()
   "Return the canonical docs/notes/optimize-backend.md pathname when available."
-  (let ((checkout-path (merge-pathnames #P"docs/notes/optimize-backend.md" (uiop:getcwd))))
+  (let ((checkout-path (merge-pathnames #P"docs/notes/optimize-backend.md" (host-kit:getcwd))))
     (or (probe-file checkout-path)
         (ignore-errors (asdf:system-relative-pathname :cl-cc "docs/notes/optimize-backend.md"))
         checkout-path)))

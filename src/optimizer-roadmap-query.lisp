@@ -9,8 +9,8 @@
 (defun optimize-roadmap-doc-features (&optional (pathname (%opt-roadmap-doc-pathname)))
   "Parse docs/notes/optimize-passes.md and return all FR features in document order."
   (let ((features nil))
-    (loop for line in (uiop:split-string (uiop:read-file-string pathname)
-                                         :separator '(#\Newline))
+    (loop for line in (host-kit:split-string (host-kit:read-file-string pathname)
+                                             :separator '(#\Newline))
           for line-no from 1
           when (%opt-roadmap-heading-p line)
           do (when-let ((feature-id (%opt-roadmap-fr-id-from-line line)))

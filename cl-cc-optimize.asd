@@ -13,7 +13,7 @@
   :homepage "https://github.com/nerima-lisp/cl-cc-optimize"
   :bug-tracker "https://github.com/nerima-lisp/cl-cc-optimize/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-cc-optimize.git")
-  :depends-on (:cl-cc-vm :cl-prolog :cl-cc-type :cl-cc-ast :cl-parser-kit)
+  :depends-on (:cl-cc-vm :cl-prolog :cl-cc-type :cl-cc-ast :cl-parser-kit :cl-host-kit)
   :pathname "src"
   :serial t
   :components
@@ -196,5 +196,5 @@
   :perform (asdf:test-op
     (op system)
     (declare (ignore op system))
-    (unless (uiop:symbol-call :cl-weave :run-all :reporter :spec :pass-with-no-tests nil)
+    (unless (host-kit:symbol-call :cl-weave :run-all :reporter :spec :pass-with-no-tests nil)
       (error "cl-cc-optimize tests failed"))))

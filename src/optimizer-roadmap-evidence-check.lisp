@@ -22,7 +22,7 @@
   (labels ((present-p (candidate)
              (or
           (ignore-errors (probe-file (asdf:system-relative-pathname :cl-cc candidate)))
-          (probe-file (merge-pathnames candidate (uiop:getcwd)))
+          (probe-file (merge-pathnames candidate (host-kit:getcwd)))
           (%opt-roadmap-extracted-module-pathname candidate))))
     (and
       (stringp path)
