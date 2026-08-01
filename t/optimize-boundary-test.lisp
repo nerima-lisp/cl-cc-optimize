@@ -869,6 +869,13 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                              (and (stringp name)
                                   (search "LICM_PREHEADER_" name)))))
                     optimized)
+              :to-be-truthy)
+      (expect (some (lambda (i)
+                      (and (typep i 'cl-cc/vm:vm-jump)
+                           (let ((target (cl-cc/vm:vm-label-name i)))
+                             (and (stringp target)
+                                  (search "LICM_PREHEADER_" target)))))
+                    optimized)
               :to-be-truthy))))
 
 (describe-sequential

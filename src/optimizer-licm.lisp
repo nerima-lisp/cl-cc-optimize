@@ -145,7 +145,11 @@
         (pushnew preheader (bb-predecessors header) :test #'eq)
         (dolist (pred outside-preds)
           (%licm-redirect-successor pred header preheader)
-          (%opt-rewrite-block-terminator pred header-label preheader-name))
+          (unless (%opt-rewrite-block-terminator pred header-label preheader-name)
+            ;; A fall-through edge must become an explicit branch to the preheader.
+            (setf (bb-instructions pred)
+                  (append (bb-instructions pred)
+                          (list (make-vm-jump :label preheader-name))))))
         (let ((all-members (loop for k being the hash-keys of members-ht collect k)))
           (dolist (member all-members)
             (setf (bb-instructions member)
