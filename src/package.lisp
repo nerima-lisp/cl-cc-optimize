@@ -122,7 +122,7 @@
     #:vm-register-function #:vm-register-method #:vm-rem #:vm-remhash #:vm-remove-handler
     #:vm-remove-package-local-nickname #:vm-rest #:vm-ret #:vm-ret-p #:vm-rhs #:vm-rotate
     #:vm-round-inst #:vm-rplaca #:vm-rplacd #:vm-second #:vm-select #:vm-set-global #:vm-sethash
-    #:vm-signal #:vm-signal-error #:vm-simd-vector-op #:vm-simd-vector-op-dst-array
+    #:vm-signal #:vm-signal-error #:vm-simd-vector-op #:vm-simd-vector-op-p #:vm-simd-vector-op-dst-array
     #:vm-simd-vector-op-element-type #:vm-simd-vector-op-index-reg #:vm-simd-vector-op-lhs-array
     #:vm-simd-vector-op-op #:vm-simd-vector-op-rhs-array #:vm-simple-vector-p #:vm-sin-inst
     #:vm-size-reg #:vm-slot-boundp #:vm-slot-exists-p #:vm-slot-read #:vm-slot-write
