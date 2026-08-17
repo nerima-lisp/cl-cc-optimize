@@ -102,6 +102,23 @@
         "type": "github"
       }
     },
+    "cl-codec-kit": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1785602303,
+        "narHash": "sha256-2NRmsQq6GGSZfY6+qLaoGEC7RuzqDrgdkpx3YHeIsBs=",
+        "owner": "nerima-lisp",
+        "repo": "cl-codec-kit",
+        "rev": "6c281f085ad62981cec0a07c55d26ef0b5be8f3a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "ref": "v0.3.1",
+        "repo": "cl-codec-kit",
+        "type": "github"
+      }
+    },
     "cl-concurrent-kit": {
       "flake": false,
       "locked": {
@@ -221,20 +238,20 @@
         "type": "github"
       }
     },
-    "cl-prolog": {
+    "cl-prolog-kit": {
       "flake": false,
       "locked": {
-        "lastModified": 1785656951,
-        "narHash": "sha256-szDf+Sg5RDex/VC/2h9tt9TQYyxwOgPjTR4PpKB9To8=",
+        "lastModified": 1786948477,
+        "narHash": "sha256-3qn9W1Jmbxnr0Si77J7Klo26oX/zjgBVwb5ye74NsTY=",
         "owner": "nerima-lisp",
-        "repo": "cl-prolog",
-        "rev": "c78f2c34792d01b653721d6b12427f98ef4235d7",
+        "repo": "cl-prolog-kit",
+        "rev": "239368e1001bc3a8576d45770c9e91da11515d09",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v1.3.0",
-        "repo": "cl-prolog",
+        "ref": "v1.5.0",
+        "repo": "cl-prolog-kit",
         "type": "github"
       }
     },
@@ -318,6 +335,7 @@
         "cl-cc-runtime": "cl-cc-runtime",
         "cl-cc-type": "cl-cc-type",
         "cl-cc-vm": "cl-cc-vm",
+        "cl-codec-kit": "cl-codec-kit",
         "cl-concurrent-kit": "cl-concurrent-kit",
         "cl-date-kit": "cl-date-kit",
         "cl-host-kit": "cl-host-kit",
@@ -325,7 +343,7 @@
         "cl-log-kit": "cl-log-kit",
         "cl-parser-kit": "cl-parser-kit",
         "cl-process-kit": "cl-process-kit",
-        "cl-prolog": "cl-prolog",
+        "cl-prolog-kit": "cl-prolog-kit",
         "cl-weave": "cl-weave",
         "nixpkgs": "nixpkgs",
         "paredit-cli": "paredit-cli",

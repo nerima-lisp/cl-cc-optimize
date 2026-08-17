@@ -35,8 +35,8 @@
       url = "github:nerima-lisp/cl-cc-vm/d88159a190283aaa39e50ec8e4b3fa2392dad0bd";
       flake = false;
     };
-    cl-prolog = {
-      url = "github:nerima-lisp/cl-prolog/v1.3.0";
+    cl-prolog-kit = {
+      url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
       flake = false;
     };
     cl-parser-kit = {
@@ -70,6 +70,15 @@
     };
     cl-process-kit = {
       url = "github:nerima-lisp/cl-process-kit/v3.1.0";
+      flake = false;
+    };
+    # cl-process-kit v3.1.0 depends on cl-codec-kit, so the source registry has
+    # to carry it too or ASDF cannot resolve cl-process-kit at all. Pinned to
+    # the same v0.3.1 cl-process-kit itself pins, rather than the newer v0.5.0:
+    # this registry makes every source coexist, so the version to use is the one
+    # the consumer was actually built against.
+    cl-codec-kit = {
+      url = "github:nerima-lisp/cl-codec-kit/v0.3.1";
       flake = false;
     };
     cl-json-kit = {
@@ -112,13 +121,14 @@
       cl-cc-bootstrap,
       cl-cc-runtime,
       cl-cc-vm,
-      cl-prolog,
+      cl-prolog-kit,
       cl-parser-kit,
       cl-date-kit,
       cl-concurrent-kit,
       cl-host-kit,
       cl-log-kit,
       cl-process-kit,
+      cl-codec-kit,
       cl-json-kit,
       cl-boundary-kit,
       paredit-cli,
@@ -141,7 +151,7 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
       # CL_SOURCE_REGISTRY for the test, coverage and dev environments.
-      sourceRegistry = "${cl-weave}//:${cl-cc-ast}//:${cl-cc-type}//:${cl-cc-bootstrap}//:${cl-cc-runtime}//:${cl-cc-vm}//:${cl-prolog}//:${cl-parser-kit}//:${cl-date-kit}//:${cl-concurrent-kit}//:${cl-host-kit}//:${cl-log-kit}//:${cl-process-kit}//:${cl-json-kit}//:${cl-boundary-kit}//:${self}//";
+      sourceRegistry = "${cl-weave}//:${cl-cc-ast}//:${cl-cc-type}//:${cl-cc-bootstrap}//:${cl-cc-runtime}//:${cl-cc-vm}//:${cl-prolog-kit}//:${cl-parser-kit}//:${cl-date-kit}//:${cl-concurrent-kit}//:${cl-host-kit}//:${cl-log-kit}//:${cl-process-kit}//:${cl-codec-kit}//:${cl-json-kit}//:${cl-boundary-kit}//:${self}//";
 
       # Single source of truth for the package version: the `:version` form in
       # cl-cc-optimize.asd. A release only ever edits the .asd file and every Nix

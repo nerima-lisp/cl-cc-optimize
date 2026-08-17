@@ -13,7 +13,7 @@
   :homepage "https://github.com/nerima-lisp/cl-cc-optimize"
   :bug-tracker "https://github.com/nerima-lisp/cl-cc-optimize/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-cc-optimize.git")
-  :depends-on (:cl-cc-vm :cl-prolog :cl-cc-type :cl-cc-ast :cl-parser-kit :cl-host-kit)
+  :depends-on (:cl-cc-vm :cl-prolog-kit :cl-cc-type :cl-cc-ast :cl-parser-kit :cl-host-kit)
   :pathname "src"
   :serial t
   :components

@@ -2,9 +2,9 @@
 ;;;;
 ;;;; Moved from packages/prolog/src/peephole-data.lisp as part of the
 ;;;; migration off cl-cc's own homegrown Prolog engine onto the external
-;;;; cl-prolog library (see optimizer-prolog-peephole.lisp). Rule patterns
-;;;; are plain S-expressions matched via CL-PROLOG:UNIFY, unrelated to
-;;;; cl-prolog's goal/builtin dispatch, so no package qualification is
+;;;; cl-prolog-kit library (see optimizer-prolog-peephole.lisp). Rule patterns
+;;;; are plain S-expressions matched via CL-PROLOG-KIT:UNIFY, unrelated to
+;;;; cl-prolog-kit's goal/builtin dispatch, so no package qualification is
 ;;;; needed for the ?-prefixed pattern variables here.
 
 (in-package :cl-cc/optimize)

@@ -35,14 +35,14 @@ predicates to the fact-backed rule records."
                  (if foundp sym name))
                name)))
     (mapcar (lambda (solution)
-              (let ((name (%normalize-rule-name (cl-prolog:solution-binding '?name solution)))
-                    (lhs  (cl-prolog:solution-binding '?lhs solution))
-                    (rhs  (cl-prolog:solution-binding '?rhs solution)))
+              (let ((name (%normalize-rule-name (cl-prolog-kit:solution-binding '?name solution)))
+                    (lhs  (cl-prolog-kit:solution-binding '?lhs solution))
+                    (rhs  (cl-prolog-kit:solution-binding '?rhs solution)))
                 (list :name name
                      :lhs lhs
                      :rhs rhs
                      :when (gethash name *egraph-rule-guards*))))
-            (cl-prolog:query-prolog *egraph-rulebase* '(egraph-rule ?name ?lhs ?rhs)))))
+            (cl-prolog-kit:query-prolog *egraph-rulebase* '(egraph-rule ?name ?lhs ?rhs)))))
 
 ;;; ─── E-Graph Instruction Rewriter ────────────────────────────────────────
 
