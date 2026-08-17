@@ -6,7 +6,7 @@
 ;;; %maybe-peephole-rewrite, apply-prolog-peephole.
 ;;;
 ;;; Rule data lives in peephole-data.lisp. UNIFY/LOGIC-SUBSTITUTE come from
-;;; the external :cl-prolog engine (imported unqualified in package.lisp).
+;;; the external :cl-prolog-kit engine (imported unqualified in package.lisp).
 ;;; ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 (defun %remove-self-move-p (instruction)

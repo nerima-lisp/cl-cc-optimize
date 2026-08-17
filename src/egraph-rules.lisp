@@ -20,7 +20,7 @@
 
 ;;; ─── Rule Registry ───────────────────────────────────────────────────────
 
-(defparameter *egraph-rulebase* (cl-prolog:make-rulebase)
+(defparameter *egraph-rulebase* (cl-prolog-kit:make-rulebase)
   "Fact database of EGRAPH-RULE(NAME, PATTERN, REPLACEMENT) triples, the
 source of truth EGRAPH-BUILTIN-RULES reconstructs the rule table from.")
 
@@ -56,9 +56,9 @@ Rule structure itself is sourced from the Prolog rule database emitted by `defru
                                 `(lambda (bindings eg)
                                    (declare (ignorable bindings eg))
                                    ,when)))
-     (cl-prolog:query-prolog-first
+     (cl-prolog-kit:query-prolog-first
       *egraph-rulebase*
-      '(cl-prolog:assertz (egraph-rule ,name ,pattern ,replacement)))
+      '(cl-prolog-kit:assertz (egraph-rule ,name ,pattern ,replacement)))
      ',name))
 
 ;;; ─── Binding Helpers ─────────────────────────────────────────────────────
