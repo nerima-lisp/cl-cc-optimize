@@ -102,6 +102,23 @@
         "type": "github"
       }
     },
+    "cl-codec-kit": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1785602303,
+        "narHash": "sha256-2NRmsQq6GGSZfY6+qLaoGEC7RuzqDrgdkpx3YHeIsBs=",
+        "owner": "nerima-lisp",
+        "repo": "cl-codec-kit",
+        "rev": "6c281f085ad62981cec0a07c55d26ef0b5be8f3a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "ref": "v0.3.1",
+        "repo": "cl-codec-kit",
+        "type": "github"
+      }
+    },
     "cl-concurrent-kit": {
       "flake": false,
       "locked": {
@@ -318,6 +335,7 @@
         "cl-cc-runtime": "cl-cc-runtime",
         "cl-cc-type": "cl-cc-type",
         "cl-cc-vm": "cl-cc-vm",
+        "cl-codec-kit": "cl-codec-kit",
         "cl-concurrent-kit": "cl-concurrent-kit",
         "cl-date-kit": "cl-date-kit",
         "cl-host-kit": "cl-host-kit",
