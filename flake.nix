@@ -40,7 +40,7 @@
       flake = false;
     };
     cl-parser-kit = {
-      url = "github:nerima-lisp/cl-parser-kit/v1.0.3";
+      url = "github:nerima-lisp/cl-parser-kit/v1.1.1";
       flake = false;
     };
     # cl-log-kit 2.0.0 drops its zero-runtime-dependency guarantee in favor of
@@ -51,42 +51,37 @@
     # resolves by name against CL_SOURCE_REGISTRY, so they must be declared as
     # siblings even though nothing in this repository names them directly.
     cl-date-kit = {
-      url = "github:nerima-lisp/cl-date-kit/v0.2.0";
+      url = "github:nerima-lisp/cl-date-kit/v1.1.1";
       flake = false;
     };
     cl-concurrent-kit = {
-      url = "github:nerima-lisp/cl-concurrent-kit/v0.3.0";
+      url = "github:nerima-lisp/cl-concurrent-kit/v0.6.1";
       flake = false;
     };
     # cl-host-kit is also a direct :depends-on of cl-cc-optimize: the roadmap
     # doc readers call host-kit:getcwd/read-file-string/split-string.
     cl-host-kit = {
-      url = "github:nerima-lisp/cl-host-kit/v0.2.5";
+      url = "github:nerima-lisp/cl-host-kit/v0.3.1";
       flake = false;
     };
     cl-log-kit = {
-      url = "github:nerima-lisp/cl-log-kit/v2.0.1";
+      url = "github:nerima-lisp/cl-log-kit/v2.2.0";
       flake = false;
     };
     cl-process-kit = {
-      url = "github:nerima-lisp/cl-process-kit/v3.1.0";
+      url = "github:nerima-lisp/cl-process-kit/v3.4.0";
       flake = false;
     };
-    # cl-process-kit v3.1.0 depends on cl-codec-kit, so the source registry has
-    # to carry it too or ASDF cannot resolve cl-process-kit at all. Pinned to
-    # the same v0.3.1 cl-process-kit itself pins, rather than the newer v0.5.0:
-    # this registry makes every source coexist, so the version to use is the one
-    # the consumer was actually built against.
     cl-codec-kit = {
-      url = "github:nerima-lisp/cl-codec-kit/v0.3.1";
+      url = "github:nerima-lisp/cl-codec-kit/v0.6.0";
       flake = false;
     };
     cl-json-kit = {
-      url = "github:nerima-lisp/cl-json-kit/v1.0.2";
+      url = "github:nerima-lisp/cl-json-kit/v1.2.0";
       flake = false;
     };
     cl-boundary-kit = {
-      url = "github:nerima-lisp/cl-boundary-kit/v2.0.1";
+      url = "github:nerima-lisp/cl-boundary-kit/v2.3.0";
       flake = false;
     };
     # Used only as a source tree (`${cl-weave}//` in sourceRegistry below),
@@ -94,14 +89,14 @@
     # lock file from also dragging in cl-weave's own input graph (cl-nix-forge,
     # treefmt-nix, and their transitive nixpkgs).
     cl-weave = {
-      url = "github:nerima-lisp/cl-weave/v1.1.4";
+      url = "github:nerima-lisp/cl-weave/v1.4.0";
       flake = false;
     };
 
     # `flake = true`: checks.paredit-lint below calls its `lib.<system>.mkLintCheck`,
     # a flake output, not just an ASDF source tree.
     paredit-cli = {
-      url = "github:nerima-lisp/paredit-cli/v1.4.0";
+      url = "github:nerima-lisp/paredit-cli/v1.6.3";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
