@@ -43,11 +43,12 @@
 (defstruct (e-graph (:conc-name eg-))
   "The E-graph maintains a union-find structure over e-classes, a memo table
    for hash-consing, and a worklist of pending merges."
-  (classes    (make-hash-table)           :type hash-table)  ; id → e-class
-  (memo       (make-hash-table :test #'equal) :type hash-table)  ; canonical-enode-key → class-id
-  (union-find (make-hash-table)           :type hash-table)  ; id → canonical id
-  (worklist   nil                         :type list)        ; (id1 . id2) pending merges
-  (next-id    0                           :type fixnum))
+  (classes      (make-hash-table)              :type hash-table)  ; id → e-class
+  (memo         (make-hash-table :test #'equal) :type hash-table)  ; canonical-enode-key → class-id
+  (literal-memo (make-hash-table :test #'eql)   :type hash-table)
+  (union-find   (make-hash-table)              :type hash-table)  ; id → canonical id
+  (worklist     nil                            :type list)        ; (id1 . id2) pending merges
+  (next-id      0                              :type fixnum))
 
 ;;; ─── Union-Find ──────────────────────────────────────────────────────────
 
@@ -88,8 +89,10 @@
                               :children canon-children
                               :data data
                               :data-p data-p))
-           (key (enode-memo-key node)))
-      (or (gethash key (eg-memo eg))
+           (literal-p (and data-p (eq op 'const)))
+           (memo (if literal-p (eg-literal-memo eg) (eg-memo eg)))
+           (key (if literal-p data (enode-memo-key node))))
+      (or (gethash key memo)
           (let* ((id (eg-next-id eg))
                  (cls (make-e-class :id id
                                     :nodes (list node)
@@ -98,7 +101,7 @@
             (setf (en-eclass node) id
                   (gethash id (eg-classes eg)) cls
                   (gethash id (eg-union-find eg)) id
-                  (gethash key (eg-memo eg)) id)
+                  (gethash key memo) id)
             (dolist (child canon-children)
               (when-let ((child-cls (gethash (egraph-find eg child)
                                              (eg-classes eg))))
@@ -145,7 +148,7 @@
                              (en-data-p node)))
                       (ec-nodes cls2)))))
     (when (and cls1 cls2 cls1-has-literal cls2-has-literal
-               (not (equal (ec-data cls1) (ec-data cls2))))
+               (not (eql (ec-data cls1) (ec-data cls2))))
       (error "Cannot merge e-graph constants with different values: ~S and ~S"
              (ec-data cls1)
              (ec-data cls2)))

@@ -167,5 +167,5 @@ recording a fresh reg-ref e-class when R has not been seen before."
 (defun egraph-stats (eg)
   "Return a plist of e-graph statistics for debugging."
   (list :classes   (hash-table-count (eg-classes eg))
-        :memo-size (hash-table-count (eg-memo eg))
+        :memo-size (+ (hash-table-count (eg-memo eg)) (hash-table-count (eg-literal-memo eg)))
         :worklist  (length (eg-worklist eg))))

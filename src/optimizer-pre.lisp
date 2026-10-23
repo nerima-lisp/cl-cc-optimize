@@ -3,11 +3,11 @@
 
 ;;; ─── PRE support helpers ──────────────────────────────────────────────────
 
-(defun %opt-pre-expression-key (inst)
+(defun %opt-pre-expression-key (inst constant-ids)
   "Return a structural key for a pure instruction INST, or NIL."
   (when (opt-inst-pure-p inst)
     (typecase inst
-      (vm-const (list :const (vm-value inst)))
+      (vm-const (list :const (%opt-constant-key (vm-value inst) constant-ids)))
       (t
        (let* ((reads (opt-inst-read-regs inst))
               (normalized (if (member (type-of inst) *opt-commutative-inst-types* :test #'eq)
@@ -23,13 +23,13 @@
     (maphash (lambda (k v) (when (eq v dst) (push k stale))) env)
     (dolist (k stale) (remhash k env))))
 
-(defun %opt-pre-block-out-env (block)
+(defun %opt-pre-block-out-env (block constant-ids)
   "Return key→dst availability after BLOCK for PRE join-point analysis."
   (let ((env (make-hash-table :test #'equal)))
     (dolist (inst (bb-instructions block) env)
       (when-let ((dst (opt-inst-dst inst)))
         (%opt-pre-env-evict-dst env dst))
-      (when-let ((key (%opt-pre-expression-key inst)))
+      (when-let ((key (%opt-pre-expression-key inst constant-ids)))
         (setf (gethash key env) (opt-inst-dst inst))))))
 
 (defun %opt-pre-splice-before-terminator (insts additions)
@@ -62,17 +62,18 @@
 
 (defun %opt-pre-join-elim (cfg)
   "Do a small join-point PRE pass over CFG blocks."
-  (let ((pred-inserts (make-hash-table :test #'eq))
+  (let ((constant-ids (make-hash-table :test #'eql))
+        (pred-inserts (make-hash-table :test #'eq))
         (changed nil))
     (loop for block across (cfg-blocks cfg)
           do (when (> (length (bb-predecessors block)) 1)
                (let ((pred-envs (mapcar (lambda (pred)
-                                          (cons pred (%opt-pre-block-out-env pred)))
+                                          (cons pred (%opt-pre-block-out-env pred constant-ids)))
                                         (bb-predecessors block)))
                      (new-insts nil))
                  (dolist (inst (bb-instructions block))
                    (let* ((dst (opt-inst-dst inst))
-                          (key (%opt-pre-expression-key inst)))
+                          (key (%opt-pre-expression-key inst constant-ids)))
                      (when dst
                        (dolist (pair pred-envs)
                          (%opt-pre-env-evict-dst (cdr pair) dst)))

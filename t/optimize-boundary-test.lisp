@@ -133,6 +133,14 @@ repeated \"locate the one instruction a pass introduced or rewrote, then
 inspect its slots\" shape used across the optimizer-pass tests below."
   (find-if (lambda (instruction) (typep instruction type)) instructions))
 
+(defun %run-vm-program (instructions bindings)
+  (let* ((flat (coerce instructions 'vector))
+         (state (cl-cc/vm:make-vm-state)))
+    (dolist (binding bindings)
+      (cl-cc/vm:vm-reg-set state (car binding) (cdr binding)))
+    (cl-cc/vm:run-program-slice
+     flat (cl-cc/vm:build-label-table flat) 0 state)))
+
 (defun %count-instructions-of-type (instructions type)
   "Count the elements of INSTRUCTIONS of TYPE."
   (count-if (lambda (instruction) (typep instruction type)) instructions))
@@ -548,19 +556,16 @@ inspect its slots\" shape used across the optimizer-pass tests below."
 
 (progn
 (describe-sequential "E-graph lowering convergence"
-  (it "uses an earlier single-definition register as representative"
-    (let* ((eg (cl-cc/optimize::make-e-graph))
-           (class-id (cl-cc/optimize::egraph-add
-                      eg (quote cl-cc/optimize::reg-ref) :seed))
-           (instructions
-             (vm-program (move :r2 :seed)
-                         (move :r1 :r2)
-                         (move :r2 :r1)))
-           (instruction-classes (list class-id class-id class-id))
-           (representatives
-             (cl-cc/optimize::%egraph-class-representatives
-              eg instruction-classes instructions)))
-      (expect (gethash class-id representatives) :to-equal (cons 1 :r1))))
+  (it "reuses an equivalent register within its basic block"
+    (let* ((instructions
+             (vm-program (move :r1 :x)
+                         (move :r2 :x)
+                         (ret :r2)))
+           (optimized (cl-cc/optimize:optimize-with-egraph instructions))
+           (bindings (list (cons :x 42))))
+      (expect (%run-vm-program instructions bindings) :to-equal 42)
+      (expect (%run-vm-program optimized bindings) :to-equal 42)
+      (expect (cl-cc/vm:vm-move-src (second optimized)) :to-be :r1)))
   (it "is idempotent for registers joined by an algebraic identity"
     (:timeout-ms 1000)
     (let* ((instructions
@@ -573,7 +578,53 @@ inspect its slots\" shape used across the optimizer-pass tests below."
               (mapcar (function cl-cc/optimize::instruction->sexp) once))
       (expect (typep (first once) (quote cl-cc/vm:vm-const)) :to-be-truthy)
       (expect (cl-cc/vm:vm-dst (first once)) :to-be :zero)
-      (expect (cl-cc/vm:vm-const-value (first once)) :to-equal 0))))
+      (expect (cl-cc/vm:vm-const-value (first once)) :to-equal 0)))
+  (it "preserves identity of equal but distinct string constants"
+    (:timeout-ms 1000)
+    (let* ((first-string (copy-seq "same"))
+           (second-string (copy-seq "same"))
+           (instructions
+             (vm-program (const :a first-string)
+                         (const :b second-string)
+                         (cl-cc/vm:make-vm-eq
+                          :dst :cmp :lhs :a :rhs :b)
+                         (ret :cmp)))
+           (optimized (cl-cc/optimize:optimize-with-egraph instructions)))
+      (expect (eq first-string second-string) :to-be nil)
+      (expect (%run-vm-program instructions nil) :to-equal 0)
+      (expect (%run-vm-program optimized nil) :to-equal 0)
+      (let* ((graph (cl-cc/optimize::make-e-graph))
+             (first-class (cl-cc/optimize::%egraph-add-constant graph 42))
+             (second-class (cl-cc/optimize::%egraph-add-constant graph 42))
+             (string-graph (cl-cc/optimize::make-e-graph))
+             (first-string-class
+               (cl-cc/optimize::%egraph-add-constant string-graph first-string))
+             (second-string-class
+               (cl-cc/optimize::%egraph-add-constant string-graph second-string)))
+        (expect first-class :to-equal second-class)
+        (expect (/= first-string-class second-string-class) :to-be-truthy)
+        (expect (handler-case
+                    (progn
+                      (cl-cc/optimize::%egraph-absorb-class
+                       string-graph first-string-class second-string-class)
+                      :merged)
+                  (error () :rejected))
+                :to-be :rejected))))
+  (it "preserves register values across a branch target"
+    (:timeout-ms 1000)
+    (let* ((instructions
+             (vm-program (jump-zero :condition "L")
+                         (move :r1 :x)
+                         (label "L")
+                         (move :r2 :x)
+                         (ret :r2)))
+           (zero-bindings (list (cons :condition 0) (cons :x 42)))
+           (nonzero-bindings (list (cons :condition 1) (cons :x 42)))
+           (optimized (cl-cc/optimize:optimize-with-egraph instructions)))
+      (expect (%run-vm-program instructions zero-bindings) :to-equal 42)
+      (expect (%run-vm-program optimized zero-bindings) :to-equal 42)
+      (expect (%run-vm-program instructions nonzero-bindings) :to-equal 42)
+      (expect (%run-vm-program optimized nonzero-bindings) :to-equal 42))))
 
 (describe-sequential
   "FR-668 Scalar Replacement of Aggregates (SROA)"
@@ -666,7 +717,21 @@ inspect its slots\" shape used across the optimizer-pass tests below."
       (expect (length optimized) :to-equal 5)
       (expect (typep (third optimized) 'cl-cc/vm:vm-add) :to-be-truthy)
       (expect (typep (fourth optimized) 'cl-cc/vm:vm-move) :to-be-truthy)
-      (expect (cl-cc/vm:vm-move-src (fourth optimized)) :to-be :r2))))
+      (expect (cl-cc/vm:vm-move-src (fourth optimized)) :to-be :r2)))
+  (it
+    "preserves identity for equal but distinct constant strings"
+    (let* ((first-string (copy-seq "same"))
+           (second-string (copy-seq "same"))
+           (instructions
+             (vm-program (const :a first-string)
+                         (const :b second-string)
+                         (cl-cc/vm:make-vm-eq :dst :first :lhs :a :rhs :b)
+                         (cl-cc/vm:make-vm-eq :dst :result :lhs :a :rhs :a)
+                         (ret :result)))
+           (optimized (cl-cc/optimize::opt-pass-cse instructions)))
+      (expect (eq first-string second-string) :to-be nil)
+      (expect (%run-vm-program instructions nil) :to-equal 1)
+      (expect (%run-vm-program optimized nil) :to-equal 1))))
 
 (describe-sequential
   "strength reduction rewrites multiply-by-power-of-two as a shift"
@@ -894,7 +959,29 @@ inspect its slots\" shape used across the optimizer-pass tests below."
       (expect join-pos :to-be-truthy)
       (expect (some (function cl-cc/optimize::opt-inst-dst)
                      (subseq optimized (1+ else-pos) join-pos))
-              :to-be-truthy))))
+              :to-be-truthy)))
+  (it
+    "preserves identity for equal but distinct constants at a branch join"
+    (let* ((first-string (copy-seq "same"))
+           (second-string (copy-seq "same"))
+           (instructions
+             (vm-program (jump-zero :condition :other)
+                         (const :a first-string)
+                         (jump :join)
+                         (label :other)
+                         (const :a first-string)
+                         (label :join)
+                         (const :b second-string)
+                         (cl-cc/vm:make-vm-eq :dst :result :lhs :a :rhs :b)
+                         (ret :result)))
+           (optimized (cl-cc/optimize::opt-pass-pre instructions))
+           (zero-bindings (list (cons :condition 0)))
+           (nonzero-bindings (list (cons :condition 1))))
+      (expect (eq first-string second-string) :to-be nil)
+      (expect (%run-vm-program instructions zero-bindings) :to-equal 0)
+      (expect (%run-vm-program instructions nonzero-bindings) :to-equal 0)
+      (expect (%run-vm-program optimized zero-bindings) :to-equal 0)
+      (expect (%run-vm-program optimized nonzero-bindings) :to-equal 0))))
 
 (describe-sequential
   "global value numbering merges commutative-equivalent expressions"
@@ -912,7 +999,21 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                              optimized)))
       (expect y-inst :to-be-truthy)
       (expect (typep y-inst 'cl-cc/vm:vm-move) :to-be-truthy)
-      (expect (cl-cc/vm:vm-src y-inst) :to-be :x))))
+      (expect (cl-cc/vm:vm-src y-inst) :to-be :x)))
+  (it
+    "preserves identity for equal but distinct constant strings"
+    (let* ((first-string (copy-seq "same"))
+           (second-string (copy-seq "same"))
+           (instructions
+             (vm-program (const :a first-string)
+                         (const :b second-string)
+                         (cl-cc/vm:make-vm-eq :dst :first :lhs :a :rhs :b)
+                         (cl-cc/vm:make-vm-eq :dst :result :lhs :a :rhs :a)
+                         (ret :result)))
+           (optimized (cl-cc/optimize::opt-pass-gvn instructions)))
+      (expect (eq first-string second-string) :to-be nil)
+      (expect (%run-vm-program instructions nil) :to-equal 1)
+      (expect (%run-vm-program optimized nil) :to-equal 1))))
 
 (describe-sequential
   "loop idiom recognition rewrites a Kernighan popcount loop"

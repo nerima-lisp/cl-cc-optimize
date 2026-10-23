@@ -14,14 +14,21 @@
 
 (defstruct (cse-state (:conc-name cse-))
   "Mutable state threaded through the CSE pass."
-  (gen     (make-hash-table :test #'eq)    :type hash-table) ; reg → generation
-  (val-env (make-hash-table :test #'eq)    :type hash-table) ; reg → canonical key
-  (memo    (make-hash-table :test #'equal) :type hash-table)) ; key → canonical reg
+  (gen          (make-hash-table :test #'eq)    :type hash-table)  ; reg → generation
+  (val-env      (make-hash-table :test #'eq)    :type hash-table)  ; reg → canonical key
+  (constant-ids (make-hash-table :test #'eql)   :type hash-table)
+  (memo         (make-hash-table :test #'equal) :type hash-table)) ; key → canonical reg
 
-(defun %cse-get-val (state reg)
-  "Canonical value key for REG: stored value if known, else (reg . gen)."
-  (or (gethash reg (cse-val-env state))
-      (cons reg (or (gethash reg (cse-gen state)) 0))))
+(progn
+  (defun %opt-constant-key (value constant-ids)
+    (multiple-value-bind (key found-p) (gethash value constant-ids)
+      (if found-p
+          key
+          (setf (gethash value constant-ids) (gensym "OPT-CONST-")))))
+  (defun %cse-get-val (state reg)
+    "Canonical value key for REG: stored value if known, else (reg . gen)."
+    (or (gethash reg (cse-val-env state))
+        (cons reg (or (gethash reg (cse-gen state)) 0)))))
 
 (defun %cse-bump-gen (state dst)
   "Overwrite DST: evict stale val-env/memo entries and bump the generation."
@@ -46,6 +53,7 @@
   "Clear all value-numbering state (called at label boundaries)."
   (clrhash (cse-gen state))
   (clrhash (cse-val-env state))
+  (clrhash (cse-constant-ids state))
   (clrhash (cse-memo state)))
 
 ;;; ─── Pass: Common Subexpression Elimination ──────────────────────────────
@@ -78,7 +86,7 @@ with a vm-move (which risks a fold<->CSE oscillation that DCE can turn into
 a dangling register reference), then emit it onto RESULT. Return the
 updated RESULT."
   (let ((dst (vm-dst inst))
-        (key (list :const (vm-value inst))))
+        (key (list :const (%opt-constant-key (vm-value inst) (cse-constant-ids state)))))
     (%cse-bump-gen state dst)
     (%cse-record state dst key)
     (cons inst result)))
@@ -168,21 +176,21 @@ destination's generation and emit it unchanged. Return the updated RESULT."
     (setf (gethash key memo) dst))
   (setf (gethash dst gen) (1+ (or (gethash dst gen) 0))))
 
-(defun %gvn-key (inst gen val-env)
+(defun %gvn-key (inst gen val-env constant-ids)
   "Compute the canonical GVN key for INST using current GEN/VAL-ENV."
   (let ((reads (opt-inst-read-regs inst)))
     (typecase inst
-      (vm-const (list :const (vm-value inst)))
+      (vm-const (list :const (%opt-constant-key (vm-value inst) constant-ids)))
       (vm-move  (%gvn-get-val (vm-src inst) gen val-env))
       (t
        (when (and (opt-inst-pure-p inst) reads)
          (let ((vals (mapcar (lambda (reg) (%gvn-get-val reg gen val-env)) reads)))
            (if (%opt-commutative-inst-p inst)
-                (destructuring-bind (a b) vals
-                  (if (%opt-value< a b)
-                      (list (type-of inst) a b)
-                      (list (type-of inst) b a)))
-                (cons (type-of inst) vals))))))))
+               (destructuring-bind (a b) vals
+                 (if (%opt-value< a b)
+                     (list (type-of inst) a b)
+                     (list (type-of inst) b a)))
+               (cons (type-of inst) vals))))))))
 
 (defun %gvn-maybe-replace (inst dst key gen val-env memo acc)
   "If KEY is already in MEMO, push a vm-move onto ACC instead of INST.
@@ -319,11 +327,11 @@ would require different source registers."
 
 ;;; ─── Pass: Global Value Numbering ────────────────────────────────────────
 
-(defun %gvn-process-block (block gen val-env memo)
+(defun %gvn-process-block (block gen val-env memo constant-ids)
   "Process BLOCK for global value numbering using GEN/VAL-ENV/MEMO state."
   (let ((local-gen     (%gvn-copy-env gen))
         (local-val-env (%gvn-copy-env val-env))
-        (local-memo    (%gvn-copy-env memo :test #'equal))
+        (local-memo    (%gvn-copy-env memo :test (function equal)))
         (new-insts     nil))
     (dolist (inst (bb-instructions block))
       (when-let ((dst (opt-inst-dst inst)))
@@ -332,22 +340,22 @@ would require different source registers."
             (typecase inst
               (vm-const
                (let ((dst (vm-dst inst))
-                     (key (%gvn-key inst local-gen local-val-env)))
+                     (key (%gvn-key inst local-gen local-val-env constant-ids)))
                  (%gvn-record dst key local-gen local-val-env local-memo)
                  (cons inst new-insts)))
               (vm-move
                (let* ((dst (vm-dst inst))
-                      (key (%gvn-key inst local-gen local-val-env)))
+                      (key (%gvn-key inst local-gen local-val-env constant-ids)))
                  (%gvn-maybe-replace inst dst key local-gen local-val-env local-memo new-insts)))
               (t
                (if (and (opt-inst-pure-p inst) (opt-inst-dst inst))
                    (let* ((dst (opt-inst-dst inst))
-                          (key (%gvn-key inst local-gen local-val-env)))
+                          (key (%gvn-key inst local-gen local-val-env constant-ids)))
                      (%gvn-maybe-replace inst dst key local-gen local-val-env local-memo new-insts))
                    (cons inst new-insts))))))
     (setf (bb-instructions block) (nreverse new-insts))
     (dolist (child (bb-dom-children block))
-      (%gvn-process-block child local-gen local-val-env local-memo))))
+      (%gvn-process-block child local-gen local-val-env local-memo constant-ids))))
 
 (defun opt-pass-gvn (instructions)
   "Conservative global value numbering over the dominator tree.
@@ -356,13 +364,15 @@ would require different source registers."
    available-expressions / reaching-definitions at block entries, then performs
    dominator-tree value numbering. Unlike opt-pass-cse, knowledge is propagated
    into dominated basic blocks instead of being flushed at every label."
-  (let ((cfg (cfg-build (opt-pass-global-cse instructions))))
+  (let ((cfg (cfg-build (opt-pass-global-cse instructions)))
+        (constant-ids (make-hash-table :test (function eql))))
     (when (cfg-entry cfg)
       (cfg-compute-dominators cfg)
       (%gvn-process-block (cfg-entry cfg)
-                          (make-hash-table :test #'eq)
-                          (make-hash-table :test #'eq)
-                          (make-hash-table :test #'eq))
+                          (make-hash-table :test (function eq))
+                          (make-hash-table :test (function eq))
+                          (make-hash-table :test (function eq))
+                          constant-ids)
       (cfg-flatten-hot-cold cfg))))
 
 ;;; ─── Unused Label Elimination ────────────────────────────────────────────

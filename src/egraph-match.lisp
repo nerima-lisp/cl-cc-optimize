@@ -30,8 +30,8 @@
             when (and (eq (en-op n) 'const)
                       (null (en-children n))
                       (let ((cls-data (ec-data cls)))
-                        (or (equal cls-data val)
-                            (and (consp cls-data) (equal (car cls-data) val)))))
+                        (or (eql cls-data val)
+                            (and (consp cls-data) (eql (car cls-data) val)))))
             collect bindings))))
 
 (defun %egraph-match-compound-pattern (eg pattern cid bindings)

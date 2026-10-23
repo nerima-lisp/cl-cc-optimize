@@ -46,8 +46,9 @@ predicates to the fact-backed rule records."
 
 ;;; ─── E-Graph Instruction Rewriter ────────────────────────────────────────
 
-(defun %egraph-rewrite-inst (inst class-id eg class->representative index)
-  "Lower one instruction using its definition class in EG."
+(defun %egraph-rewrite-inst (inst class-id eg class->representative index
+                             instruction-blocks)
+  "Lower one instruction using an available definition in EG."
   (let ((dst (ignore-errors (vm-dst inst))))
     (cond
       ((null dst) inst)
@@ -56,9 +57,13 @@ predicates to the fact-backed rule records."
                       :value (egraph-class-const-value eg class-id)))
       (t
        (let* ((canon (egraph-find eg class-id))
-              (representative (gethash canon class->representative)))
+              (representative (gethash canon class->representative))
+              (candidate-index (car representative)))
          (if (and representative
-                  (< (car representative) index)
+                  (< candidate-index index)
+                  (or (null instruction-blocks)
+                      (= (aref instruction-blocks candidate-index)
+                         (aref instruction-blocks index)))
                   (not (eq (cdr representative) dst)))
              (make-vm-move :dst dst :src (cdr representative))
              inst))))))
@@ -66,7 +71,7 @@ predicates to the fact-backed rule records."
 ;;; ─── E-Graph Optimization Entry Point ────────────────────────────────────
 
 (defun %egraph-class-representatives (eg instruction-classes instructions)
-  "Map e-classes to earlier registers with a single definition."
+  "Map e-classes to their first single-definition register."
   (let ((definition-counts (make-hash-table :test (function eq)))
         (representatives (make-hash-table :test (function equal))))
     (loop for inst in instructions
@@ -80,7 +85,8 @@ predicates to the fact-backed rule records."
           when (and dst (= 1 (gethash dst definition-counts 0)))
             do (let ((canon (egraph-find eg class-id)))
                  (unless (gethash canon representatives)
-                   (setf (gethash canon representatives) (cons index dst)))))
+                   (setf (gethash canon representatives)
+                         (cons index dst)))))
     representatives))
 
 (defun optimize-with-egraph (instructions &key
@@ -97,10 +103,32 @@ predicates to the fact-backed rule records."
                        :limit saturation-limit
                        :fuel saturation-fuel)
       (egraph-rebuild eg)
-      (let ((class->representative
-              (%egraph-class-representatives eg instruction-classes instructions)))
+      (let* ((class->representative
+               (%egraph-class-representatives eg instruction-classes instructions))
+             (instruction-blocks
+               (when (loop for inst in instructions
+                             for next in (cdr instructions)
+                             thereis (or (typep inst
+                                                (quote (or vm-jump vm-jump-zero vm-ret vm-halt)))
+                                         (typep next (quote vm-label))))
+                 (let ((blocks (make-array (length instructions)))
+                       (block-id 0)
+                       (previous-boundary nil))
+                   (loop for inst in instructions
+                         for index from 0
+                         do (when (and (plusp index)
+                                       (or previous-boundary
+                                           (typep inst (quote vm-label))))
+                              (incf block-id))
+                            (setf (aref blocks index) block-id
+                                  previous-boundary
+                                  (typep inst
+                                         (quote (or vm-jump vm-jump-zero vm-ret vm-halt)))))
+                   blocks))))
         (loop for inst in instructions
               for class-id in instruction-classes
               for index from 0
               collect (%egraph-rewrite-inst
-                       inst class-id eg class->representative index))))))
+                       inst class-id eg class->representative index
+                       instruction-blocks))))))
+
