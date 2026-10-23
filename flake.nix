@@ -35,6 +35,16 @@
       url = "github:nerima-lisp/cl-cc-vm/462213fcf5e0e6cecc09992e8cb0b7ed48dbce2f";
       flake = false;
     };
+    # cl-cc-vm depends on these packages; ASDF needs their source trees in
+    # CL_SOURCE_REGISTRY even though cl-cc-optimize does not depend on them directly.
+    cl-regex-kit = {
+      url = "github:nerima-lisp/cl-regex-kit/da83905cad2bcb28518ebb28cac6628c654bb328";
+      flake = false;
+    };
+    cl-tty-kit = {
+      url = "github:nerima-lisp/cl-tty-kit/add24964a286720baa9e08722f4b611fcefdf22f";
+      flake = false;
+    };
     cl-prolog-kit = {
       url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
       flake = false;
@@ -116,6 +126,8 @@
       cl-cc-bootstrap,
       cl-cc-runtime,
       cl-cc-vm,
+      cl-regex-kit,
+      cl-tty-kit,
       cl-prolog-kit,
       cl-parser-kit,
       cl-date-kit,
@@ -136,7 +148,7 @@
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
       # CL_SOURCE_REGISTRY for the test, coverage and dev environments.
-      sourceRegistry = "${cl-weave}//:${cl-cc-ast}//:${cl-cc-type}//:${cl-cc-bootstrap}//:${cl-cc-runtime}//:${cl-cc-vm}//:${cl-prolog-kit}//:${cl-parser-kit}//:${cl-date-kit}//:${cl-concurrent-kit}//:${cl-host-kit}//:${cl-log-kit}//:${cl-process-kit}//:${cl-codec-kit}//:${cl-json-kit}//:${cl-boundary-kit}//:${self}//";
+      sourceRegistry = "${cl-weave}//:${cl-cc-ast}//:${cl-cc-type}//:${cl-cc-bootstrap}//:${cl-cc-runtime}//:${cl-cc-vm}//:${cl-regex-kit}//:${cl-tty-kit}//:${cl-prolog-kit}//:${cl-parser-kit}//:${cl-date-kit}//:${cl-concurrent-kit}//:${cl-host-kit}//:${cl-log-kit}//:${cl-process-kit}//:${cl-codec-kit}//:${cl-json-kit}//:${cl-boundary-kit}//:${self}//";
 
       # Single source of truth for the package version: the `:version` form in
       # cl-cc-optimize.asd. A release only ever edits the .asd file and every Nix

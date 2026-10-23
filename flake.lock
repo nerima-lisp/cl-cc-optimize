@@ -255,6 +255,40 @@
         "type": "github"
       }
     },
+    "cl-regex-kit": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790521261,
+        "narHash": "sha256-4BAunpX2NMUgt5usfJWp1dRqc0H01Is3MrGMGkquKio=",
+        "owner": "nerima-lisp",
+        "repo": "cl-regex-kit",
+        "rev": "da83905cad2bcb28518ebb28cac6628c654bb328",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "repo": "cl-regex-kit",
+        "rev": "da83905cad2bcb28518ebb28cac6628c654bb328",
+        "type": "github"
+      }
+    },
+    "cl-tty-kit": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786289076,
+        "narHash": "sha256-BITAAgbpxMVWgSCZPLWWO6gxh4KcPcHDy518Sbn0K8I=",
+        "owner": "nerima-lisp",
+        "repo": "cl-tty-kit",
+        "rev": "add24964a286720baa9e08722f4b611fcefdf22f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "repo": "cl-tty-kit",
+        "rev": "add24964a286720baa9e08722f4b611fcefdf22f",
+        "type": "github"
+      }
+    },
     "cl-weave": {
       "flake": false,
       "locked": {
@@ -344,6 +378,8 @@
         "cl-parser-kit": "cl-parser-kit",
         "cl-process-kit": "cl-process-kit",
         "cl-prolog-kit": "cl-prolog-kit",
+        "cl-regex-kit": "cl-regex-kit",
+        "cl-tty-kit": "cl-tty-kit",
         "cl-weave": "cl-weave",
         "nixpkgs": "nixpkgs",
         "paredit-cli": "paredit-cli",
