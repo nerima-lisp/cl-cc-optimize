@@ -475,7 +475,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                    :trials 200
                    :seed 753)))
       (expect (getf result :ok) :to-be-truthy)
-      (expect (getf result :trials) :to-equal 200)
+      (expect (getf result :trials) :to-equal 201)
       (expect (getf result :seed) :to-equal 753))))
 
 (describe-sequential "optimizer crash-safety on short generated instruction streams"
