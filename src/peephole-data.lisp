@@ -11,9 +11,9 @@
 
 (defparameter *peephole-copy-prop-rules*
   '(
-    ;; (:const :R1 42)(:move :R2 :R1) -> (:const :R2 42)
-    ;; Fires when copy-prop is blocked by a label reset but DCE kept the const alive.
-    ((:const ?src ?val) (:move ?dst ?src) ((:const ?dst ?val)))
+    ;; (:const :R1 42)(:move :R2 :R1) -> (:const :R1 42)(:const :R2 42)
+    ;; Preserve the source for later readers; DCE can remove it when unused.
+    ((:const ?src ?val) (:move ?dst ?src) ((:const ?src ?val) (:const ?dst ?val)))
 
     ;; (:jump "L0")(:label "L0") -> (:label "L0")
     ;; Eliminates a jump to the immediately following label (dead branch after threading).

@@ -85,56 +85,56 @@
 
 ;;; ─── Rule Application ────────────────────────────────────────────────────
 
-(defun egraph-apply-rule (eg rule)
-  "Apply one rewrite rule RULE = (:lhs pattern :rhs template :when guard-fn)
-   to the e-graph EG.  For every match of :lhs, construct the :rhs and
-   merge the resulting e-class with the matched class.
-   Returns the number of new merges added."
-  (let ((lhs      (getf rule :lhs))
-        (rhs      (getf rule :rhs))
-        (guard-fn (getf rule :when))
-        (merges   0))
-    (loop for cid being the hash-keys of (eg-classes eg)
-          do (let ((matches (egraph-match-pattern eg lhs cid)))
-               (dolist (bindings matches)
-                 (when (or (null guard-fn) (funcall guard-fn bindings eg))
-                   (when-let ((new-id (egraph-build-rhs eg rhs bindings)))
-                     (unless (= (egraph-find eg cid) (egraph-find eg new-id))
-                       (egraph-merge eg cid new-id)
-                       (incf merges)))))))
-    merges))
+(progn
+  (defvar *egraph-rule-constant-class* nil)
+
+  (defun egraph-apply-rule (eg rule)
+    "Apply RULE to EG, merging classes that match its left side and right side."
+    (let ((lhs (getf rule :lhs))
+          (rhs (getf rule :rhs))
+          (guard-fn (getf rule :when))
+          (merges 0))
+      (loop for class-id being the hash-keys of (eg-classes eg)
+            do (let ((matches (egraph-match-pattern eg lhs class-id)))
+                 (dolist (bindings matches)
+                   (let ((*egraph-rule-constant-class* nil))
+                     (when (or (null guard-fn)
+                               (funcall guard-fn bindings eg))
+                       (when-let ((new-id (egraph-build-rhs eg rhs bindings)))
+                         (unless (= (egraph-find eg class-id)
+                                    (egraph-find eg new-id))
+                           (egraph-merge eg class-id new-id)
+                           (incf merges))))))))
+      merges)))
 
 (defun egraph-build-rhs (eg template bindings)
-  "Build the right-hand side TEMPLATE into the e-graph EG using BINDINGS.
-   Returns the e-class ID of the constructed term."
+  "Build the right-hand side TEMPLATE into EG using BINDINGS."
   (cond
-   ;; Pattern variable: look up binding
-   ((egraph-pattern-var-p template)
-    (when-let ((b (assoc template bindings)))
-      (cdr b)))
-
-   ;; Compound template: (op arg1 arg2 ...)
-   ((consp template)
-    (let* ((op       (car template))
-           (arg-tmps (cdr template))
-           (arg-ids  (mapcar (lambda (a) (egraph-build-rhs eg a bindings))
-                             arg-tmps)))
-      (when (every #'identity arg-ids)
-        (apply #'egraph-add eg op arg-ids))))
-
-   ;; Literal op (nullary)
-   ((symbolp template)
-    (egraph-add eg template))
-
-   ;; Numeric or string constant
-   ((or (numberp template) (stringp template))
-    (let ((id (egraph-add eg 'const)))
-      ;; Store constant value in e-class data
-      (when-let ((cls (gethash id (eg-classes eg))))
-        (setf (ec-data cls) template))
-      id))
-
-   (t nil)))
+    ((egraph-pattern-var-p template)
+     (when-let ((binding (assoc template bindings)))
+       (cdr binding)))
+    ((and (consp template) (eq (car template) 'const))
+     (cond
+       ((null (cdr template))
+        (or *egraph-rule-constant-class*
+            (error "Constant rule produced no literal value")))
+       ((null (cddr template))
+        (egraph-build-rhs eg (cadr template) bindings))
+       (t
+        (error "Invalid constant e-graph expression: ~S" template))))
+    ((consp template)
+     (let* ((op (car template))
+            (arg-templates (cdr template))
+            (arg-ids (mapcar (lambda (arg)
+                               (egraph-build-rhs eg arg bindings))
+                             arg-templates)))
+       (when (every #'identity arg-ids)
+         (apply #'egraph-add eg op arg-ids))))
+    ((symbolp template)
+     (egraph-add eg template))
+    ((or (numberp template) (stringp template))
+     (%egraph-add-constant eg template))
+    (t nil)))
 
 ;;; ─── Saturation ──────────────────────────────────────────────────────────
 

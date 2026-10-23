@@ -24,12 +24,13 @@
 ;;; ─── Data Structures ─────────────────────────────────────────────────────
 
 (defstruct (e-node (:conc-name en-))
-  "An e-node represents a function application f(c1, c2, ...) where each
-   argument ci is an e-class ID (not a concrete value).  Structurally
-   identical e-nodes (same op + same canonicalized child IDs) are the same."
-  (op       nil  :type symbol)         ; operation symbol (e.g., 'add, 'const)
-  (children nil  :type list)           ; list of e-class IDs (fixnums)
-  (eclass   -1   :type fixnum))        ; owning e-class ID (-1 = unowned)
+  "An e-node represents a function application over e-class IDs.
+   A literal payload distinguishes constants with different values."
+  (op nil :type symbol)
+  (children nil :type list)
+  (data nil)
+  (data-p nil :type boolean)
+  (eclass -1 :type fixnum))        ; owning e-class ID (-1 = unowned)
 
 (defstruct (e-class (:conc-name ec-))
   "An e-class is an equivalence class of expressions that are all equal.
@@ -64,36 +65,53 @@
   "Return an e-node with all child IDs canonicalized via union-find."
   (make-e-node :op (en-op node)
                :children (mapcar (lambda (c) (egraph-find eg c))
-                                 (en-children node))))
+                                 (en-children node))
+               :data (en-data node)
+               :data-p (en-data-p node)))
 
 ;;; ─── E-Node Memo Key ─────────────────────────────────────────────────────
 
 (defun enode-memo-key (node)
-  "Compute the memo table key for an e-node (op + canonicalized child IDs).
-   Uses a list as the key (compared with #'equal)."
-  (cons (en-op node) (en-children node)))
+  "Compute a memo key from an e-node's operation, children, and literal data."
+  (list (en-op node)
+        (en-children node)
+        (en-data-p node)
+        (en-data node)))
 
 ;;; ─── Core Operations ─────────────────────────────────────────────────────
 
-(defun egraph-add (eg op &rest child-ids)
-  "Add an e-node with operation OP and CHILD-IDS to the e-graph.
-   Returns the e-class ID.
-   If a structurally identical node already exists (memo hit), returns its class."
-  (let* ((canon-children (mapcar (lambda (c) (egraph-find eg c)) child-ids))
-         (node (make-e-node :op op :children canon-children))
-         (key  (enode-memo-key node)))
-    (or (gethash key (eg-memo eg))
-        (let* ((id  (eg-next-id eg))
-               (cls (make-e-class :id id :nodes (list node))))
-          (incf (eg-next-id eg))
-          (setf (en-eclass node) id
-                (gethash id  (eg-classes eg))    cls
-                (gethash id  (eg-union-find eg)) id
-                (gethash key (eg-memo eg))        id)
-          (dolist (c canon-children)
-            (when-let ((child-cls (gethash (egraph-find eg c) (eg-classes eg))))
-              (push (cons node id) (ec-parents child-cls))))
-          id))))
+(progn
+  (defun %egraph-add-node (eg op child-ids data data-p)
+    (let* ((canon-children (mapcar (lambda (child) (egraph-find eg child))
+                                   child-ids))
+           (node (make-e-node :op op
+                              :children canon-children
+                              :data data
+                              :data-p data-p))
+           (key (enode-memo-key node)))
+      (or (gethash key (eg-memo eg))
+          (let* ((id (eg-next-id eg))
+                 (cls (make-e-class :id id
+                                    :nodes (list node)
+                                    :data (if data-p data nil))))
+            (incf (eg-next-id eg))
+            (setf (en-eclass node) id
+                  (gethash id (eg-classes eg)) cls
+                  (gethash id (eg-union-find eg)) id
+                  (gethash key (eg-memo eg)) id)
+            (dolist (child canon-children)
+              (when-let ((child-cls (gethash (egraph-find eg child)
+                                             (eg-classes eg))))
+                (push (cons node id) (ec-parents child-cls))))
+            id))))
+
+  (defun egraph-add (eg op &rest child-ids)
+    "Add an e-node with operation OP and CHILD-IDS to the e-graph.
+     Returns the e-class ID. Structurally identical nodes share a class."
+    (%egraph-add-node eg op child-ids nil nil))
+
+  (defun %egraph-add-constant (eg value)
+    (%egraph-add-node eg 'const nil value t)))
 
 (defun egraph-merge (eg id1 id2)
   "Assert that e-classes ID1 and ID2 are equal.
@@ -111,15 +129,34 @@
           canon))))
 
 (defun %egraph-absorb-class (eg r1 r2)
-  "Destructively merge e-class R2 into R1: move all nodes and parents, then remove R2."
-  (let ((cls1 (gethash r1 (eg-classes eg)))
-        (cls2 (gethash r2 (eg-classes eg))))
+  "Destructively merge e-class R2 into R1: move its nodes and parents."
+  (let* ((cls1 (gethash r1 (eg-classes eg)))
+         (cls2 (gethash r2 (eg-classes eg)))
+         (cls1-has-literal
+           (and cls1
+                (some (lambda (node)
+                        (and (eq (en-op node) 'const)
+                             (en-data-p node)))
+                      (ec-nodes cls1))))
+         (cls2-has-literal
+           (and cls2
+                (some (lambda (node)
+                        (and (eq (en-op node) 'const)
+                             (en-data-p node)))
+                      (ec-nodes cls2)))))
+    (when (and cls1 cls2 cls1-has-literal cls2-has-literal
+               (not (equal (ec-data cls1) (ec-data cls2))))
+      (error "Cannot merge e-graph constants with different values: ~S and ~S"
+             (ec-data cls1)
+             (ec-data cls2)))
+    (when (and cls1 cls2 cls2-has-literal (not cls1-has-literal))
+      (setf (ec-data cls1) (ec-data cls2)))
     (when (and cls1 cls2)
-      (dolist (n (ec-nodes cls2))
-        (setf (en-eclass n) r1)
-        (push n (ec-nodes cls1)))
-      (dolist (p (ec-parents cls2))
-        (push p (ec-parents cls1)))
+      (dolist (node (ec-nodes cls2))
+        (setf (en-eclass node) r1)
+        (push node (ec-nodes cls1)))
+      (dolist (parent (ec-parents cls2))
+        (push parent (ec-parents cls1)))
       (remhash r2 (eg-classes eg)))))
 
 (defun %egraph-repair-parent-node (eg pn)

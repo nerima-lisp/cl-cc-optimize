@@ -46,70 +46,61 @@ predicates to the fact-backed rule records."
 
 ;;; ─── E-Graph Instruction Rewriter ────────────────────────────────────────
 
-(defun %egraph-rewrite-inst (inst eg reg-map class->representative)
-  "Lower INST using equality-class information from the saturated e-graph EG.
-Constants proven equal are folded; non-representative registers are aliased to
-a deterministic representative while its defining instruction is preserved."
+(defun %egraph-rewrite-inst (inst class-id eg class->representative index)
+  "Lower one instruction using its definition class in EG."
   (let ((dst (ignore-errors (vm-dst inst))))
     (cond
       ((null dst) inst)
-      ((egraph-class-has-op-p eg (gethash dst reg-map) (quote const))
+      ((egraph-class-has-op-p eg class-id (quote const))
        (make-vm-const :dst dst
-                      :value (egraph-class-const-value eg (gethash dst reg-map))))
+                      :value (egraph-class-const-value eg class-id)))
       (t
-       (let* ((class-id (gethash dst reg-map))
-              (canon (and class-id (egraph-find eg class-id)))
-              (representative (and canon (gethash canon class->representative))))
-         (if (and representative (not (eq representative dst)))
-             (make-vm-move :dst dst :src representative)
+       (let* ((canon (egraph-find eg class-id))
+              (representative (gethash canon class->representative)))
+         (if (and representative
+                  (< (car representative) index)
+                  (not (eq (cdr representative) dst)))
+             (make-vm-move :dst dst :src (cdr representative))
              inst))))))
 
 ;;; ─── E-Graph Optimization Entry Point ────────────────────────────────────
 
-(defun %egraph-class-representatives (eg reg-map instructions)
-  "Return canonical e-class IDs mapped to deterministic VM register representatives.
-Destination registers are preferred in instruction order so rewritten moves never
-refer to a definition that originally appeared later in the instruction stream."
-  (let ((representatives (make-hash-table :test (function equal))))
-    (dolist (inst instructions)
-      (let* ((dst (ignore-errors (vm-dst inst)))
-             (class-id (and dst (gethash dst reg-map)))
-             (canon (and class-id (egraph-find eg class-id))))
-        (when (and canon (null (gethash canon representatives)))
-          (setf (gethash canon representatives) dst))))
-    (let ((entries nil))
-      (maphash (lambda (reg class-id)
-                 (push (cons reg class-id) entries))
-               reg-map)
-      (dolist (entry (sort entries (function string<)
-                           :key (lambda (item) (prin1-to-string (car item)))))
-        (let ((canon (egraph-find eg (cdr entry))))
-          (unless (gethash canon representatives)
-            (setf (gethash canon representatives) (car entry))))))
+(defun %egraph-class-representatives (eg instruction-classes instructions)
+  "Map e-classes to earlier registers with a single definition."
+  (let ((definition-counts (make-hash-table :test (function eq)))
+        (representatives (make-hash-table :test (function equal))))
+    (loop for inst in instructions
+          for dst = (ignore-errors (vm-dst inst))
+          when dst
+            do (incf (gethash dst definition-counts 0)))
+    (loop for inst in instructions
+          for class-id in instruction-classes
+          for index from 0
+          for dst = (ignore-errors (vm-dst inst))
+          when (and dst (= 1 (gethash dst definition-counts 0)))
+            do (let ((canon (egraph-find eg class-id)))
+                 (unless (gethash canon representatives)
+                   (setf (gethash canon representatives) (cons index dst)))))
     representatives))
 
 (defun optimize-with-egraph (instructions &key
                                             (rules (egraph-builtin-rules))
                                             (saturation-limit 30)
                                             (saturation-fuel 10000))
-  "Optimize a list of VM INSTRUCTIONS using e-graph equality saturation.
-   Returns an optimized instruction list.
-
-   Algorithm:
-      1. Add instructions to e-graph (building reg→class mapping)
-      2. Saturate with RULES until fixed-point or resource limit
-      3. Lower destination classes proven equal to constants or register aliases
-
-   This pass is wired into the main optimizer pipeline via :egraph and also
-   participates in the broader :prolog-rewrite stage."
+  "Optimize VM INSTRUCTIONS using equality saturation and lower each definition."
   (unless instructions (return-from optimize-with-egraph instructions))
-  (let* ((eg (make-e-graph))
-         (reg-map (egraph-add-instructions eg instructions)))
-    (egraph-saturate eg rules
-                     :limit saturation-limit
-                     :fuel saturation-fuel)
-    (egraph-rebuild eg)
-    (let ((class->representative (%egraph-class-representatives eg reg-map instructions)))
-      (mapcar (lambda (inst)
-                (%egraph-rewrite-inst inst eg reg-map class->representative))
-              instructions))))
+  (let ((eg (make-e-graph)))
+    (multiple-value-bind (reg-map instruction-classes)
+        (egraph-add-instructions eg instructions)
+      (declare (ignore reg-map))
+      (egraph-saturate eg rules
+                       :limit saturation-limit
+                       :fuel saturation-fuel)
+      (egraph-rebuild eg)
+      (let ((class->representative
+              (%egraph-class-representatives eg instruction-classes instructions)))
+        (loop for inst in instructions
+              for class-id in instruction-classes
+              for index from 0
+              collect (%egraph-rewrite-inst
+                       inst class-id eg class->representative index))))))

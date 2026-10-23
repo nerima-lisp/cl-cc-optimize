@@ -253,6 +253,21 @@
                 touch "$out/passed"
               '';
 
+          orphan-tests = pkgs.runCommand "cl-cc-optimize-orphan-tests"
+            {
+              nativeBuildInputs = [
+                pkgs.sbcl
+                pkgs.coreutils
+              ];
+              CL_SOURCE_REGISTRY = sourceRegistry;
+            }
+            ''
+              export HOME="$TMPDIR/home"
+              mkdir -p "$HOME" "$out"
+              sbcl --script ${self}/check-orphan-tests.lisp
+              touch "$out/passed"
+            '';
+
           # Fails `nix flake check` when any tracked file is unformatted,
           # turning the formatter into an enforced CI gate.
           formatting = treefmtEval.${system}.config.build.check self;

@@ -92,7 +92,7 @@ interpreter."
 
 (defun %opt-fuzz-try-optimizer (program optimizer)
   (handler-case
-      (funcall optimizer program)
+      (values (funcall optimizer program) nil)
     (error (condition)
       (values program condition))))
 

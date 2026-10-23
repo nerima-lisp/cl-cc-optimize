@@ -470,24 +470,13 @@ inspect its slots\" shape used across the optimizer-pass tests below."
              (>= (cl-cc/optimize::opt-interval-hi result) (+ hi1 hi2)))))))
 
 (describe-sequential "random-program compiler fuzzing (FR-753)"
-  ;; it-todo [#FR-753-fuzz-1]: with a genuinely fixed seed (see the
-  ;; %OPT-FUZZ-RANDOM-STATE fix in optimizer-fuzz.lisp -- the previous
-  ;; (MAKE-RANDOM-STATE NIL)-based seeding copied whatever *RANDOM-STATE*
-  ;; ambient state a prior random draw in the process had left behind,
-  ;; so it was not actually reproducible by SEED alone), trial 1 of seed
-  ;; 753 deterministically signals an error inside OPTIMIZE-INSTRUCTIONS
-  ;; for the program (:CONST :R0 12) (:CONST :R1 -10) (:CONST :R2 -18)
-  ;; (:SUB :R3 :R1 :R2) (:MOVE :R4 :R3) (:ADD :R5 :R4 :R3) (:RET :R4) --
-  ;; :R5 is dead. Re-running OPTIMIZE-INSTRUCTIONS on a hand-built copy of
-  ;; that exact instruction list immediately afterward does not reproduce
-  ;; the error, so whatever triggers it depends on more than the
-  ;; instructions' printed form (most likely some difference between the
-  ;; freshly RANDOM-generated instruction objects and hand-built ones, or
-  ;; state left behind by whichever pass runs first in a cold image).
-  ;; Root-causing that gap needs more time than this pass has; tracked
-  ;; here rather than silently dropped or left failing the build.
-  (it-todo "finds no optimizer-vs-interpreter mismatch across 200 random programs"
-           "[#FR-753-fuzz-1] deterministic first-call-only optimizer error, see comment above"))
+  (it "finds no optimizer-vs-interpreter mismatch across 200 random programs"
+    (let ((result (cl-cc/optimize:opt-run-compiler-fuzz
+                   :trials 200
+                   :seed 753)))
+      (expect (getf result :ok) :to-be-truthy)
+      (expect (getf result :trials) :to-equal 200)
+      (expect (getf result :seed) :to-equal 753))))
 
 (describe-sequential "optimizer crash-safety on short generated instruction streams"
   ;; A narrower, weaker property than FR-753 above: this checks only that
@@ -536,7 +525,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
     (cl-cc/optimize:optimize-instructions program)))
 
 (describe-sequential "Prolog peephole candidate selection"
-  (it "skips opcode-incompatible rules before unification"
+  (it "filters candidates and preserves live constant sources"
     (let ((rule (quote ((:add ?dst ?lhs ?rhs) ?next
                         ((:add ?dst ?lhs ?rhs) ?next)))))
       (expect (cl-cc/optimize::%peephole-rule-candidate-p
@@ -544,7 +533,11 @@ inspect its slots\" shape used across the optimizer-pass tests below."
               :to-be nil)
       (expect (cl-cc/optimize::%peephole-rule-candidate-p
                rule (quote (:add :r0 :r1 :r2)) (quote (:halt :r0)))
-              :to-be-truthy)))
+              :to-be-truthy))
+    (let ((input (quote ((:const :r1 42) (:move :r2 :r1) (:ret :r1)))))
+      (expect (cl-cc/optimize:apply-prolog-peephole input)
+              :to-equal
+              (quote ((:const :r1 42) (:const :r2 42) (:ret :r1))))))
   (it "processes a stdlib-sized stream without changing unmatched instructions"
     (:timeout-ms 2000)
     (let* ((pair (list (quote (:add :r0 :r1 :r2))
@@ -555,27 +548,19 @@ inspect its slots\" shape used across the optimizer-pass tests below."
 
 (progn
 (describe-sequential "E-graph lowering convergence"
-  (it "selects the first definition regardless of hash insertion order"
+  (it "uses an earlier single-definition register as representative"
     (let* ((eg (cl-cc/optimize::make-e-graph))
            (class-id (cl-cc/optimize::egraph-add
                       eg (quote cl-cc/optimize::reg-ref) :seed))
            (instructions
              (vm-program (move :r2 :seed)
-                         (move :r1 :r2)))
-           (forward (make-hash-table :test (function eq)))
-           (reverse (make-hash-table :test (function eq))))
-      (setf (gethash :r2 forward) class-id
-            (gethash :r1 forward) class-id
-            (gethash :r1 reverse) class-id
-            (gethash :r2 reverse) class-id)
-      (let ((forward-representatives
-              (cl-cc/optimize::%egraph-class-representatives
-               eg forward instructions))
-            (reverse-representatives
-              (cl-cc/optimize::%egraph-class-representatives
-               eg reverse instructions)))
-        (expect (gethash class-id forward-representatives) :to-be :r2)
-        (expect (gethash class-id reverse-representatives) :to-be :r2))))
+                         (move :r1 :r2)
+                         (move :r2 :r1)))
+           (instruction-classes (list class-id class-id class-id))
+           (representatives
+             (cl-cc/optimize::%egraph-class-representatives
+              eg instruction-classes instructions)))
+      (expect (gethash class-id representatives) :to-equal (cons 1 :r1))))
   (it "is idempotent for registers joined by an algebraic identity"
     (:timeout-ms 1000)
     (let* ((instructions
