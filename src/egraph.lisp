@@ -178,18 +178,22 @@
           (setf (gethash new-key (eg-memo eg)) (en-eclass pn)))))))
 
 (defun egraph-rebuild (eg)
-  "Process the worklist of pending merges to restore the congruence invariant."
-  (let ((worklist (eg-worklist eg)))
-    (setf (eg-worklist eg) nil)
-    (dolist (pair worklist)
-      (let ((r1 (egraph-find eg (car pair)))
-            (r2 (egraph-find eg (cdr pair))))
-        (unless (= r1 r2)
-          (%egraph-absorb-class eg r1 r2)
-          (when-let ((cls1 (gethash r1 (eg-classes eg))))
-            (dolist (parent-pair (ec-parents cls1))
-              (%egraph-repair-parent-node eg (car parent-pair))))
-          (when (eg-worklist eg)
-            (egraph-rebuild eg)))))))
+  "Process queued unions, absorb their classes, and restore congruence."
+  (loop while (eg-worklist eg)
+        do (let ((worklist (eg-worklist eg))
+                 (affected nil))
+             (setf (eg-worklist eg) nil)
+             (dolist (pair worklist)
+               (let ((canonical (egraph-find eg (car pair))))
+                 (push canonical affected)
+                 (dolist (candidate (list (car pair) (cdr pair)))
+                   (when (and (/= candidate canonical)
+                              (gethash candidate (eg-classes eg)))
+                     (%egraph-absorb-class eg canonical candidate)))))
+             (dolist (class-id (remove-duplicates affected))
+               (let ((cls (gethash (egraph-find eg class-id) (eg-classes eg))))
+                 (when cls
+                   (dolist (parent-pair (ec-parents cls))
+                     (%egraph-repair-parent-node eg (car parent-pair)))))))))
 
 ;;; Pattern matching and rule application are in egraph-match.lisp (loads after).
