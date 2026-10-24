@@ -610,6 +610,22 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                       :merged)
                   (error () :rejected))
                 :to-be :rejected))))
+  (it "preserves a constant self-subtraction result"
+    (:timeout-ms 1000)
+    (let* ((instructions
+             (vm-program (const :r0 7)
+                         (sub :r1 :r0 :r0)
+                         (ret :r1)))
+           (optimized (cl-cc/optimize:optimize-with-egraph instructions))
+           (result (find-if
+                    (lambda (instruction)
+                      (and (cl-cc/vm:vm-const-p instruction)
+                           (eq (cl-cc/vm:vm-dst instruction) :r1)))
+                    optimized)))
+      (expect (%run-vm-program instructions nil) :to-equal 0)
+      (expect (%run-vm-program optimized nil) :to-equal 0)
+      (expect result :to-be-truthy)
+      (expect (cl-cc/vm:vm-const-value result) :to-equal 0)))
   (it "preserves register values across a branch target"
     (:timeout-ms 1000)
     (let* ((instructions
