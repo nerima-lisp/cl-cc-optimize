@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-cfi-plan (:conc-name opt-cfi-plan-))
   "Control-Flow Integrity planning record."

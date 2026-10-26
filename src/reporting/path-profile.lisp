@@ -1,6 +1,6 @@
 ;;;; packages/optimize/src/optimizer-path-profile.lisp — FR-662 Ball-Larus path profiling
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/reporting)
 
 ;;; Ball and Larus path profiling assigns each edge in an acyclic CFG a small
 ;;; integer such that the sum of the edge integers along any entry→exit path is

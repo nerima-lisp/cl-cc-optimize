@@ -1,6 +1,6 @@
 ;;;; optimizer-loop-fusion.lisp — FR-514 loop fusion and loop fission
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defparameter *opt-loop-fission-min-core-size* 8
   "Minimum pure core size considered for FR-514 loop fission.")

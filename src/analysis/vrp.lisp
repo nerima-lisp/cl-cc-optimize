@@ -1,5 +1,5 @@
 ;;;; optimizer-vrp.lisp — FR-610 Value Range Propagation
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 (defparameter *min-inf* +opt-range-negative-infinity+
   "Conservative lower-bound sentinel used by the VRP interval domain.")

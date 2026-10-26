@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/pipeline)
 ;;; -----------------------------------------------------------------------------
 ;;; Optimizer Pass Registry and Convergence Pipeline
 ;;; -----------------------------------------------------------------------------
@@ -50,7 +50,6 @@
         (:autotune-simd             . ,#'%maybe-run-autotune-simd)
          (:polyhedral                . ,#'%maybe-run-polyhedral)
         (:mlgo-inline               . ,#'%maybe-run-mlgo-inline)
-        (:ml-regalloc               . ,#'%maybe-run-ml-regalloc)
         (:loop-unswitch             . ,#'%maybe-run-loop-unswitch)
       (:reassociate               . ,#'opt-pass-reassociate)
      (:copy-prop                 . ,#'opt-pass-copy-prop)

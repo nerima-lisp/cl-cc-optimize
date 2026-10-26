@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 (defun %opt-pass-store-to-load-forward-linear (instructions)
   "Forward pending vm-set-global values into matching vm-get-global loads.

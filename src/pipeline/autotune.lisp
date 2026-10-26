@@ -1,11 +1,11 @@
 ;;;; optimizer-autotune.lisp — FR-582 auto-tuning SIMD tile sizes
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/pipeline)
 
 (defparameter *autotune-simd-enabled* nil
   "When true, auto-select SIMD/loop-tile sizes from detected CPU cache geometry.
 
-Default NIL preserves the existing optimizer output and the 7746/0 baseline.")
+Default NIL preserves the existing optimizer output.")
 
 (defvar *autotune-simd-cache-info* :unprobed
   "Cached CPU cache geometry plist (:L1 bytes :L2 bytes :L3 bytes).")

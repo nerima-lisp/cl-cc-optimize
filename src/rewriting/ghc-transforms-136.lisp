@@ -2,7 +2,7 @@
 ;;;; FR-758 Demand/Strictness Analysis, FR-759 Case-of-Case Transformation,
 ;;;; FR-760 Let Floating/Binding Migration, FR-761 Simplification via Rewrite Rules
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 ;;; ──── FR-758: Demand / Strictness Analysis ────
 (defun analyze-strictness (func args)

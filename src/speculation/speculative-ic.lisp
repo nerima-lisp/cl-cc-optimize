@@ -1,5 +1,5 @@
 ;;;; optimizer-pipeline-speculative.lisp — IC/speculation/profiling/lattice helpers
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defun opt-ic-transition (site receiver-key target)
   "Record RECEIVER-KEY → TARGET in SITE and return SITE.
@@ -94,10 +94,6 @@ ENTRIES is an alist of (shape-key . target). Returns a list of plists with
 fields :shape, :receiver, :target representing sequential guards."
   (loop for (shape . target) in entries
         collect (list :shape shape :receiver receiver-reg :target target)))
-
-(defun %opt-stable-print-string (object)
-  (with-standard-io-syntax
-    (prin1-to-string object)))
 
 (defun %opt-effective-speculation-log (log)
   (or log *opt-speculation-log*))

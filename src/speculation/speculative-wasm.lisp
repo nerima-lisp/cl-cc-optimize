@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-wasm-tailcall-plan (:conc-name opt-wasm-tail-))
   "Wasm tail-call lowering decision for one call site."

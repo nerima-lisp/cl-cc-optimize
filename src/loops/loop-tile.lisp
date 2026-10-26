@@ -1,6 +1,6 @@
 ;;;; optimizer-loop-tile.lisp — FR-515 loop tiling / blocking
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defparameter *opt-loop-tile-default-l1-elements* 32
   "Default FR-515 L1 tile extent used after a cache-size probe succeeds.")

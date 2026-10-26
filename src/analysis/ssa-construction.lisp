@@ -11,7 +11,7 @@
 ;;;;
 ;;;; Load order: after ssa.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 (defun ssa-construct (instructions)
   "Construct SSA form from a flat VM INSTRUCTIONS list.

@@ -10,7 +10,7 @@
 ;;; Load order: after optimizer-purity.lisp, before optimizer-inline-cost.lisp.
 ;;; ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defvar *opt-pure-memo-metadata* (make-hash-table :test #'eq)
   "EQ map: memo hash-table -> plist metadata (:max-size, :order).")

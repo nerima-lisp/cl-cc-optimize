@@ -11,7 +11,7 @@
 ;;;   *opt-unary-src-types*, *opt-unary-fold-table*, *opt-type-pred-fold-table*).
 ;;; Load order: immediately after optimizer-tables.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 ;;; ─── Algebraic Identity Rules ────────────────────────────────────────────
 ;;;

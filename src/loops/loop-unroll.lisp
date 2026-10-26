@@ -1,6 +1,6 @@
 ;;;; optimizer-loop-unroll.lisp — FR-601 loop unrolling
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defparameter *opt-loop-unroll-fr601-factor* 4
   "Partial unroll factor for FR-601 unknown or large counted loops.")

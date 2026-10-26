@@ -1,6 +1,6 @@
 ;;;; optimizer-flow-loop-unroll.lisp — conservative counted-loop unrolling
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defparameter *opt-loop-unroll-max-trip* 8
   "Maximum compile-time trip count for conservative full unrolling.")

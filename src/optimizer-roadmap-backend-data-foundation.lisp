@@ -1,7 +1,7 @@
 ;;;; optimizer-roadmap-backend-data-foundation.lisp -- Foundational and
 ;;;; promoted backend feature evidence
 ;;;; Split from optimizer-roadmap-backend-data.lisp.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defparameter +opt-backend-roadmap-foundation-evidence-profile-ranges+
   ;; Each entry: (lo hi modules api-symbols test-anchors)

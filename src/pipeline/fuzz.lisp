@@ -1,6 +1,6 @@
 ;;;; optimizer-fuzz.lisp — FR-753 compiler fuzzing infrastructure
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/pipeline)
 
 (defparameter *opt-fuzz-registers* '(:r0 :r1 :r2 :r3 :r4 :r5 :r6 :r7)
   "Register pool used by the FR-753 random valid IR generator.")

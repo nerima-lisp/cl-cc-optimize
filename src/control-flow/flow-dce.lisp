@@ -11,7 +11,7 @@
 ;;;; tail-duplication used to live in this file; they now have one file each
 ;;;; (optimizer-flow-if-conversion.lisp and siblings).
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 ;;; ─── Pass 2: Dead Code Elimination ──────────────────────────────────────
 
 (defun %opt-collection-store-target (inst)

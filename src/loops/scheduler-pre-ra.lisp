@@ -8,7 +8,7 @@
 ;;; file), adding live-range/register-pressure tracking so the pre-RA
 ;;; scheduler prefers instructions that reduce live-register pressure.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defun %opt-add-regs (regs live)
   "Return LIVE with REGS added using EQ identity."

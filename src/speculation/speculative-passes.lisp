@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 ;;; FR-523..FR-528 planning helpers (backend roadmap evidence anchors)
 

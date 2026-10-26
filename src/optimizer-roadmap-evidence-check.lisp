@@ -5,7 +5,7 @@
 ;;;; its test anchors are registered, and its API symbols are fbound. Doc
 ;;;; parsing lives in optimizer-roadmap-doc-parse.lisp; the query API other
 ;;;; code calls is in optimizer-roadmap-query.lisp.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defun %opt-roadmap-extracted-module-pathname (path)
   "Resolve PATH against the standalone system that now owns it, or NIL.

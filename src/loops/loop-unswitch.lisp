@@ -1,6 +1,6 @@
 ;;;; optimizer-loop-unswitch.lisp — FR-602 loop unswitching
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defun %loop-unswitch-label-table (instructions)
   "Return a hash table of label names used in INSTRUCTIONS."

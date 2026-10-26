@@ -1,7 +1,7 @@
 ;;;; optimizer-speculative-ml-cost-plan.lisp — learned/ML-style inline and
 ;;;; codegen cost planning descriptors
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defun opt-ml-inline-score-plan (&key features model-version)
   "Return a deterministic MLGO-style inline scoring descriptor."

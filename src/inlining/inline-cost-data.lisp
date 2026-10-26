@@ -5,7 +5,7 @@
 ;;;; whether the ML-learned inline score is enabled, and which model version
 ;;;; and cost target it targets.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defparameter *opt-inline-threshold-scale* 1
   "PGO-guided multiplier for adaptive inline thresholds.

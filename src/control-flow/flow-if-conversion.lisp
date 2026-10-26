@@ -4,7 +4,7 @@
 ;;;; that each define the same register) into a straight-line vm-select,
 ;;;; removing the branch entirely when both arms are side-effect-free.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 ;;; ─── If-conversion: simple diamond → vm-select ───────────────────────────
 

@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defun opt-adaptive-compilation-threshold (&key (base 1000) warmup-p cache-pressure failures)
   "Return an adaptive tiering/recompilation threshold.

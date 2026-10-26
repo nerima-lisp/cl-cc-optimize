@@ -6,7 +6,7 @@
 ;;;; body. Feeds optimizer-peval-specialization-plan.lisp's decision of
 ;;;; which parameters to specialize.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/partial-evaluation)
 
 (defun %opt-lattice-binding-time-kind (lattice)
   (if (and (opt-lattice-value-p lattice)

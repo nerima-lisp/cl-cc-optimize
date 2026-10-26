@@ -1,6 +1,6 @@
 ;;;; optimizer-mlgo.lisp — ML-guided inline benefit predictor
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defparameter *mlgo-enabled* nil
   "When non-NIL, enable MLGO-inspired inline benefit prediction.")

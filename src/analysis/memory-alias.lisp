@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── Alias Analysis + Memory Passes ─────────────────────────────────────────
 (define-inst-type-predicate opt-heap-root-inst-p (or vm-cons vm-make-array vm-closure vm-make-closure) "Return T when INST produces a fresh heap-like object identity.")

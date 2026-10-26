@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 ;;;; Safepoint optimization foundation (FR-090, FR-091)
 

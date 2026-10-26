@@ -2,7 +2,7 @@
 ;;;; FR-782 Uncurrying/Eta Reduction, FR-783 Closure Shrinking,
 ;;;; FR-784 Predicate Dispatch, FR-785 Uniqueness Types
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 ;;; ──── FR-782: Uncurrying / Eta Reduction ────
 (defun eta-reduce (form)

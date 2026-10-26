@@ -1,6 +1,6 @@
 ;;;; optimizer-defunctionalize.lisp --- FR-676 direct-call recovery
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defun %opt-known-function-designator-p (value)
   (or (and (symbolp value) (not (keywordp value)))

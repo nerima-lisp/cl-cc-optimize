@@ -6,7 +6,7 @@
 ;;;; known and its generic function has exactly one applicable, sealed
 ;;;; primary method. Register renaming for the inlined method body comes from
 ;;;; optimizer-register-rename.lisp.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defun %opt-last-emitted-func-ref-p (result reg label)
   "Return T when RESULT already starts with REG's direct reference to LABEL."
@@ -280,14 +280,6 @@ FACTS is an opt-devirt-facts struct bundling all per-register fact tables."
           (gethash arg-class class-sealed)
           (%opt-devirt-eligible-info-p info))
         (%opt-devirt-unique-primary-method-label info arg-class)))))
-
-(defun %opt-fresh-register-generator (instructions)
-  "Return a closure producing fresh VM register keywords for INSTRUCTIONS."
-  (let ((next (1+ (opt-max-reg-index instructions))))
-    (lambda ()
-      (prog1
-        (intern (format nil "R~A" next) :keyword)
-        (incf next)))))
 
 (defun %opt-devirt-generic-call (inst class-sealed facts gf-infos fresh-reg result)
   "Replace INST with direct vm-call when sealed GF dispatch is statically unique.

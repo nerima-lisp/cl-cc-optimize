@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-megamorphic-cache (:conc-name opt-mega-cache-))
   "Shared megamorphic dispatch cache used after IC state reaches :megamorphic."
@@ -24,3 +24,10 @@ encoding details."
 
 (defparameter *opt-speculation-log* (make-opt-speculation-log)
   "Process-global speculation failure log used by conservative roadmap helpers.")
+
+(defstruct (opt-ic-site (:conc-name opt-ic-site-)) "Polymorphic inline-cache state for one call site."
+  (state :uninitialized :type keyword)
+  (entries nil :type list)
+  (max-polymorphic-entries 4 :type integer)
+  (misses 0 :type integer)
+  (megamorphic-fallback nil))

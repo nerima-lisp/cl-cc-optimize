@@ -1,9 +1,4 @@
-(in-package :cl-cc/optimize)
-
-(defstruct (opt-lattice-value (:conc-name opt-lattice-value-))
-  "Three-point SCCP/IPSCCP lattice value."
-  (kind :bottom :type keyword)
-  value)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-function-summary (:conc-name opt-function-summary-))
   "Small interprocedural summary used by conservative IPO helpers."

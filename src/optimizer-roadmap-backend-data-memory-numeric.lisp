@@ -1,7 +1,7 @@
 ;;;; optimizer-roadmap-backend-data-memory-numeric.lisp -- Memory, numeric,
 ;;;; and allocation backend evidence
 ;;;; Split from optimizer-roadmap-backend-data.lisp.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defparameter +opt-backend-roadmap-memory-numeric-evidence-profile-ranges+
   ;; Each entry: (lo hi modules api-symbols test-anchors)

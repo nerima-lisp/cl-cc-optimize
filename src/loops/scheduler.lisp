@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defun %opt-inst-latency (inst)
   "Return the estimated latency of INST in cycles."
@@ -27,15 +27,6 @@
           (function eq)) (and
           (opt-memory-write-inst-p inst)
           (not (opt-memory-unknown-write-inst-p inst)))))))
-
-(defun %opt-inst-write-regs (inst)
-  "Return registers written by INST."
-  (let ((dst (opt-inst-dst inst)))
-    (and dst (list dst))))
-
-(defun %opt-reg-intersect-p (a b)
-  "T when register lists A and B intersect by EQ."
-  (and a b (intersection a b :test #'eq)))
 
 (defun %opt-scheduler-depends-p (earlier later metadata)
   "T when EARLIER must precede LATER due to register or TBAA memory hazards."

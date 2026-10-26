@@ -1,6 +1,6 @@
 ;;;; optimizer-cps-reduce.lisp --- FR-674 CPS administrative reduction
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 (defun %cps-reduce-substitute (tree var replacement)
   (cond

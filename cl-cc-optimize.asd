@@ -17,172 +17,279 @@
   :pathname "src"
   :serial t
   :components
-  ((:file "package")
-   (:file "optimizer-macros")
-   (:file "effects-data")
-   (:file "effects")
-   (:file "effects-known-functions")
-   (:file "effects-purity-inference")
-   (:file "cfg")
-   (:file "cfg-dominance")
-   (:file "cfg-ddg")
-   (:file "cfg-analysis")
-   (:file "cfg-layout")
-   (:file "ssa")
-   (:file "ssa-phi-elim")
-   (:file "ssa-construction")
-   (:file "egraph")
-   (:file "egraph-match")
-   (:file "egraph-saturation")
-   (:file "peephole-data")
-   (:file "egraph-rules")
-   (:file "egraph-rules-advanced")
-   (:file "optimizer-tables")
-   (:file "optimizer-tables-fold-data")
-   (:file "optimizer-tables-regs")
-   (:file "optimizer-algebraic")
-    (:file "optimizer-register-rename")
-    (:file "optimizer-inline-devirt-data")
-    (:file "optimizer-inline-call-site-split")
-    (:file "optimizer-inline-devirt")
-    (:file "optimizer-closure")
-    (:file "optimizer-purity")
-   (:file "optimizer-inline-pass")
-    (:file "optimizer-inline-cost-data")
-    (:file "optimizer-inline-heuristics")
-    (:file "optimizer-inline-expand")
-    (:file "optimizer-dataflow")
-   (:file "optimizer-dataflow-sccp")
-    (:file "optimizer-copyprop")
-      (:file "optimizer-memory-alias")
-      (:file "optimizer-memory-ssa")
-      (:file "optimizer-memory-access-patterns")
-      (:file "optimizer-memory-safepoints")
-      (:file "optimizer-interval-arithmetic")
-      (:file "optimizer-interval-data")
-      (:file "optimizer-interval-transfer")
-      (:file "optimizer-value-ranges")
-      (:file "optimizer-induction")
-      (:file "optimizer-memory-alias-basic")
-      (:file "optimizer-register-rewrite")
-     (:file "optimizer-memory-dse")
-     (:file "optimizer-memory-forward")
-      (:file "optimizer-memory-sink")
-        (:file "optimizer-flow-core")
-   (:file "optimizer-flow-loop-unroll")
-   (:file "optimizer-flow-loop-prefetch")
-   (:file "optimizer-flow-loop-sink")
-   (:file "optimizer-flow-type-check-elim")
-   (:file "optimizer-flow-if-conversion")
-   (:file "optimizer-flow-branch-correlation")
-   (:file "optimizer-flow-block-merge")
-   (:file "optimizer-flow-tail-merge")
-   (:file "optimizer-flow-tail-duplication")
-   (:file "optimizer-flow-dce")
-   (:file "optimizer-jump-threading")
-   (:file "optimizer-strength-data")
-    (:file "optimizer-strength")
-     (:file "optimizer-recognition")
-     (:file "optimizer-recognition-loop-idiom")
-     (:file "optimizer-trmc")
-    (:file "optimizer-strength-ext")
-     (:file "optimizer-cse-gvn")
-     (:file "optimizer-licm")
-     (:file "optimizer-pre")
-       (:file "optimizer-report")
-       (:file "optimizer-sequence-fusion")
-       (:file "optimizer")
-        (:file "optimizer-outlining")
-        (:file "optimizer-vectorize")
-        (:file "optimizer-vectorize-slp")
-        (:file "optimizer-branch-weights")
-        (:file "optimizer-swp")
-        (:file "optimizer-demand")
-        (:file "optimizer-prolog-peephole")
-        (:file "optimizer-superopt")
-        (:file "optimizer-abstract-interp")
-         (:file "optimizer-trans-validate")
-         (:file "optimizer-loop-peel")
-         (:file "optimizer-verify-ir")
-         (:file "optimizer-devirt")
-         (:file "optimizer-pipeline-policy")
-         (:file "optimizer-scheduler-data")
-         (:file "optimizer-scheduler")
-         (:file "optimizer-scheduler-pre-ra")
-         (:file "optimizer-fma")
-         (:file "optimizer-pipeline")
-         (:file "optimizer-driver-pipeline-spec")
-         (:file "optimizer-driver-trace")
-         (:file "optimizer-driver")
-        (:file "optimizer-speculative-inline")
-        (:file "optimizer-loop-rotate")
-       (:file "optimizer-dead-loop")
-       (:file "optimizer-loop-unroll")
-       (:file "optimizer-loop-unswitch")
-       (:file "optimizer-dae")
-       (:file "optimizer-ipcp")
-       (:file "optimizer-div-const")
-       (:file "optimizer-strength-reduce")
-       (:file "optimizer-idiom")
-       (:file "optimizer-vrp")
-       (:file "optimizer-bce")
-        (:file "optimizer-overflow")
-        (:file "optimizer-bitwidth")
-        (:file "optimizer-cps-reduce")
-        (:file "optimizer-defunctionalize")
-        (:file "optimizer-delimited-cont")
-        (:file "optimizer-escape")
-         (:file "optimizer-path-profile")
-         (:file "optimizer-load-store-coalesce")
-         (:file "optimizer-remarks")
-             (:file "optimizer-sroa")
-             (:file "optimizer-energy")
-             (:file "optimizer-cpu-dispatch")
-             (:file "optimizer-tlab")
-            (:file "optimizer-loop-fusion")
-            (:file "optimizer-loop-tile")
-            (:file "optimizer-autotune")
-             (:file "optimizer-polyhedral")
-            (:file "optimizer-fuzz")
-            (:file "optimizer-mlgo")
-          (:file "optimizer-ml-regalloc")
-          (:file "optimizer-roadmap-evidence-data")
-          (:file "optimizer-roadmap-doc-parse")
-          (:file "optimizer-roadmap-query")
-          (:file "optimizer-roadmap-evidence-check")
-        (:file "optimizer-roadmap-backend-data-foundation")
-        (:file "optimizer-roadmap-backend-data-baseline")
-        (:file "optimizer-roadmap-backend-data-memory-numeric")
-        (:file "optimizer-roadmap-backend-data-lowering")
-        (:file "optimizer-roadmap-backend-data-codegen")
-        (:file "optimizer-roadmap-backend-data-speculative")
-        (:file "optimizer-roadmap-backend-data")
-        (:file "optimizer-roadmap-backend")
-        (:file "optimizer-speculative-ic-data")
-       (:file "optimizer-speculative-ic")
-       (:file "optimizer-speculative-profile")
-       (:file "optimizer-speculative-shape-data")
-       (:file "optimizer-speculative-shape")
-       (:file "optimizer-speculative-concurrency-data")
-       (:file "optimizer-speculative-concurrency")
-       (:file "optimizer-speculative-security")
-       (:file "optimizer-speculative-wasm")
-       (:file "optimizer-speculative-debug")
-       (:file "optimizer-speculative-atomics-data")
-       (:file "optimizer-speculative-atomics")
-       (:file "optimizer-speculative-peval-data")
-       (:file "optimizer-peval-specialize")
-       (:file "optimizer-peval-binding-time")
-       (:file "optimizer-peval-specialization-plan")
-       (:file "optimizer-peval-program")
-        (:file "optimizer-speculative-passes-data")
-        (:file "optimizer-speculative-peval-known-args")
-        (:file "optimizer-speculative-passes")
-        (:file "optimizer-speculative-ml-cost-plan")
-        ;; ── Phase 135-140: Advanced Optimization ──
-        (:file "static-analysis-135")
-        (:file "ghc-transforms-136")
-        (:file "lisp-opt-140"))
+  (
+   (:module "package-analysis"
+    :pathname "analysis"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-reporting"
+    :pathname "reporting"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-partial-evaluation"
+    :pathname "partial-evaluation"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-rewriting"
+    :pathname "rewriting"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-verification"
+    :pathname "verification"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-scalar"
+    :pathname "scalar"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-control-flow"
+    :pathname "control-flow"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-loops"
+    :pathname "loops"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-memory"
+    :pathname "memory"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-inlining"
+    :pathname "inlining"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-speculation"
+    :pathname "speculation"
+    :serial t
+    :components ((:file "package")))
+   (:module "package-pipeline"
+    :pathname "pipeline"
+    :serial t
+    :components ((:file "package")))
+   (:file "facade-package")
+   (:module "implementation-analysis"
+    :pathname "analysis"
+    :serial t
+    :components
+    ((:file "macros")
+     (:file "bounds-check-metadata")
+     (:file "function-collection")
+     (:file "register-primitives")
+     (:file "scheduler-primitives")
+     (:file "stable-print")
+     (:file "tree-walk")
+     (:file "effects-data")
+     (:file "effects")
+     (:file "effects-known-functions")
+     (:file "effects-purity-inference")
+     (:file "cfg")
+     (:file "cfg-dominance")
+     (:file "cfg-ddg")
+     (:file "cfg-analysis")
+     (:file "cfg-layout")
+     (:file "ssa")
+     (:file "ssa-phi-elim")
+     (:file "ssa-construction")
+     (:file "tables")
+     (:file "tables-fold-data")
+     (:file "folding")
+     (:file "tables-regs")
+     (:file "purity")
+     (:file "dataflow")
+     (:file "dataflow-sccp")
+     (:file "memory-alias")
+     (:file "interval-arithmetic")
+     (:file "interval-data")
+     (:file "interval-transfer")
+     (:file "value-ranges")
+     (:file "memory-alias-basic")
+     (:file "register-rewrite")
+     (:file "demand")
+     (:file "abstract-interp")
+     (:file "vrp")
+     (:file "static-analysis-135")))
+   (:module "implementation-reporting"
+    :pathname "reporting"
+    :serial t
+    :components
+    ((:file "report")
+     (:file "path-profile")
+     (:file "remarks")))
+   (:module "implementation-partial-evaluation"
+    :pathname "partial-evaluation"
+    :serial t
+    :components
+    ((:file "lattice")
+     (:file "peval-result-data")
+     (:file "peval-specialize")
+     (:file "peval-binding-time")
+     (:file "peval-specialization-plan")
+     (:file "peval-program")))
+   (:module "implementation-rewriting"
+    :pathname "rewriting"
+    :serial t
+    :components
+    ((:file "egraph")
+     (:file "egraph-match")
+     (:file "egraph-saturation")
+     (:file "peephole-data")
+     (:file "egraph-rules")
+     (:file "egraph-rules-advanced")
+     (:file "prolog-peephole")
+     (:file "superopt")
+     (:file "cps-reduce")
+     (:file "delimited-cont")
+     (:file "ghc-transforms-136")
+     (:file "lisp-opt-140")))
+   (:module "implementation-verification"
+    :pathname "verification"
+    :serial t
+    :components
+    ((:file "trans-validate")
+     (:file "verify-ir")))
+   (:module "implementation-scalar"
+    :pathname "scalar"
+    :serial t
+    :components
+    ((:file "algebraic")
+     (:file "copyprop")
+     (:file "strength-data")
+     (:file "strength")
+     (:file "recognition")
+     (:file "strength-ext")
+     (:file "cse-gvn")
+     (:file "fold-pass")
+     (:file "fma")
+     (:file "div-const")
+     (:file "overflow")
+     (:file "bitwidth")
+     (:file "energy")))
+   (:module "implementation-control-flow"
+    :pathname "control-flow"
+    :serial t
+    :components
+    ((:file "flow-core")
+     (:file "flow-loop-sink")
+     (:file "flow-type-check-elim")
+     (:file "flow-if-conversion")
+     (:file "flow-branch-correlation")
+     (:file "flow-block-merge")
+     (:file "flow-tail-merge")
+     (:file "flow-tail-duplication")
+     (:file "flow-dce")
+     (:file "jump-threading")
+     (:file "branch-weights")))
+   (:module "implementation-loops"
+    :pathname "loops"
+    :serial t
+    :components
+    ((:file "canonical-loop-data")
+     (:file "induction")
+     (:file "loop-unroll-flow")
+     (:file "recognition-loop-idiom")
+     (:file "trmc")
+     (:file "licm")
+     (:file "pre")
+     (:file "sequence-fusion")
+     (:file "vectorize")
+     (:file "vectorize-slp")
+     (:file "swp")
+     (:file "loop-peel")
+     (:file "scheduler-data")
+     (:file "scheduler")
+     (:file "scheduler-pre-ra")
+     (:file "loop-rotate")
+     (:file "dead-loop")
+     (:file "loop-unroll")
+     (:file "loop-unswitch")
+     (:file "strength-reduction")
+     (:file "idiom")
+     (:file "loop-fusion")
+     (:file "loop-tile")
+     (:file "polyhedral")))
+   (:module "implementation-memory"
+    :pathname "memory"
+    :serial t
+    :components
+    ((:file "closure")
+     (:file "memory-ssa")
+     (:file "memory-access-patterns")
+     (:file "memory-safepoints")
+     (:file "memory-dse")
+     (:file "memory-forward")
+     (:file "memory-sink")
+     (:file "memory-prefetch")
+     (:file "bce")
+     (:file "escape")
+     (:file "load-store-coalesce")
+     (:file "sroa")
+     (:file "tlab")))
+   (:module "implementation-inlining"
+    :pathname "inlining"
+    :serial t
+    :components
+    ((:file "pure-call-optimization")
+     (:file "register-rename")
+     (:file "inline-devirt-data")
+     (:file "inline-call-site-split")
+     (:file "inline-devirt")
+     (:file "inline-pass")
+     (:file "inline-cost-data")
+     (:file "inline-heuristics")
+     (:file "inline-expand")
+     (:file "outlining")
+     (:file "devirt")
+     (:file "dae")
+     (:file "ipcp")
+     (:file "defunctionalize")
+     (:file "mlgo")
+     (:file "speculative-ml-cost-plan")))
+   (:module "implementation-speculation"
+    :pathname "speculation"
+    :serial t
+    :components
+    ((:file "speculative-inline")
+     (:file "speculative-ic-data")
+     (:file "speculative-ic")
+     (:file "speculative-profile")
+     (:file "speculative-shape-data")
+     (:file "speculative-shape")
+     (:file "speculative-concurrency-data")
+     (:file "speculative-concurrency")
+     (:file "speculative-security")
+     (:file "speculative-wasm")
+     (:file "speculative-debug")
+     (:file "speculative-atomics-data")
+     (:file "speculative-atomics")
+     (:file "speculative-peval-data")
+     (:file "speculative-passes-data")
+     (:file "speculative-peval-known-args")
+     (:file "speculative-passes")))
+   (:module "implementation-pipeline"
+    :pathname "pipeline"
+    :serial t
+    :components
+    ((:file "pipeline-policy")
+     (:file "pipeline")
+     (:file "driver-pipeline-spec")
+     (:file "driver-trace")
+     (:file "driver")
+     (:file "cpu-dispatch")
+     (:file "autotune")
+     (:file "fuzz")))
+   (:file "optimizer-roadmap-evidence-data")
+   (:file "optimizer-roadmap-doc-parse")
+   (:file "optimizer-roadmap-query")
+   (:file "optimizer-roadmap-evidence-check")
+   (:file "optimizer-roadmap-backend-data-foundation")
+   (:file "optimizer-roadmap-backend-data-baseline")
+   (:file "optimizer-roadmap-backend-data-memory-numeric")
+   (:file "optimizer-roadmap-backend-data-lowering")
+   (:file "optimizer-roadmap-backend-data-codegen")
+   (:file "optimizer-roadmap-backend-data-speculative")
+   (:file "optimizer-roadmap-backend-data")
+   (:file "optimizer-roadmap-backend")
+  )
   :in-order-to ((test-op (test-op "cl-cc-optimize/test"))))
 
 (asdf:defsystem "cl-cc-optimize/test"
@@ -192,7 +299,58 @@
   :depends-on ("cl-cc-optimize" "cl-weave")
   :pathname "t"
   :serial t
-  :components ((:file "package") (:file "optimize-boundary-test"))
+  :components (
+   (:file "package")
+   (:file "optimize-boundary-test")
+   (:module "analysis"
+    :pathname "analysis"
+    :serial t
+    :components ((:file "package")))
+   (:module "scalar"
+    :pathname "scalar"
+    :serial t
+    :components ((:file "package")))
+   (:module "control-flow"
+    :pathname "control-flow"
+    :serial t
+    :components ((:file "package")))
+   (:module "loops"
+    :pathname "loops"
+    :serial t
+    :components ((:file "package")))
+   (:module "memory"
+    :pathname "memory"
+    :serial t
+    :components ((:file "package")))
+   (:module "inlining"
+    :pathname "inlining"
+    :serial t
+    :components ((:file "package")))
+   (:module "partial-evaluation"
+    :pathname "partial-evaluation"
+    :serial t
+    :components ((:file "package")))
+   (:module "speculation"
+    :pathname "speculation"
+    :serial t
+    :components ((:file "package")))
+   (:module "rewriting"
+    :pathname "rewriting"
+    :serial t
+    :components ((:file "package")))
+   (:module "pipeline"
+    :pathname "pipeline"
+    :serial t
+    :components ((:file "package")))
+   (:module "reporting"
+    :pathname "reporting"
+    :serial t
+    :components ((:file "package")))
+   (:module "verification"
+    :pathname "verification"
+    :serial t
+    :components ((:file "package")))
+  )
   :perform (asdf:test-op
     (op system)
     (declare (ignore op system))

@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-debug-loc (:conc-name opt-debug-loc-))
   "Source-level location record for debug info planning."

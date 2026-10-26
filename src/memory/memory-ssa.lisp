@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 (defun opt-compute-memory-ssa-snapshot (instructions)
   "Compute a straight-line Memory-SSA snapshot table for INSTRUCTIONS.

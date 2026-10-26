@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 ;;; ─── Pass: Partial Redundancy Elimination (PRE) ───────────────────────────
 
 ;;; ─── PRE support helpers ──────────────────────────────────────────────────

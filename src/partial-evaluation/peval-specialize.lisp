@@ -8,7 +8,7 @@
 ;;;; program; optimizer-peval-binding-time.lisp and
 ;;;; optimizer-peval-specialization-plan.lisp decide where it applies.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/partial-evaluation)
 
 ;;; ─── FR-209/210/211 Partial Evaluation Helper Layer ────────────────────────
 

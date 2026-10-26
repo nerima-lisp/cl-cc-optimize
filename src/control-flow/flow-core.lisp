@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 (defun opt-pass-unreachable (instructions)
   "Remove instructions that follow unconditional control transfers (jump/ret)

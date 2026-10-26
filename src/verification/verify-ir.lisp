@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/verification)
 
 ;;; FR-642 — IR/VM invariant verification hooks for optimizer debugging.
 
@@ -15,7 +15,7 @@
                      (opt-ir-verification-error-context c)))))
 
 (defvar *verify-ir* nil
-  "When non-NIL, verify IR/VM invariants before and after each optimizer pass.")
+  "When non-NIL, enable invariant checks when the :VERIFY-IR pipeline pass runs.")
 
 (defun %opt-dump-vm-context (instructions inst &key (radius 2))
   (with-output-to-string (s)
@@ -196,8 +196,8 @@ defining block), signaling on a use-before-def or double-def SSA value."
     t))
 
 (defun opt-verify-ir (ir &key pass-name)
-  "Verify optimizer IR invariants. Currently supports flat VM instruction streams;
-the function is intentionally non-transforming so it can be registered as a pass."
+  "Verify optimizer invariants for flat VM streams, structured IR functions, and
+MIR functions or modules. This function does not transform its input."
   (cond
     ((listp ir) (opt-verify-vm-instructions ir :pass-name pass-name))
     ((%opt-typep ir "CL-CC/IR" "IR-FUNCTION")

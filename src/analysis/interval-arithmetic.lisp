@@ -6,7 +6,7 @@
 ;;;; optimizer-interval-data.lisp and driven per-instruction by
 ;;;; optimizer-interval-transfer.lisp's dataflow transfer functions.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 (defun opt-make-interval (lo hi)
   "Construct a closed integer interval [LO, HI]."

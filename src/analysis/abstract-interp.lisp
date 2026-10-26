@@ -1,6 +1,6 @@
 ;;;; optimizer-abstract-interp.lisp — FR-751 Abstract Interpretation
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 (defvar *abstract-interp-enabled* nil
   "When non-NIL, run the FR-751 abstract interpretation pass.")

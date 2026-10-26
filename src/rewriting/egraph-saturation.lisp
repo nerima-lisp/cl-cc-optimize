@@ -12,7 +12,7 @@
 ;;;;
 ;;;; Load order: after egraph.lisp, before egraph-rules.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 (defun egraph-saturate (eg rules &key (limit 30) (fuel 10000))
   "Apply RULES to EG until saturation (no new merges) or resource limits.
@@ -118,7 +118,7 @@
     ;; Strip 'VM-' prefix: VM-ADD → ADD, VM-CONST → CONST, etc.
     (if (and (> (length type-name) 3)
              (string= (subseq type-name 0 3) "VM-"))
-        (intern (subseq type-name 3) :cl-cc/optimize)
+        (intern (subseq type-name 3) :cl-cc/optimize/rewriting)
         (type-of inst))))
 
 (defun %egraph-class-for-reg (eg r reg->class)

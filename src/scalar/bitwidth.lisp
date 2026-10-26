@@ -1,5 +1,5 @@
 ;;;; optimizer-bitwidth.lisp — FR-614 Bitwidth Reduction
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 (defvar *opt-bitwidth-reduction-metadata* (make-hash-table :test #'eq)
   "EQ side table mapping instructions to proven narrow integer width metadata.")

@@ -110,6 +110,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Shared feature and layer dependency checks.
+    cl-nix-forge = {
+      url = "github:nerima-lisp/cl-nix-forge/v0.7.4";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -138,6 +144,7 @@
       cl-codec-kit,
       cl-json-kit,
       cl-boundary-kit,
+      cl-nix-forge,
       paredit-cli,
       treefmt-nix,
       ...
@@ -235,8 +242,46 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          sourceInclude = [
+            ./t/export-surface.txt
+            ./CHANGELOG.md
+          ]
+          ++ pkgs.lib.optional (builtins.pathExists ./nix/feature-dependencies.sexp) ./nix/feature-dependencies.sexp;
+          featureLintSource = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions (
+              [
+                ./src
+                ./t
+                ./docs/src/reference
+              ]
+              ++ sourceInclude
+            );
+          };
         in
         {
+          feature-lint = cl-nix-forge.lib.${system}.mkFeatureLintCheck {
+            src = featureLintSource.outPath;
+            featureDefinitions = "nix/feature-dependencies.sexp";
+            glossary = "docs/src/reference/glossary.md";
+            glossaryHeadingPrefix = "## ";
+            exportSurface = "t/export-surface.txt";
+            mode = "transition";
+            legacyInternalRefs = "t/legacy-internal-refs.sexp";
+            forbiddenNames = [
+              "phases"
+              "misc"
+              "utils"
+              "helpers"
+            ];
+            numberedPrefixes = [
+              "FR-"
+              "W"
+            ];
+            packagePrefix = "cl-cc/optimize/";
+            infraSuffix = "/infra";
+          };
+
           default =
             pkgs.runCommand "cl-cc-optimize-tests"
               {
@@ -253,21 +298,12 @@
                 touch "$out/passed"
               '';
 
-          orphan-tests =
-            pkgs.runCommand "cl-cc-optimize-orphan-tests"
-              {
-                nativeBuildInputs = [
-                  pkgs.sbcl
-                  pkgs.coreutils
-                ];
-                CL_SOURCE_REGISTRY = sourceRegistry;
-              }
-              ''
-                export HOME="$TMPDIR/home"
-                mkdir -p "$HOME" "$out"
-                sbcl --script ${self}/check-orphan-tests.lisp
-                touch "$out/passed"
-              '';
+          orphan-tests = cl-nix-forge.lib.${system}.mkOrphanTestCheck {
+            src = ./.;
+            testRoots = [ "t" ];
+            testSystems = [ "cl-cc-optimize/test" ];
+            allowlist = [ ];
+          };
 
           # Fails `nix flake check` when any tracked file is unformatted,
           # turning the formatter into an enforced CI gate.

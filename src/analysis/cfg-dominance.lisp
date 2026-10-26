@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── CFG Dominance ────────────────────────────────────────────────────────
 ;;; Reverse post-order, forward dominator tree (Cooper et al. 2001), and

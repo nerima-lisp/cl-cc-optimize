@@ -2,7 +2,7 @@
 ;;;; FR-752 k-CFA, FR-753 Datalog-Based Analysis,
 ;;;; FR-754 Ownership Inference/Borrow Checker, FR-755 Region Inference
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ──── FR-752: k-CFA / Context-Sensitive Analysis ────
 (defvar *cfa-depth* 0

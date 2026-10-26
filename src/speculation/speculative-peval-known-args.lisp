@@ -1,7 +1,7 @@
 ;;;; optimizer-speculative-peval-known-args.lisp — partial evaluation of
 ;;;; known-callee call sites with constant call arguments
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defun %opt-specialize-clear-dst-tracks (dst const-track reg-track)
   "Remove DST's tracked constant value and known-callee label, when DST is

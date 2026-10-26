@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 ;;; ─── Pass 1: Constant Folding + Algebraic Simplification ─────────────────
 

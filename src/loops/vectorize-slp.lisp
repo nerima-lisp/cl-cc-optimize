@@ -1,6 +1,6 @@
 ;;;; optimizer-vectorize-slp.lisp — superword-level parallelism vectorization
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 ;;;; ─── FR-227: SLP Vectorization ──────────────────────────────────────────
 

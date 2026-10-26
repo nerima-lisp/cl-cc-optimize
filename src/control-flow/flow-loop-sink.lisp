@@ -1,6 +1,6 @@
 ;;;; optimizer-flow-loop-sink.lisp — conservative code sinking toward CFG uses
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 ;;; ─── Conservative code sinking (FR-163 subset) ──────────────────────────
 

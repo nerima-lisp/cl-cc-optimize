@@ -6,7 +6,7 @@
 ;;;; Saturation loop and VM interface are in egraph-saturation.lisp (loads after).
 ;;;; Load order: after egraph.lisp, before egraph-saturation.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 ;;; ─── Pattern Matching ────────────────────────────────────────────────────
 ;;;

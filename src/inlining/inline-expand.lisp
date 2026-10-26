@@ -6,7 +6,7 @@
 ;;;; opt-pass-inline is the driver-facing entry point; DCE and memoization
 ;;;; infrastructure live in optimizer-inline-pass.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defun %opt-inline-candidate-labels (bottom-up-labels func-defs recursive-labels
                                        threshold profile-data)

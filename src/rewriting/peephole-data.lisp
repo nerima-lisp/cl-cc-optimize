@@ -7,7 +7,7 @@
 ;;;; cl-prolog-kit's goal/builtin dispatch, so no package qualification is
 ;;;; needed for the ?-prefixed pattern variables here.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 (defparameter *peephole-copy-prop-rules*
   '(

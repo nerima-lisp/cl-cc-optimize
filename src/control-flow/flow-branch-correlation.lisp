@@ -5,7 +5,7 @@
 ;;;; rewrites the block's terminator to the edge's known outcome instead of
 ;;;; re-testing it.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 (defun %opt-branch-correlation-forwarder-block-p (block)
   "Return T when BLOCK is a trivial forwarder (single unconditional jump)."

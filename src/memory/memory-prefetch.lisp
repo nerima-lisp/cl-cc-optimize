@@ -1,6 +1,6 @@
 ;;;; optimizer-flow-loop-prefetch.lisp — hardware prefetch hint insertion
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 ;;; ─── Prefetch insertion (FR-187) ────────────────────────────────────────
 

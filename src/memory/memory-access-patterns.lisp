@@ -4,7 +4,7 @@
 ;;;; downstream prefetch and vectorization passes, and resolves a register's
 ;;;; ultimate points-to root for alias analysis.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 (defun %opt-memory-access-index-reg (inst)
   (typecase inst

@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-profile-data (:conc-name opt-profile-))
   "Small profile container for edge, value, call-chain, and allocation data."

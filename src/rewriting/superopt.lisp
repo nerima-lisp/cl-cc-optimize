@@ -1,6 +1,6 @@
 ;;;; packages/optimize/src/optimizer-superopt.lisp — FR-750 peephole superoptimizer
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 (defparameter *opt-superopt-max-length* 3
   "Maximum peephole window length enumerated by OPT-PASS-SUPEROPT.")

@@ -6,7 +6,7 @@
 ;;;; static/dynamic argument split, and whether a clone is even needed
 ;;;; (a cache hit reuses an existing specialization).
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/partial-evaluation)
 
 (defun opt-build-specialization-plan (callee-label arguments constant-bindings
                                                    &key cache)

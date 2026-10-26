@@ -1,5 +1,5 @@
 ;;;; optimizer-overflow.lisp — FR-613 Integer Overflow Check Elimination
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 (defun opt-pass-overflow-check-elimination (instructions)
   "FR-613: replace checked integer arithmetic when VRP proves fixnum safety.

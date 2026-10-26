@@ -5,7 +5,7 @@
 ;;;; bindings, so a constant discovered by specializing one function can
 ;;;; feed the decision to specialize another that calls it.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/partial-evaluation)
 
 (defun %opt-merge-constant-binding (const-map fn param value)
   "Merge inferred (PARAM . VALUE) into CONST-MAP for FN.

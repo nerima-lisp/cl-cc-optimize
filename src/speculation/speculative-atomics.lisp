@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defun opt-build-tls-plan (&key target hot-access-p)
   "Build TLS access plan for TARGET architecture.

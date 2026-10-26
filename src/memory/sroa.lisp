@@ -2,7 +2,7 @@
 ;;;; Scalar Replacement of Aggregates: split struct/array into scalars.
 ;;;; LLVM SROA pass / mem2reg equivalent.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 (defvar *sroa-enabled* t)
 

@@ -6,7 +6,7 @@
 ;;;;
 ;;;; Load order: after optimizer-recognition.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defun %opt-branch-target-counts (instructions)
   (let ((counts (make-hash-table :test #'equal)))

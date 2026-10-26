@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 ;;; ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ;;; E-Graph — Advanced Rules and Entry Point
 ;;;
@@ -31,7 +31,7 @@ predicates to the fact-backed rule records."
   (flet ((%normalize-rule-name (name)
            (if (symbolp name)
                (multiple-value-bind (sym foundp)
-                   (find-symbol (symbol-name name) :cl-cc/optimize)
+                   (find-symbol (symbol-name name) :cl-cc/optimize/rewriting)
                  (if foundp sym name))
                name)))
     (mapcar (lambda (solution)

@@ -1,6 +1,6 @@
 ;;;; packages/optimize/src/optimizer-div-const.lisp — FR-685 division by constant
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 (defun %opt-div-const-quotient-seq (dst src divisor interval new-reg-fn)
   "Build a multiply+shift quotient sequence for SRC/DIVISOR when safe."

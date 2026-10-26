@@ -1,6 +1,6 @@
 ;;;; optimizer-roadmap-backend-data-baseline.lisp -- Broad baseline backend support evidence
 ;;;; Split from optimizer-roadmap-backend-data.lisp.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defparameter +opt-backend-roadmap-baseline-evidence-profile-ranges+
   ;; Each entry: (lo hi modules api-symbols test-anchors)

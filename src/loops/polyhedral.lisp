@@ -1,5 +1,5 @@
 ;;;; optimizer-polyhedral.lisp — FR-513 lightweight polyhedral transforms
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defvar *polyhedral-enabled* t
   "When non-NIL, enable explicit polyhedral loop transforms.")

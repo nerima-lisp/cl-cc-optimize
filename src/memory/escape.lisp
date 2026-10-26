@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 ;;; ─── FR-516 Escape Analysis ───────────────────────────────────────────────
 

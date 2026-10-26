@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-tls-plan (:conc-name opt-tls-plan-))
   "Thread-local access lowering plan."

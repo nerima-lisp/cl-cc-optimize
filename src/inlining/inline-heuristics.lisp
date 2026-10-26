@@ -5,7 +5,7 @@
 ;;;; decides eligibility against the thresholds in
 ;;;; optimizer-inline-cost-data.lisp. optimizer-inline-expand.lisp consumes
 ;;;; this to pick which candidates to actually inline.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 (defun %opt-inline-call-heavy-p (body)
   "Return T when BODY contains call-like instructions that make inlining risky."

@@ -2,7 +2,7 @@
 ;;;; Power-consumption-aware optimization heuristics.
 ;;;; Research: energy-aware compilation for mobile/IoT.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 (defvar *energy-aware-mode* nil
   "When T, optimizations consider energy cost in addition to speed.")

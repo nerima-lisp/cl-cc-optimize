@@ -1,5 +1,5 @@
 ;;;; optimizer-dataflow-sccp.lisp — Sparse Conditional Constant Propagation (SCCP) pass
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── Pass 1b: Sparse Conditional Constant Propagation ────────────────────
 

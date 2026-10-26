@@ -8,7 +8,7 @@
 ;;;; instruction's overflow check once its operand ranges prove it can't
 ;;;; overflow.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 (defun %opt-copy-interval-state (intervals)
   "Return a deep EQ hash-table copy of INTERVALS."

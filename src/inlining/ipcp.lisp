@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 ;;; FR-502 — Interprocedural Constant Propagation (IPCP)
 ;;;

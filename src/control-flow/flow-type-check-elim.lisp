@@ -1,6 +1,6 @@
 ;;;; optimizer-flow-type-check-elim.lisp — dominated redundant type-check elimination
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 (defun %type-check-elim-forget-def (facts reg)
   "Remove all facts whose :src or :dst is REG (killed by a def of REG)."

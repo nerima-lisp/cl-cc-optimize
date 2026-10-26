@@ -1,6 +1,6 @@
 ;;;; optimizer-report.lisp — shared optimizer pass debug-reporting utility
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/reporting)
 
 (defvar *optimization-report-stream* nil
   "When non-NIL, optimizer passes emit one-line optimization reports here.")

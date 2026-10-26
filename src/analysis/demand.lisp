@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; FR-182: Demand / Strictness Analysis
 (defstruct (opt-demand-summary (:conc-name opt-demand-summary-)) "Per-function demand summary for VM parameters.

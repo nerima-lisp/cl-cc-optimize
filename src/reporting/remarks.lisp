@@ -1,6 +1,6 @@
 ;;;; optimizer-remarks.lisp — YAML optimization remarks
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/reporting)
 
 (defstruct (opt-remark (:constructor make-opt-remark
                          (&key type pass-name function-name description source-location)))

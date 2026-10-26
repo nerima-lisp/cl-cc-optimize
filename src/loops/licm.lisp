@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 ;;; ─── Pass: Loop Invariant Code Motion (LICM) ──────────────────────────────
 
 ;;; ─── LICM helper: collect definition sites ────────────────────────────────

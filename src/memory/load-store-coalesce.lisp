@@ -1,5 +1,5 @@
 ;;;; packages/optimize/src/optimizer-load-store-coalesce.lisp — FR-723
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 (defconstant +opt-coalesce-lane-bits+ 8
   "Bit width of the narrow lane modeled by FR-723 load/store coalescing.

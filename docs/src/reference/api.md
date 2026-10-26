@@ -1,6 +1,6 @@
 # API Reference
 
-Every symbol below is exported from `cl-cc/optimize`. Sections mirror the concept groups `src/package.lisp` uses to organize its `:export` form.
+Every symbol below is exported from `cl-cc/optimize`. Sections mirror the concept groups in `src/facade-package.lisp`'s `:export` form.
 
 Struct accessors and constructors are documented from their `defstruct` slot and options; passes and other functions are documented from their own docstring, unedited except for light rewrapping.
 
@@ -1332,7 +1332,9 @@ stay conservative and return T.
 
 Return T when REG-A and REG-B may alias under ALIAS-ROOTS.
 
-Unknown roots remain conservative and therefore return T.
+When TYPE-FACTS provides different known heap kinds (`:cons`, `:array`, or
+`:closure`) for both registers, return NIL. Otherwise, unknown roots remain
+conservative and return T.
 
 ### `opt-must-alias-p`
 
@@ -1455,9 +1457,8 @@ original slot source.  Across control-flow boundaries (labels, jumps, calls,
 unknown effects, and heap mutations) all facts are cleared conservatively.
 Overwrites of a tracked cell register or slot source kill only the dependent facts.
 
-CFG-level join-point forwarding is handled by opt-pass-cons-slot-forward-cfg in
-optimizer-memory-forward.lisp, which runs on the full CFG and requires all
-predecessors to agree on the same slot fact.
+The pass is limited to a single basic block and does not compute facts across
+control-flow join points.
 
 ### `opt-pass-bounds-check-elimination`
 
@@ -1673,10 +1674,10 @@ unchanged, preventing repeated packing on subsequent optimizer iterations.
 
 ### `vm-simd-vector-op`
 
-A VM instruction type defined by `cl-cc-vm`, inherited here through `:use`
-rather than owned by this package. Represents a lane-wise SIMD operation
-(`op`) over `lhs-array`/`rhs-array` at `index-reg`, writing `dst-array`, with
-a fixed `lanes` count and `element-type`. Produced by
+A VM instruction type defined and owned by the `cl-cc-vm` system, imported from
+the `cl-cc/vm` package and re-exported by `cl-cc/optimize`. It represents a
+lane-wise SIMD operation (`op`) over `lhs-array`/`rhs-array` at `index-reg`,
+writing `dst-array`, with a fixed `lanes` count and `element-type`. Produced by
 [`opt-pass-slp-vectorize`](#opt-pass-slp-vectorize) and
 [`opt-pass-auto-vectorization`](#opt-pass-auto-vectorization) when scalar
 array accesses in adjacent loop iterations can be fused into one vector op.
@@ -1901,8 +1902,8 @@ step and multiplier constants, and leaves other loops unchanged.
 
 FR-681 division-by-constant lowering for non-power-of-two integer divisors.
 
-This pass exposes the non-power-of-two subset separately from
-`opt-pass-strength-reduce`.  Divisors that are powers of two are intentionally
+This pass exposes the non-power-of-two subset separately from the scalar
+`opt-pass-strength-reduce` pass.  Divisors that are powers of two are intentionally
 left unchanged here because the existing shift lowering owns that case.  The
 implementation delegates to the FR-685 helper, which also handles modulo by
 constant through the same quotient sequence.
@@ -2304,7 +2305,7 @@ from L1/L2 tile sizes and preserves the original executable loop body.
 
 When true, auto-select SIMD/loop-tile sizes from detected CPU cache geometry.
 
-Default NIL preserves the existing optimizer output and the 7746/0 baseline.
+Default NIL preserves the existing optimizer output.
 
 ### `autotune-simd-cache-info`
 
@@ -2635,19 +2636,6 @@ Return a deterministic MLGO-style inline scoring descriptor.
 
 Run inlining with the MLGO benefit model when explicitly enabled.
 
-### `opt-pass-ml-regalloc`
-
-```lisp
-(cl-cc/optimize:opt-pass-ml-regalloc (instructions))
-```
-
-FR-581: Compute register pressure hints for INSTRUCTIONS.
-Performs liveness-based register pressure analysis and returns instructions
-annotated for downstream register allocation. Full ML-driven register allocation
-awaits training data, but this heuristic pass provides actionable pressure
-estimates that significantly improve spill code generation.
-
-
 ## optimizer-driver.lisp — top-level entry point
 
 ### `optimize-instructions`
@@ -2834,14 +2822,17 @@ catch ill-formed sequences (duplicate labels, unknown jump targets, use-before-d
 
 ### `*verify-ir*`
 
-When non-NIL, verify IR/VM invariants before and after each optimizer pass.
+When non-NIL, the pipeline's `:verify-ir` pass checks the current instruction
+stream. In the default convergence sequence, this pass follows translation
+validation and precedes local scheduling. It does not run around each optimizer
+pass.
 
 Unlike `*verify-optimizer-instructions*`, which only understands flat VM
 instruction streams, `opt-verify-ir` also accepts `cl-cc/ir` structured IR and
 `cl-cc/mir` functions/modules (resolved dynamically, so this package never
-names another package's internals). It is wired in as the pipeline's final
-stage (`:verify-ir` in `*opt-pass-table*`), as one last invariant check on the
-fully-optimized instruction stream.
+names another package's internals). It is registered as `:verify-ir` in
+`*opt-pass-table*`; the default convergence sequence runs `:schedule-local`
+after it.
 
 ### `opt-verify-ir`
 
@@ -2849,8 +2840,9 @@ fully-optimized instruction stream.
 (cl-cc/optimize:opt-verify-ir (ir &key pass-name))
 ```
 
-Verify optimizer IR invariants. Currently supports flat VM instruction streams;
-the function is intentionally non-transforming so it can be registered as a pass.
+Verify optimizer invariants for flat VM instruction streams, structured
+`cl-cc/ir` functions, and `cl-cc/mir` functions or modules. The function does not
+transform its input, so it can be registered as a pass.
 
 ### `*opt-bisect-limit*`
 
@@ -3698,7 +3690,19 @@ otherwise returns :stackless for state-machine lowering.
 
 ### `make-opt-channel-site`
 
-Construct a `opt-channel-site` -- Channel/CSP optimization metadata for one send/recv site.
+```lisp
+(cl-cc/optimize:make-opt-channel-site
+  &key (buffer-size 0) (queue-depth 0) (contention 0) (select-arity 1))
+```
+
+Construct channel/CSP optimization metadata for one send/recv site. `buffer-size`
+is channel capacity, `queue-depth` is current occupancy, `contention` is a
+caller-supplied integer score, and `select-arity` is the number of alternatives
+in a select operation. These fields default to 0, 0, 0, and 1 respectively.
+`opt-channel-select-path` sends scores above 3 to `:contended-fallback`. At or
+below 3, it returns `:fast-buffered` only when the buffer has positive capacity
+and `queue-depth` is below `buffer-size`; otherwise it returns
+`:synchronous-rendezvous`.
 
 ### `opt-channel-select-path`
 
@@ -4237,15 +4241,15 @@ MAX-ITERATIONS is a safety guard for pathological inputs.
 
 ### `opt-partial-evaluate-modules`
 
-Exported but not yet implemented in this repository -- calling it signals `undefined-function`. Tracked as a known gap; see `optimizer-peval-specialize.lisp` and `optimizer-peval-program.lisp` for the sibling functions (`opt-partial-evaluate-function`, `opt-partial-evaluate-program`) that are implemented.
+Exported but not yet implemented in this repository -- calling it signals `undefined-function`. Tracked as a known gap; see `src/partial-evaluation/peval-specialize.lisp` and `src/partial-evaluation/peval-program.lisp` for the sibling functions (`opt-partial-evaluate-function`, `opt-partial-evaluate-program`) that are implemented.
 
 ### `opt-partial-evaluate-modules-cached`
 
-Exported but not yet implemented in this repository -- calling it signals `undefined-function`. Tracked as a known gap; see `optimizer-peval-specialize.lisp` and `optimizer-peval-program.lisp` for the sibling functions (`opt-partial-evaluate-function`, `opt-partial-evaluate-program`) that are implemented.
+Exported but not yet implemented in this repository -- calling it signals `undefined-function`. Tracked as a known gap; see `src/partial-evaluation/peval-specialize.lisp` and `src/partial-evaluation/peval-program.lisp` for the sibling functions (`opt-partial-evaluate-function`, `opt-partial-evaluate-program`) that are implemented.
 
 ### `opt-partial-evaluate-modules-incremental`
 
-Exported but not yet implemented in this repository -- calling it signals `undefined-function`. Tracked as a known gap; see `optimizer-peval-specialize.lisp` and `optimizer-peval-program.lisp` for the sibling functions (`opt-partial-evaluate-function`, `opt-partial-evaluate-program`) that are implemented.
+Exported but not yet implemented in this repository -- calling it signals `undefined-function`. Tracked as a known gap; see `src/partial-evaluation/peval-specialize.lisp` and `src/partial-evaluation/peval-program.lisp` for the sibling functions (`opt-partial-evaluate-function`, `opt-partial-evaluate-program`) that are implemented.
 
 ### `opt-partial-evaluate-functions-incremental`
 

@@ -2,7 +2,7 @@
 ;;;; Thread-Local Allocation Buffers for lock-free allocation.
 ;;;; HotSpot TLAB / Go per-P allocation cache equivalent.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 (defvar *tlab-enabled* t)
 

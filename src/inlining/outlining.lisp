@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 ;;;; ─── Size-oriented passes: function outlining and safepoint polling ─────
 
 (defparameter *opt-outlining-min-length* 3
@@ -15,21 +15,6 @@
 
 (defparameter *opt-safepoint-flag-name* '*clcc-safepoint-request*
   "Global flag read by inserted safepoint polls.")
-
-(defun %opt-generated-label-present-p (instructions prefix)
-  "Return T when INSTRUCTIONS already contain a generated label with PREFIX."
-  (some (lambda (inst)
-          (and (typep inst 'vm-label)
-               (let ((name (vm-name inst)))
-                 (and (stringp name)
-                      (<= (length prefix) (length name))
-                      (string= prefix name :end2 (length prefix))))))
-        instructions))
-
-;;; %opt-fresh-register-generator is defined in optimizer-inline.lisp.
-;;; No local copies needed here.
-
-(define-inst-type-predicate %opt-control-or-label-p opt-control-or-label "Return T when INST should not be part of a straight-line outlined sequence.")
 
 (defun %opt-outlinable-subseq-p (seq)
   "Return T when SEQ can be outlined as a nullary helper returning one value."

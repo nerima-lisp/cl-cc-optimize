@@ -1,5 +1,5 @@
 ;;;; packages/optimize/src/optimizer-speculative-inline.lisp — FR-523
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defparameter *opt-speculative-inline-dominance-threshold* 0.9
   "Minimum IC type-frequency dominance required for speculative inlining.")

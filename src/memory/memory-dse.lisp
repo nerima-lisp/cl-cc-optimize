@@ -1,40 +1,4 @@
-(in-package :cl-cc/optimize)
-;;; ─── Memory Optimization Passes ─────────────────────────────────────────────
-;;;
-;;; Extracted from optimizer-memory-alias.lisp.
-;;; Depends on: optimizer-memory-alias.lisp (alias analysis: opt-compute-heap-aliases,
-;;;   opt-slot-alias-key, opt-rewrite-inst-regs, opt-inst-dst, opt-inst-pure-p).
-;;; Load order: immediately after optimizer-memory-alias.lisp.
-
-;;; ─── Shared mem-pass-state struct and helpers ────────────────────────────────
-
-(defvar *opt-bounds-check-eliminable-metadata* (make-hash-table :test #'eq)
-  "EQ side table for BCE annotations on existing VM instructions.")
-
-(defun opt-mark-bounds-check-eliminable (inst &key array-reg index-reg length-reg block)
-  "Annotate INST as having a proven redundant array bounds check.
-
-The VM has no unchecked array instruction yet, so BCE records conservative
-side-table metadata and returns INST unchanged. Downstream codegen can query this
-metadata without requiring cross-package instruction-shape changes."
-  (setf (gethash inst *opt-bounds-check-eliminable-metadata*)
-        (list :bounds-check-eliminable t
-              :bce-eliminable t
-              :array-reg array-reg
-              :index-reg index-reg
-              :length-reg length-reg
-              :block block))
-  inst)
-
-(defun opt-bounds-check-eliminable-metadata (inst)
-  "Return BCE metadata for INST, or NIL when INST is not annotated."
-  (gethash inst *opt-bounds-check-eliminable-metadata*))
-
-(defun opt-bounds-check-eliminable-marked-p (inst)
-  "Return T when INST has been annotated by the BCE pass."
-  (let ((metadata (opt-bounds-check-eliminable-metadata inst)))
-    (or (getf metadata :bounds-check-eliminable)
-        (getf metadata :bce-eliminable))))
+(in-package #:cl-cc/optimize/memory)
 
 (defstruct (mem-pass-state (:conc-name mps-))
   "Mutable state shared by the DSE and store-to-load-forward passes."
@@ -126,17 +90,10 @@ metadata without requiring cross-package instruction-shape changes."
           :test #'eq))
 
 (defun opt-pass-cons-slot-forward (instructions)
-  "Forward car/cdr of a fresh vm-cons to moves from the original slot registers.
-
-Within a single basic block the pass is fully precise: an vm-cons followed by
-vm-car/vm-cdr on the same destination register is replaced by a vm-move from the
-original slot source.  Across control-flow boundaries (labels, jumps, calls,
-unknown effects, and heap mutations) all facts are cleared conservatively.
-Overwrites of a tracked cell register or slot source kill only the dependent facts.
-
-CFG-level join-point forwarding is handled by opt-pass-cons-slot-forward-cfg in
-optimizer-memory-forward.lisp, which runs on the full CFG and requires all
-predecessors to agree on the same slot fact."
+  "Forward car/cdr values from fresh vm-cons instructions to moves from their
+original slot registers within a basic block. Clear remembered facts at
+control-flow boundaries, calls, unknown effects, and heap mutations. Overwriting
+a tracked cell register or slot source kills dependent facts."
   (let ((facts (make-hash-table :test #'eq))
         (result nil))
     (labels ((emit (inst) (push inst result))

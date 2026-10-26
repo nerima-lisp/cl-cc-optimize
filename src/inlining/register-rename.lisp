@@ -12,18 +12,7 @@
 ;;;; type's register-valued slots without this file needing to know each
 ;;;; type's shape.
 
-(in-package :cl-cc/optimize)
-
-(defun opt-max-reg-index (instructions)
-  "Return the maximum integer N where :RN is used in INSTRUCTIONS, or -1."
-  (let ((max-idx -1))
-    (dolist (inst instructions max-idx)
-      (dolist (reg (cons (opt-inst-dst inst) (opt-inst-read-regs inst)))
-        (when (and reg (opt-register-keyword-p reg))
-          (let* ((name (symbol-name reg))
-                 (idx (handler-case (parse-integer name :start 1) (parse-error () nil))))
-            (when (and idx (> idx max-idx))
-              (setf max-idx idx))))))))
+(in-package #:cl-cc/optimize/inlining)
 
 (defun opt-make-renaming (body-instructions base-index)
   "Build renaming table: existing-register → fresh :R<N> (starting at BASE-INDEX).

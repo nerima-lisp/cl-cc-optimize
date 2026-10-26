@@ -1,6 +1,6 @@
 ;;;; packages/optimize/src/optimizer-idiom.lisp — FR-684 loop idiom recognition
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defun %opt-zero-constant-reg-p (reg instructions)
   "Return T when REG is defined by a visible constant zero in INSTRUCTIONS."

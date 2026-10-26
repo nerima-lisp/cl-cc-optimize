@@ -1,6 +1,6 @@
 ;;;; effects-purity-inference.lisp — transitive user-function purity inference
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── FR-152: Transitive Function Purity Inference ──────────────────────────
 ;;;

@@ -1,7 +1,7 @@
 ;;;; optimizer-roadmap-backend-data-lowering.lisp -- Lowering, egraph,
 ;;;; overflow, and runtime evidence
 ;;;; Split from optimizer-roadmap-backend-data.lisp.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defparameter +opt-backend-roadmap-lowering-evidence-profile-ranges+
   ;; Each entry: (lo hi modules api-symbols test-anchors)

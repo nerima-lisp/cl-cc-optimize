@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 ;;; ─── Software Pipelining (FR-200) ────────────────────────────────────────
 (defparameter *opt-software-pipeline-label-prefix* "__clcc_swp_"

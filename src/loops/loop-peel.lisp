@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 ;;; ─── FR-682: Loop Peeling ────────────────────────────────────────────────
 

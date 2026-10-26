@@ -5,7 +5,7 @@
 ;;;; merged into one, redirecting every predecessor's terminator to the
 ;;;; surviving block.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 ;;; ─── Block terminator rewriter (shared by tail-merge and jump-threading) ───
 

@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── CFG Data Dependence Graph (DDG) ─────────────────────────────────────
 ;;; FR-200 dependency: software pipelining needs loop-body dependence edges and

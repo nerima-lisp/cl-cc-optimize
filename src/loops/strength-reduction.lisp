@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 ;;; ─── FR-681: Strength Reduction for Induction Variables ─────────────────
 

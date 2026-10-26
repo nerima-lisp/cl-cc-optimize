@@ -6,7 +6,7 @@
 ;;;; *opt-tail-dup-max-instructions*, and only applied where profile data
 ;;;; marks the target as frequent and the duplication as beneficial.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 ;;; ─── Tail duplication (conservative FR-167 subset) ───────────────────────
 

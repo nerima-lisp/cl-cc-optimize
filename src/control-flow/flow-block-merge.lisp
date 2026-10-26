@@ -3,7 +3,7 @@
 ;;;; Folds a block into its sole predecessor when that predecessor has no
 ;;;; other successor, dropping the now-redundant jump between them.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 
 ;;; ─── Block merge helpers ──────────────────────────────────────────────────
 

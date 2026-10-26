@@ -1,6 +1,6 @@
 ;;;; effects-known-functions.lisp — known CL builtin function effect/purity properties
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── Known Function Property Database (FR-183) ───────────────────────────
 

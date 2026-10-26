@@ -1,5 +1,5 @@
 ;;;; optimizer-trans-validate.lisp — FR-752 Translation Validation
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/verification)
 
 (defvar *translation-validation-enabled* nil
   "When non-NIL, validate before/after IR for every optimizer pass.")

@@ -6,7 +6,7 @@
 ;;;;
 ;;;; Load order: after optimizer-strength.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 (defun %opt-bswap-window-shape-valid-p (c0 a0 s0 b0 c1 a1 s1 b1 c2 a2 s2 b2 c3 a3 s3 b3 o0 o1 o2)
   "T when the fixed-role instructions in a candidate bswap window have the

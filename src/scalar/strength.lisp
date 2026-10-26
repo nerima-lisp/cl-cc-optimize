@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 ;;; ─── Pass: Strength Reduction ────────────────────────────────────────────
 (defun opt-power-of-2-p (n)

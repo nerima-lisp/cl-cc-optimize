@@ -9,7 +9,7 @@
 ;;;;
 ;;;; Load order: after optimizer-strength.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 
 (defparameter *opt-commutative-binop-table*

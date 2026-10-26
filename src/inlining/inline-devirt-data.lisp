@@ -7,7 +7,7 @@
 ;;;; devirtualization logic that populates and consumes it lives in
 ;;;; optimizer-inline-devirt.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/inlining)
 
 ;;; --- Devirtualization Fact Struct ---
 

@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/pipeline)
 ;;; -----------------------------------------------------------------------------
 ;;; Optimizer Pipeline Policy and Optional Passes
 ;;; -----------------------------------------------------------------------------
@@ -172,5 +172,3 @@ Data: the pass name. Logic: fbound check and dispatch via %opt-run-pass-if-fboun
   :doc "Run explicit FR-513 polyhedral pass only when its implementation is loaded.")
 (define-optional-pass mlgo-inline
   :doc "Run explicit FR-580 MLGO inline pass only when its implementation is loaded.")
-(define-optional-pass ml-regalloc
-  :doc "Run explicit ML register-allocation hint pass only when loaded.")

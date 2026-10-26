@@ -6,7 +6,7 @@
 ;;;; Called by ssa-construction.lisp's ssa-destroy after phi placement and renaming.
 ;;;; Load order: after ssa.lisp, before ssa-construction.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── SSA phi-elimination helpers ─────────────────────────────────────────
 

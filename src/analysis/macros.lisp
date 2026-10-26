@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 ;;; ─── Cross-Cutting Macros and Helpers ───────────────────────────────────
 ;;;

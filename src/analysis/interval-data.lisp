@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/analysis)
 
 (defparameter *opt-interval-binop-table*
   '((vm-add . opt-interval-add)

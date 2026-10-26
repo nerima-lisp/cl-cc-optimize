@@ -1,6 +1,6 @@
 ;;;; optimizer-delimited-cont.lisp — FR-677 delimited continuation lowering
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/rewriting)
 
 (defmacro reset (&body body)
   "Delimited-continuation delimiter used by the FR-677 source-level lowering.

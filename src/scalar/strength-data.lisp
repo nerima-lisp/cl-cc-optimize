@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/scalar)
 
 (defparameter +opt-strength-reduce-max-verified-dividend-hi+ 65535
   "Largest dividend upper bound FR-282 verifies exhaustively for reciprocal division.

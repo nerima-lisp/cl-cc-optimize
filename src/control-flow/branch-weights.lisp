@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/control-flow)
 ;;;; ─── Branch Prediction Weight Analysis ─────────────────────────────────
 
 (defparameter *opt-cold-block-instruction-types*

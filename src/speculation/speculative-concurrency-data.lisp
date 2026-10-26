@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/speculation)
 
 (defstruct (opt-async-state-machine (:conc-name opt-async-sm-))
   "Minimal async/await lowering plan as an explicit state machine graph."

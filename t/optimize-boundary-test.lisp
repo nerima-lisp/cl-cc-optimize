@@ -158,13 +158,129 @@ inspect its slots\" shape used across the optimizer-pass tests below."
 (describe-sequential
   "cl-cc-optimize public surface"
   (it
-    "exports the pass entry points a driver calls"
+    "exports the W0 surface with identical feature and home symbols"
     (dolist (name '("OPTIMIZE-INSTRUCTIONS" "OPT-PASS-FOLD" "OPT-PASS-DEVIRTUALIZE"))
-      (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external)))
+      (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external))
+    (let ((count 0))
+      (with-open-file (in (asdf:system-relative-pathname
+                           :cl-cc-optimize
+                           "t/export-surface.txt"))
+        (dolist (row (read in nil nil))
+          (incf count)
+          (destructuring-bind
+              (kind policy facade-name feature-name home-name symbol-name
+                &optional changelog-reference)
+              row
+            (let ((facade-package
+                    (find-package (string-upcase facade-name))))
+              (case policy
+                (:keep
+                 (let* ((feature-package
+                          (find-package (string-upcase feature-name)))
+                        (home-package
+                          (find-package (string-upcase home-name))))
+                   (multiple-value-bind (facade-symbol facade-status)
+                       (find-symbol symbol-name facade-package)
+                     (multiple-value-bind (feature-symbol feature-status)
+                         (find-symbol symbol-name feature-package)
+                       (multiple-value-bind (home-symbol home-status)
+                           (find-symbol symbol-name home-package)
+                         (expect kind :to-be :symbol)
+                         (expect policy :to-be :keep)
+                         (expect facade-status :to-be :external)
+                         (expect feature-status :to-be :external)
+                         (expect home-status :to-be :external)
+                         (expect (and facade-symbol feature-symbol
+                                      (eq facade-symbol feature-symbol))
+                                 :to-be t)
+                         (expect (and facade-symbol home-symbol
+                                      (eq facade-symbol home-symbol))
+                                 :to-be t)
+                         (expect (and facade-symbol
+                                      (string-equal
+                                       (package-name (symbol-package facade-symbol))
+                                       home-name))
+                                 :to-be t))))))
+                (:remove
+                 (expect kind :to-be :symbol)
+                 (expect changelog-reference
+                         :to-equal
+                         "CHANGELOG.md#removal-of-the-ml-register-allocation-hint-pass")
+                 (expect (not (eq (nth-value 1 (find-symbol symbol-name facade-package))
+                                  :external))
+                         :to-be t)
+                 (let ((changelog
+                         (uiop:read-file-string
+                          (asdf:system-relative-pathname :cl-cc-optimize "CHANGELOG.md"))))
+                   (expect (search "### Removal of the ML register allocation hint pass"
+                                   changelog)
+                           :to-be-truthy)
+                   (expect (search "OPT-PASS-ML-REGALLOC" changelog)
+                           :to-be-truthy)))
+                (otherwise
+                 (expect policy :to-be nil)))))))
+      (progn
+        (expect count :to-be 572)
+        (dolist
+            (entry
+             (quote
+              ((:cl-cc/optimize/speculation "OPT-PASS-AFFINE-LOOP-ANALYSIS")
+               (:cl-cc/optimize/speculation "OPT-PASS-LOOP-INTERCHANGE")
+               (:cl-cc/optimize/speculation "OPT-PASS-POLYHEDRAL-SCHEDULE")
+               (:cl-cc/optimize/speculation "OPT-PASS-LOOP-FUSION-FISSION")
+               (:cl-cc/optimize/rewriting "OPT-PASS-SUPEROPT")
+               (:cl-cc/optimize/speculation "OPT-PASS-SPECULATIVE-INLINE")
+               (:cl-cc/optimize/loops "OPT-PASS-LOOP-ROTATE")
+               (:cl-cc/optimize/loops "OPT-PASS-DEAD-LOOP-ELIMINATION")
+               (:cl-cc/optimize/loops "OPT-PASS-LOOP-UNROLL")
+               (:cl-cc/optimize/loops "OPT-PASS-LOOP-UNSWITCH")
+               (:cl-cc/optimize/inlining "OPT-PASS-DEAD-ARGUMENT-ELIMINATION")
+               (:cl-cc/optimize/control-flow "OPT-PASS-TAIL-DUPLICATION")
+               (:cl-cc/optimize/loops "OPT-PASS-IV-STRENGTH-REDUCE")
+               (:cl-cc/optimize/loops "OPT-PASS-DIV-BY-CONST")
+               (:cl-cc/optimize/loops "OPT-PASS-LOOP-PEEL")
+               (:cl-cc/optimize/loops "OPT-PASS-IDIOM-RECOGNITION")
+               (:cl-cc/optimize/loops "OPT-PASS-TRMC")
+               (:cl-cc/optimize/analysis "OPT-PASS-VALUE-RANGE-PROPAGATION")
+               (:cl-cc/optimize/memory "OPT-PASS-BOUNDS-CHECK-ELIMINATION")
+               (:cl-cc/optimize/scalar "OPT-PASS-OVERFLOW-CHECK-ELIMINATION")
+               (:cl-cc/optimize/scalar "OPT-PASS-BITWIDTH-REDUCTION")
+               (:cl-cc/optimize/rewriting "OPT-PASS-CPS-REDUCE")
+               (:cl-cc/optimize/inlining "OPT-PASS-DEFUNCTIONALIZE")
+               (:cl-cc/optimize/rewriting "OPT-PASS-DELIMITED-CONTINUATIONS")
+               (:cl-cc/optimize/memory "OPT-PASS-ESCAPE-ANALYSIS")
+               (:cl-cc/optimize/reporting "OPT-PASS-PATH-PROFILING")
+               (:cl-cc/optimize/memory "OPT-PASS-LOAD-WIDENING-STORE-COALESCING")
+               (:cl-cc/optimize/reporting "OPT-PASS-OPTIMIZATION-REMARKS")
+               (:cl-cc/optimize/analysis "OPT-PASS-ABSTRACT-INTERPRETATION")
+               (:cl-cc/optimize/verification "OPT-PASS-TRANSLATION-VALIDATION")
+               (:cl-cc/optimize/loops "OPT-PASS-LOOP-FUSION")
+               (:cl-cc/optimize/loops "OPT-PASS-LOOP-FISSION")
+               (:cl-cc/optimize/loops "OPT-PASS-LOOP-TILE")
+               (:cl-cc/optimize/loops "OPT-PASS-POLYHEDRAL")
+               (:cl-cc/optimize/inlining "OPT-PASS-MLGO-INLINE"))))
+          (destructuring-bind (owner-name pass-name) entry
+            (let* ((owner-package (find-package owner-name))
+                   (owner-symbol (find-symbol pass-name owner-package))
+                   (pipeline-symbol
+                     (find-symbol pass-name :cl-cc/optimize/pipeline)))
+              (expect owner-symbol :to-be-truthy)
+              (expect (eq (symbol-package owner-symbol) owner-package) :to-be t)
+              (expect (and pipeline-symbol (eq owner-symbol pipeline-symbol)) :to-be t)
+              (expect (fboundp owner-symbol) :to-be-truthy)))))))
   (it
-  "exports the optimization runtime and TBAA surface"
-  (dolist (name (quote ("KNOWN-FUNCTION-PROPERTIES" "KNOWN-FUNCTION-PROPERTY-P" "OPT-MEMORY-TBAA-METADATA" "OPT-BUILD-MEMORY-TBAA-METADATA" "OPT-TIER-RUNTIME-STATE" "MAKE-OPT-TIER-RUNTIME-STATE" "OPT-TIER-RECORD-RUNTIME-EVENT" "OPT-MAKE-PURE-FUNCTION-RUNTIME-MEMOIZER")))
-    (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external))))
+    "exports the optimization runtime and TBAA surface"
+    (dolist
+        (name
+         (list "KNOWN-FUNCTION-PROPERTIES"
+               "KNOWN-FUNCTION-PROPERTY-P"
+               "OPT-MEMORY-TBAA-METADATA"
+               "OPT-BUILD-MEMORY-TBAA-METADATA"
+               "OPT-TIER-RUNTIME-STATE"
+               "MAKE-OPT-TIER-RUNTIME-STATE"
+               "OPT-TIER-RECORD-RUNTIME-EVENT"
+               "OPT-MAKE-PURE-FUNCTION-RUNTIME-MEMOIZER"))
+      (expect (nth-value 1 (find-symbol name :cl-cc/optimize)) :to-be :external))))
 
 (describe-sequential "optimization is behaviour-preserving on a trivial program"
   (it "folds a constant binop and keeps the result register"
@@ -417,7 +533,6 @@ inspect its slots\" shape used across the optimizer-pass tests below."
        (cl-cc/optimize::%maybe-run-autotune-simd)
        (cl-cc/optimize::%maybe-run-polyhedral)
        (cl-cc/optimize::%maybe-run-mlgo-inline)
-       (cl-cc/optimize::%maybe-run-ml-regalloc)
        (cl-cc/optimize::%maybe-run-loop-unswitch)
        (cl-cc/optimize::%maybe-run-pure-call-optimization)
        (cl-cc/optimize::opt-pass-batch-concatenate)
@@ -452,7 +567,14 @@ inspect its slots\" shape used across the optimizer-pass tests below."
        (cl-cc/optimize::opt-pass-schedule-local))
       "~A returns a list for an empty instruction stream"
       (pass)
-    (expect (listp (funcall pass nil)) :to-be-truthy)))
+    (expect (listp (funcall pass nil)) :to-be-truthy))
+  (it
+    "keeps the removed ML register allocation hint pass out of the facade"
+    (expect
+     (not (eq (nth-value 1
+                         (find-symbol "OPT-PASS-ML-REGALLOC" :cl-cc/optimize))
+              :external))
+     :to-be-truthy)))
 
 (describe-sequential "interval arithmetic soundness"
   (it-property

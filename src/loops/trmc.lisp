@@ -1,6 +1,6 @@
 ;;;; optimizer-trmc.lisp — Tail Recursion Modulo Cons (FR-1025)
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/loops)
 
 (defparameter *opt-enable-trmc* t
   "Enable Tail Recursion Modulo Cons rewrites for source-level DEFUN forms.

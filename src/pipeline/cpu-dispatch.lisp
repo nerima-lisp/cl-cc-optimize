@@ -1,7 +1,7 @@
 ;;;; packages/optimize/src/optimizer-cpu-dispatch.lisp — FR-616 CPU Feature Dispatch
 ;;;; Multi-versioned functions selected at runtime via CPUID.
 ;;;; GCC -march=native / IFUNC / glibc multiarch equivalent.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/pipeline)
 
 ;;; ──── CPU feature detection ────
 (defvar *cpu-features* nil

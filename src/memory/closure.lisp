@@ -1,7 +1,7 @@
 ;;;; packages/optimize/src/optimizer-closure.lisp
 ;;;; Closure allocation optimizations.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize/memory)
 
 (defun %opt-closure-env-regs (inst)
   "Return the environment registers captured by closure allocation INST."
