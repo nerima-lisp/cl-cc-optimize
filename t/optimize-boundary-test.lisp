@@ -267,7 +267,12 @@ inspect its slots\" shape used across the optimizer-pass tests below."
               (expect owner-symbol :to-be-truthy)
               (expect (eq (symbol-package owner-symbol) owner-package) :to-be t)
               (expect (and pipeline-symbol (eq owner-symbol pipeline-symbol)) :to-be t)
-              (expect (fboundp owner-symbol) :to-be-truthy)))))))
+              (expect (fboundp owner-symbol) :to-be-truthy))))))
+    (expect
+     (not (eq (nth-value 1
+                         (find-symbol "OPT-PASS-ML-REGALLOC" :cl-cc/optimize))
+              :external))
+     :to-be-truthy))
   (it
     "exports the optimization runtime and TBAA surface"
     (dolist
@@ -567,14 +572,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
        (cl-cc/optimize::opt-pass-schedule-local))
       "~A returns a list for an empty instruction stream"
       (pass)
-    (expect (listp (funcall pass nil)) :to-be-truthy))
-  (it
-    "keeps the removed ML register allocation hint pass out of the facade"
-    (expect
-     (not (eq (nth-value 1
-                         (find-symbol "OPT-PASS-ML-REGALLOC" :cl-cc/optimize))
-              :external))
-     :to-be-truthy)))
+    (expect (listp (funcall pass nil)) :to-be-truthy)))
 
 (describe-sequential "interval arithmetic soundness"
   (it-property
