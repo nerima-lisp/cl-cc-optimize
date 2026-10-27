@@ -193,17 +193,12 @@
      #:OPT-PATH-PROFILE-BLOCK-PATH-COUNT #:OPT-PATH-PROFILE-BLOCK-PATH-ID
      #:OPT-PATH-PROFILE-BLOCK-SUCCESSOR-COUNT #:OPT-ROADMAP-EVIDENCE-API-SYMBOLS
      #:OPT-ROADMAP-EVIDENCE-FEATURE-ID #:OPT-ROADMAP-EVIDENCE-MODULES
-     #:OPT-ROADMAP-EVIDENCE-STATUS #:OPT-ROADMAP-EVIDENCE-SUMMARY
-     #:OPT-ROADMAP-EVIDENCE-TEST-ANCHORS #:OPTIMIZE-BACKEND-ROADMAP-ALL-FR-COMPLETE-P
-     #:OPTIMIZE-BACKEND-ROADMAP-DOC-FEATURES #:OPTIMIZE-BACKEND-ROADMAP-DOC-FR-IDS
+     #:OPT-ROADMAP-EVIDENCE-STATUS #:OPT-ROADMAP-EVIDENCE-TEST-ANCHORS #:OPTIMIZE-BACKEND-ROADMAP-DOC-FEATURES #:OPTIMIZE-BACKEND-ROADMAP-DOC-FR-IDS
      #:OPTIMIZE-BACKEND-ROADMAP-FR-IDS-BY-STATUS
-     #:OPTIMIZE-BACKEND-ROADMAP-IMPLEMENTATION-EVIDENCE-COMPLETE-P
      #:OPTIMIZE-BACKEND-ROADMAP-REGISTER-DOC-EVIDENCE
      #:OPTIMIZE-BACKEND-ROADMAP-STATUS-SUMMARY #:OPTIMIZE-ROADMAP-DOC-FEATURES
-     #:OPTIMIZE-ROADMAP-DOC-FR-IDS #:OPTIMIZE-ROADMAP-EVIDENCE-WELL-FORMED-P
      #:OPTIMIZE-ROADMAP-IMPLEMENTATION-EVIDENCE-COMPLETE-P
-     #:OPTIMIZE-ROADMAP-REGISTER-DOC-EVIDENCE
-  )
+     )
   (:import-from #:cl-cc/optimize/partial-evaluation
      #:MAKE-OPT-BINDING-TIME #:MAKE-OPT-PARTIAL-EVAL-RESULT
      #:MAKE-OPT-PARTIAL-PROGRAM-RESULT #:MAKE-OPT-PARTIAL-SPECIALIZATION
@@ -472,17 +467,12 @@
       #:OPT-PATH-PROFILE-BLOCK-PATH-COUNT #:OPT-PATH-PROFILE-BLOCK-PATH-ID
       #:OPT-PATH-PROFILE-BLOCK-SUCCESSOR-COUNT #:OPT-ROADMAP-EVIDENCE-API-SYMBOLS
       #:OPT-ROADMAP-EVIDENCE-FEATURE-ID #:OPT-ROADMAP-EVIDENCE-MODULES
-      #:OPT-ROADMAP-EVIDENCE-STATUS #:OPT-ROADMAP-EVIDENCE-SUMMARY
-      #:OPT-ROADMAP-EVIDENCE-TEST-ANCHORS #:OPTIMIZE-BACKEND-ROADMAP-ALL-FR-COMPLETE-P
-      #:OPTIMIZE-BACKEND-ROADMAP-DOC-FEATURES #:OPTIMIZE-BACKEND-ROADMAP-DOC-FR-IDS
+      #:OPT-ROADMAP-EVIDENCE-STATUS #:OPT-ROADMAP-EVIDENCE-TEST-ANCHORS #:OPTIMIZE-BACKEND-ROADMAP-DOC-FEATURES #:OPTIMIZE-BACKEND-ROADMAP-DOC-FR-IDS
       #:OPTIMIZE-BACKEND-ROADMAP-FR-IDS-BY-STATUS
-      #:OPTIMIZE-BACKEND-ROADMAP-IMPLEMENTATION-EVIDENCE-COMPLETE-P
       #:OPTIMIZE-BACKEND-ROADMAP-REGISTER-DOC-EVIDENCE
       #:OPTIMIZE-BACKEND-ROADMAP-STATUS-SUMMARY #:OPTIMIZE-ROADMAP-DOC-FEATURES
-      #:OPTIMIZE-ROADMAP-DOC-FR-IDS #:OPTIMIZE-ROADMAP-EVIDENCE-WELL-FORMED-P
       #:OPTIMIZE-ROADMAP-IMPLEMENTATION-EVIDENCE-COMPLETE-P
-      #:OPTIMIZE-ROADMAP-REGISTER-DOC-EVIDENCE
-  )
+      )
   (:import-from #:cl-cc/optimize/partial-evaluation
       #:MAKE-OPT-BINDING-TIME #:MAKE-OPT-PARTIAL-EVAL-RESULT
       #:MAKE-OPT-PARTIAL-PROGRAM-RESULT #:MAKE-OPT-PARTIAL-SPECIALIZATION
@@ -964,25 +954,19 @@
      #:opt-pass-schedule-local
      #:opt-configure-optimization-policy
     #:optimize-roadmap-doc-features
-    #:optimize-roadmap-doc-fr-ids
-    #:optimize-roadmap-register-doc-evidence
     #:lookup-opt-roadmap-evidence
     #:optimize-backend-roadmap-doc-features
     #:optimize-backend-roadmap-doc-fr-ids
     #:optimize-backend-roadmap-status-summary
-    #:optimize-backend-roadmap-all-fr-complete-p
     #:optimize-backend-roadmap-fr-ids-by-status
     #:optimize-backend-roadmap-register-doc-evidence
     #:lookup-opt-backend-roadmap-evidence
-    #:optimize-roadmap-evidence-well-formed-p
     #:optimize-roadmap-implementation-evidence-complete-p
-    #:optimize-backend-roadmap-implementation-evidence-complete-p
     #:opt-roadmap-evidence-feature-id
     #:opt-roadmap-evidence-status
     #:opt-roadmap-evidence-modules
     #:opt-roadmap-evidence-api-symbols
     #:opt-roadmap-evidence-test-anchors
-    #:opt-roadmap-evidence-summary
     #:make-opt-ic-site
     #:opt-ic-site-state
     #:opt-ic-site-misses

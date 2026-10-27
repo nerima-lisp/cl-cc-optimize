@@ -205,17 +205,23 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                  (expect kind :to-be :symbol)
                  (expect changelog-reference
                          :to-equal
-                         "CHANGELOG.md#removal-of-the-ml-register-allocation-hint-pass")
+                         (if (string= symbol-name "OPT-PASS-ML-REGALLOC")
+                             "CHANGELOG.md#removal-of-the-ml-register-allocation-hint-pass"
+                             "CHANGELOG.md#removal-of-unreferenced-roadmap-evidence-helpers-from-the-public-api"))
                  (expect (not (eq (nth-value 1 (find-symbol symbol-name facade-package))
                                   :external))
                          :to-be t)
                  (let ((changelog
                          (uiop:read-file-string
                           (asdf:system-relative-pathname :cl-cc-optimize "CHANGELOG.md"))))
-                   (expect (search "### Removal of the ML register allocation hint pass"
+                   (expect (search (if (string= symbol-name "OPT-PASS-ML-REGALLOC")
+                                      "### Removal of the ML register allocation hint pass"
+                                      "### Removal of unreferenced roadmap evidence helpers from the public API")
                                    changelog)
                            :to-be-truthy)
-                   (expect (search "OPT-PASS-ML-REGALLOC" changelog)
+                   (expect (search (if (string= symbol-name "OPT-PASS-ML-REGALLOC")
+                                      "OPT-PASS-ML-REGALLOC"
+                                      (string-downcase symbol-name)) changelog)
                            :to-be-truthy)))
                 (otherwise
                  (expect policy :to-be nil)))))))
