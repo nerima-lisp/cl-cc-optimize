@@ -127,7 +127,7 @@
            :infra-package
            nil
            :depends-on
-           ("analysis" "control-flow" "inlining" "loops" "memory" "rewriting" "reporting" "scalar" "speculation" "verification"))
+           ("analysis" "control-flow" "inlining" "loops" "memory" "partial-evaluation" "rewriting" "reporting" "scalar" "speculation" "verification"))
  (:feature "reporting"
            :source-dirs
            ("src/reporting")

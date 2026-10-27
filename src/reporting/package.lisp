@@ -1,5 +1,6 @@
 (defpackage #:cl-cc/optimize/reporting
   (:use #:cl)
+  (:intern #:OPT-VM-PATH-PROFILE-RECORD-P)
   (:shadowing-import-from #:cl-cc/vm
       #:TERPRI #:WRITE-CHAR #:WRITE-STRING
   )

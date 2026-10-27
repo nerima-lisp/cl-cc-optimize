@@ -1,0 +1,15 @@
+(in-package :cl-cc/optimize/verification/test)
+
+(it-sequential "translation-validation-equivalence-and-wrapper"
+  (let ((before (list (cl-cc/vm:make-vm-const :dst :r0 :value 1)
+                      (cl-cc/vm:make-vm-halt :reg :r0)))
+        (after (list (cl-cc/vm:make-vm-const :dst :r0 :value 2)
+                     (cl-cc/vm:make-vm-halt :reg :r0))))
+    (expect (cl-cc/optimize/verification:translation-validation-equivalent-p before before)
+            :to-be-truthy)
+    (expect (cl-cc/optimize/verification:translation-validation-equivalent-p before after)
+            :to-be-falsy)
+    (let ((cl-cc/optimize/verification:*translation-validation-enabled* t))
+      (expect (handler-bind ((warning #'muffle-warning))
+                (cl-cc/optimize/verification:validate-optimizer-translation :unit before after))
+              :to-be after))))

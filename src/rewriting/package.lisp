@@ -1,5 +1,6 @@
 (defpackage #:cl-cc/optimize/rewriting
   (:use #:cl)
+  (:intern #:OPT-DELIMITED-CONTINUATIONS-FORM #:RESET)
   (:import-from #:cl-cc/vm
       #:DIV #:MAKE-VM-CONST #:MAKE-VM-MOVE #:MOVE #:NEG #:VM-CONST-P #:VM-DST #:VM-HALT
       #:VM-INSTRUCTION #:VM-JUMP #:VM-JUMP-ZERO #:VM-LABEL #:VM-MOVE #:VM-RET #:VM-SRC

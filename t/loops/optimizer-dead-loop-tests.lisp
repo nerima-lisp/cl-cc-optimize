@@ -1,0 +1,38 @@
+;;;; Unit tests for FR-686 dead loop elimination.
+
+(in-package :cl-cc/optimize/loops/test)
+
+(it-sequential "dead-loop-fr686-removes-pure-unused-loop"
+  (let* ((insts (list (cl-cc/vm:make-vm-const :dst :limit :value 10)
+                      (cl-cc/vm:make-vm-label :name "loop")
+                      (make-vm-lt :dst :cond :lhs :i :rhs :limit)
+                      (cl-cc/vm:make-vm-jump-zero :reg :cond :label "exit")
+                      (cl-cc/vm:make-vm-add :dst :tmp :lhs :tmp :rhs :one)
+                      (cl-cc/vm:make-vm-jump :label "loop")
+                      (cl-cc/vm:make-vm-label :name "exit")
+                      (cl-cc/vm:make-vm-ret :reg :result)))
+         (out (cl-cc/optimize/loops:opt-pass-dead-loop-elimination insts)))
+    (expect (some (lambda (inst)
+                          (and (typep inst 'cl-cc/vm::vm-label)
+                               (equal (cl-cc/vm::vm-name inst) "loop")))
+                        out) :to-be-falsy)
+    (expect (some (lambda (inst)
+                          (and (typep inst 'cl-cc/vm::vm-add)
+                               (eq (cl-cc/vm::vm-dst inst) :tmp)))
+                        out) :to-be-falsy)
+    (expect (some (lambda (inst)
+                         (and (typep inst 'cl-cc/vm::vm-label)
+                              (equal (cl-cc/vm::vm-name inst) "exit")))
+                       out) :to-be-truthy)))
+
+(it-sequential "dead-loop-fr686-preserves-volatile-loop"
+  (let* ((insts (list (cl-cc/vm:make-vm-label :name "loop")
+                      (make-vm-lt :dst :cond :lhs :i :rhs :limit)
+                      (cl-cc/vm:make-vm-jump-zero :reg :cond :label "exit")
+                      (cl-cc/vm:make-vm-const :dst :marker :value :volatile-write)
+                      (cl-cc/vm:make-vm-add :dst :tmp :lhs :tmp :rhs :one)
+                      (cl-cc/vm:make-vm-jump :label "loop")
+                      (cl-cc/vm:make-vm-label :name "exit")
+                      (cl-cc/vm:make-vm-ret :reg :result)))
+         (out (cl-cc/optimize/loops:opt-pass-dead-loop-elimination insts)))
+    (expect (mapcar #'cl-cc/vm::instruction->sexp out) :to-equal (mapcar #'cl-cc/vm::instruction->sexp insts))))

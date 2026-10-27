@@ -1,5 +1,6 @@
 (defpackage #:cl-cc/optimize/loops
   (:use #:cl)
+  (:intern #:OPT-TRMC-TRANSFORM-DEFUN-FORM)
   (:shadowing-import-from #:cl-cc/vm
       #:READ-LINE #:STEP
   )
