@@ -2905,22 +2905,6 @@ Returns the resulting gate value for convenience.
 
 Parse docs/notes/optimize-passes.md and return all FR features in document order.
 
-### `optimize-roadmap-doc-fr-ids`
-
-```lisp
-(cl-cc/optimize:optimize-roadmap-doc-fr-ids (&optional (pathname (%opt-roadmap-doc-pathname))))
-```
-
-Return all optimize roadmap FR ids in document order.
-
-### `optimize-roadmap-register-doc-evidence`
-
-```lisp
-(cl-cc/optimize:optimize-roadmap-register-doc-evidence (&optional (pathname (%opt-roadmap-doc-pathname))))
-```
-
-Populate `*opt-roadmap-evidence-registry*` from docs/notes/optimize-passes.md.
-
 ### `lookup-opt-roadmap-evidence`
 
 ```lisp
@@ -2960,14 +2944,6 @@ Returned plist keys:
 :planned      count of explicit ❌ headings
 :unknown      count of unmarked headings
 
-### `optimize-backend-roadmap-all-fr-complete-p`
-
-```lisp
-(cl-cc/optimize:optimize-backend-roadmap-all-fr-complete-p (&optional (pathname (%opt-backend-roadmap-doc-pathname))))
-```
-
-Return T only when every optimize-backend FR is marked ✅ and has complete evidence.
-
 ### `optimize-backend-roadmap-fr-ids-by-status`
 
 ```lisp
@@ -2994,14 +2970,6 @@ Populate `*opt-backend-roadmap-evidence-registry*` from docs/notes/optimize-back
 
 Return optimize-backend implementation evidence for FEATURE-ID.
 
-### `optimize-roadmap-evidence-well-formed-p`
-
-```lisp
-(cl-cc/optimize:optimize-roadmap-evidence-well-formed-p (evidence))
-```
-
-Return T when EVIDENCE is a checkable roadmap implementation record.
-
 ### `optimize-roadmap-implementation-evidence-complete-p`
 
 ```lisp
@@ -3009,14 +2977,6 @@ Return T when EVIDENCE is a checkable roadmap implementation record.
 ```
 
 Return T when EVIDENCE references concrete modules, APIs, and tests.
-
-### `optimize-backend-roadmap-implementation-evidence-complete-p`
-
-```lisp
-(cl-cc/optimize:optimize-backend-roadmap-implementation-evidence-complete-p (evidence))
-```
-
-Return T only when optimize-backend EVIDENCE is marked implemented and its anchors resolve.
 
 ### `opt-roadmap-evidence-feature-id`
 
@@ -3037,10 +2997,6 @@ Accessor for the `api-symbols` slot of `opt-roadmap-evidence`.
 ### `opt-roadmap-evidence-test-anchors`
 
 Accessor for the `test-anchors` slot of `opt-roadmap-evidence`.
-
-### `opt-roadmap-evidence-summary`
-
-Accessor for the `summary` slot of `opt-roadmap-evidence`.
 
 ### `make-opt-ic-site`
 
