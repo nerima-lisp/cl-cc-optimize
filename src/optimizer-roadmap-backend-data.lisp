@@ -1,7 +1,7 @@
 ;;;; optimizer-pipeline-roadmap-backend.lisp — Backend roadmap evidence profile and lookup
 ;;;; Extracted from optimizer-pipeline-roadmap.lisp.
 ;;;; Load order: after optimizer-pipeline-roadmap data slices.
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defparameter +opt-backend-roadmap-evidence-profile-ranges+
   ;; Each entry: (lo hi modules api-symbols test-anchors)

@@ -1,0 +1,171 @@
+;;;; packages/optimize/src/egraph-saturation.lisp — E-Graph Saturation, Extraction, and VM Interface
+;;;;
+;;;; Contains:
+;;;;   egraph-saturate — equality saturation (rule application loop)
+;;;;   *egraph-op-base-costs*, egraph-default-cost, egraph-extract — cost model + extraction
+;;;;   vm-inst-to-enode-op, egraph-add-instructions — VM instruction interface
+;;;;   egraph-class-has-op-p, egraph-class-const-value — class queries
+;;;;   egraph-stats — statistics
+;;;;
+;;;; Data structures, union-find, core ops, pattern matching, and rule application
+;;;; are in egraph.lisp (loads before).
+;;;;
+;;;; Load order: after egraph.lisp, before egraph-rules.lisp.
+
+(in-package #:cl-cc/optimize/rewriting)
+
+(defun egraph-saturate (eg rules &key (limit 30) (fuel 10000))
+  "Apply RULES to EG until saturation (no new merges) or resource limits.
+   LIMIT: maximum number of full-pass iterations.
+   FUEL:  maximum total merges across all iterations.
+   Returns (values saturated-p iterations fuel-remaining)."
+  (let ((total-merges 0))
+    (loop for iter from 0 below limit
+          do (let ((iter-merges 0))
+               (dolist (rule rules)
+                 (let ((n (egraph-apply-rule eg rule)))
+                   (incf iter-merges n)
+                   (incf total-merges n)
+                   (when (> total-merges fuel)
+                     (egraph-rebuild eg)
+                     (return-from egraph-saturate (values nil iter fuel)))))
+               (egraph-rebuild eg)
+               (when (zerop iter-merges)
+                 (return-from egraph-saturate (values t iter (- fuel total-merges)))))
+          finally (return (values nil limit 0)))))
+
+;;; ─── Cost Model + Extraction ─────────────────────────────────────────────
+
+(defparameter *egraph-op-base-costs*
+  '(("CONST"        . 0)
+    ("MOVE"         . 1)
+    ("ADD"          . 1) ("SUB"          . 1) ("NEG"          . 1)
+    ("MUL"          . 3)
+    ("ASH"          . 2)
+    ("DIV"          . 4) ("MOD"          . 4)
+    ("CALL"         . 10)
+    ("GENERIC-CALL" . 20))
+  "Base instruction latency costs for the e-graph default cost model.
+   Keys are op symbol-name strings (uppercase); values are integer base costs.
+   Unlisted operations default to 2.  Compares with #'equal (string).")
+
+(defun egraph-default-cost (op children-costs)
+  "Default cost model: base latency + sum of children costs.
+   Constants are free; simple arithmetic costs 1; calls cost 10+.
+   Compares by symbol-name so cross-package symbol variants work."
+  (let* ((op-str (when (symbolp op) (symbol-name op)))
+         (entry  (assoc op-str *egraph-op-base-costs* :test #'equal))
+         (base   (if entry (cdr entry) 2)))
+    (+ base (reduce #'+ children-costs :initial-value 0))))
+
+(defun %egraph-extract-node-cost (n cls eg cache cost-fn)
+  "Return (values total-cost sexp) for e-node N, recursively extracting
+   children of N via CACHE.  CLS is N's containing e-class, used as the
+   source of leaf data when N has no children."
+  (let* ((child-results (mapcar (lambda (c) (%egraph-extract-class c eg cache cost-fn))
+                                 (en-children n)))
+         (child-costs (mapcar (lambda (r) (if r (car r) most-positive-fixnum))
+                               child-results))
+         (child-sexps (mapcar (lambda (r) (when r (cdr r))) child-results))
+         (total-cost (funcall cost-fn (en-op n) child-costs)))
+    (values total-cost
+            (if (en-children n)
+                (cons (en-op n) child-sexps)
+                (or (ec-data cls) (en-op n))))))
+
+(defun %egraph-extract-best-for-class (cls eg cache cost-fn)
+  "Return (cost . sexp) for CLS's cheapest e-node, given COST-FN and
+   memoization CACHE."
+  (let ((best-cost most-positive-fixnum)
+        (best-sexp nil))
+    (dolist (n (ec-nodes cls))
+      (multiple-value-bind (total-cost sexp) (%egraph-extract-node-cost n cls eg cache cost-fn)
+        (when (< total-cost best-cost)
+          (setf best-cost total-cost)
+          (setf best-sexp sexp))))
+    (cons best-cost best-sexp)))
+
+(defun %egraph-extract-class (cid eg cache cost-fn)
+  "Recursively extract the minimum-cost term for e-class CID from EG."
+  (let ((canon (egraph-find eg cid)))
+    (or (gethash canon cache)
+        (let ((cls (gethash canon (eg-classes eg))))
+          (if cls
+              (progn
+                (setf (gethash canon cache) (list most-positive-fixnum))
+                (let ((result (%egraph-extract-best-for-class cls eg cache cost-fn)))
+                  (setf (gethash canon cache) result)
+                  result))
+              (progn
+                (setf (gethash canon cache) (cons most-positive-fixnum cid))
+                nil))))))
+
+(defun egraph-extract (eg root-id &optional (cost-fn #'egraph-default-cost))
+  "Bottom-up extraction: for each e-class reachable from ROOT-ID,
+   pick the e-node with the minimum cost.
+   Returns an s-expression (nested list) representing the cheapest term.
+
+   COST-FN: (op children-costs) → numeric cost."
+  (let ((cache (make-hash-table)))
+    (when-let ((result (%egraph-extract-class root-id eg cache cost-fn)))
+      (cdr result))))
+
+;;; ─── VM Instruction ↔ E-graph ────────────────────────────────────────────
+
+(defun vm-inst-to-enode-op (inst)
+  "Convert a VM instruction to an e-graph operation symbol."
+  (let ((type-name (symbol-name (type-of inst))))
+    ;; Strip 'VM-' prefix: VM-ADD → ADD, VM-CONST → CONST, etc.
+    (if (and (> (length type-name) 3)
+             (string= (subseq type-name 0 3) "VM-"))
+        (intern (subseq type-name 3) :cl-cc/optimize/rewriting)
+        (type-of inst))))
+
+(defun %egraph-class-for-reg (eg r reg->class)
+  "Return the e-class id for register R in REG->CLASS, creating and
+recording a fresh reg-ref e-class when R has not been seen before."
+  (or (gethash r reg->class)
+      (let ((id (egraph-add eg 'reg-ref r)))
+        (setf (gethash r reg->class) id)
+        id)))
+
+(defun %egraph-record-instruction (eg inst reg->class)
+  "Add INST to EG, update REG->CLASS, and return the instruction e-class."
+  (let* ((op (vm-inst-to-enode-op inst))
+         (reads (opt-inst-read-regs inst))
+         (dst (ignore-errors (vm-dst inst)))
+         (child-ids (mapcar (lambda (register)
+                              (%egraph-class-for-reg eg register reg->class))
+                            reads))
+         (class-id (if (vm-const-p inst)
+                       (%egraph-add-constant eg (vm-value inst))
+                       (apply (function egraph-add) eg op child-ids))))
+    (when dst
+      (setf (gethash dst reg->class) class-id))
+    class-id))
+
+(defun egraph-add-instructions (eg instructions)
+  "Add instructions to EG and return register and per-instruction class maps."
+  (let ((reg->class (make-hash-table :test (function eq)))
+        (instruction-classes nil))
+    (dolist (inst instructions)
+      (push (%egraph-record-instruction eg inst reg->class) instruction-classes))
+    (values reg->class (nreverse instruction-classes))))
+
+(defun egraph-class-has-op-p (eg class-id op)
+  (let ((cls (gethash (egraph-find eg class-id) (eg-classes eg))))
+    (and cls
+         (some (lambda (node) (eq (en-op node) op)) (ec-nodes cls)))))
+
+(defun egraph-class-const-value (eg class-id)
+  (let ((canon (egraph-find eg class-id)))
+    (when (egraph-class-has-op-p eg canon 'const)
+      (ec-data (gethash canon (eg-classes eg))))))
+
+;;; ─── E-Graph Statistics ──────────────────────────────────────────────────
+
+(defun egraph-stats (eg)
+  "Return a plist of e-graph statistics for debugging."
+  (list :classes   (hash-table-count (eg-classes eg))
+        :memo-size (+ (hash-table-count (eg-memo eg)) (hash-table-count (eg-literal-memo eg)))
+        :worklist  (length (eg-worklist eg))))

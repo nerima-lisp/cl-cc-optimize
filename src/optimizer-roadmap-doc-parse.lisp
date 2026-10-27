@@ -5,7 +5,7 @@
 ;;;; title, and status from a heading line. Consumed by
 ;;;; optimizer-roadmap-query.lisp.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defun %opt-roadmap-doc-pathname ()
   "Return the canonical docs/notes/optimize-passes.md pathname when available."

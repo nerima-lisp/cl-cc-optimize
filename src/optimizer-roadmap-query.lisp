@@ -4,7 +4,7 @@
 ;;;; documents: the feature list, FR-ID list, and (for the backend roadmap)
 ;;;; status summaries and completion queries.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defun optimize-roadmap-doc-features (&optional (pathname (%opt-roadmap-doc-pathname)))
   "Parse docs/notes/optimize-passes.md and return all FR features in document order."

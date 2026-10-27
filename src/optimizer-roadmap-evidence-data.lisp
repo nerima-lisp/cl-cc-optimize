@@ -7,7 +7,7 @@
 ;;;; a registered record still holds; optimizer-roadmap-query.lisp is the
 ;;;; public read API.
 
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 ;;; ─── Optimize roadmap implementation evidence and speculative helpers ─────
 

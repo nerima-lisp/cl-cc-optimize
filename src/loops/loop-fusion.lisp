@@ -1,0 +1,392 @@
+;;;; optimizer-loop-fusion.lisp — FR-514 loop fusion and loop fission
+
+(in-package #:cl-cc/optimize/loops)
+
+(defparameter *opt-loop-fission-min-core-size* 8
+  "Minimum pure core size considered for FR-514 loop fission.")
+
+(defun %loop-fr514-copy-inst (inst)
+  "Return a structural copy of INST when the VM sexp codec supports it."
+  (handler-case
+      (sexp->instruction (instruction->sexp inst))
+    (error () inst)))
+
+(defun %loop-fr514-label-name (base suffix)
+  "Return a fresh-ish keyword label derived from BASE and SUFFIX."
+  (intern (format nil "~A__~A" base suffix) :keyword))
+
+(defun %loop-fr514-find-label-index (vec name &optional (start 0))
+  (loop for i from start below (length vec)
+        for inst = (aref vec i)
+        when (and (typep inst 'vm-label) (equal (vm-name inst) name))
+          do (return i)))
+
+(defun %loop-fr514-parse-canonical-loop-at (vec i)
+  "Parse the optimizer's linear canonical counted-loop shape at VEC[I]."
+  (when (and (< (+ i 5) (length vec))
+             (typep (aref vec i) 'vm-label)
+             (typep (aref vec (1+ i)) 'vm-lt)
+             (typep (aref vec (+ i 2)) 'vm-jump-zero))
+    (let* ((head (aref vec i))
+           (cmp (aref vec (1+ i)))
+           (jz (aref vec (+ i 2)))
+           (head-label (vm-name head))
+           (exit-label (vm-label-name jz))
+           (exit-idx (%loop-fr514-find-label-index vec exit-label (+ i 3))))
+      (when (and exit-idx (> exit-idx (+ i 4)))
+        (let* ((back-idx (1- exit-idx))
+               (back (aref vec back-idx))
+               (body (loop for k from (+ i 3) below back-idx collect (aref vec k)))
+               (step (car (last body))))
+          (when (and (typep back 'vm-jump)
+                     (equal (vm-label-name back) head-label)
+                     (typep step 'vm-add)
+                     (eq (vm-dst step) (vm-lhs step))
+                     (eq (vm-dst step) (vm-lhs cmp))
+                     (eq (vm-reg jz) (vm-dst cmp)))
+            (make-opt-canonical-loop
+             :head-index i
+             :cmp-index (1+ i)
+             :jz-index (+ i 2)
+             :back-index back-idx
+             :exit-index exit-idx
+             :head-label head-label
+             :exit-label exit-label
+             :iv-reg (vm-lhs cmp)
+             :limit-reg (vm-rhs cmp)
+             :step-reg (vm-rhs step)
+             :cond-reg (vm-dst cmp)
+             :body body)))))))
+
+(defun %loop-fr514-core-and-step (lp)
+  (let ((body (opt-loop-body lp)))
+    (values (butlast body) (car (last body)))))
+
+(defun %loop-fr514-loop-seq (vec lp)
+  (loop for k from (opt-loop-head-index lp) to (opt-loop-exit-index lp)
+        collect (aref vec k)))
+
+(defun %loop-fr514-constant-init (vec lp)
+  "Return last dominating integer init for LP's IV, or NIL when unknown."
+  (let ((iv (opt-loop-iv-reg lp))
+        (value nil))
+    (loop for i from 0 below (opt-loop-head-index lp)
+          for inst = (aref vec i)
+          do (cond
+               ((and (typep inst 'vm-const)
+                     (eq (vm-dst inst) iv)
+                     (integerp (vm-value inst)))
+                (setf value (vm-value inst)))
+               ((and (opt-inst-dst inst) (eq (opt-inst-dst inst) iv))
+                (setf value nil))))
+    value))
+
+(defun %loop-fr514-pure-inst-p (inst)
+  "Return T for instructions safe to duplicate or merge across loop boundaries."
+  (and (member (vm-inst-effect-kind inst) '(:pure :read-only) :test #'eq)
+       (not (typep inst '(or vm-label vm-jump vm-jump-zero vm-ret vm-halt
+                          vm-call vm-tail-call vm-trampoline vm-generic-call
+                          vm-apply vm-set-global vm-slot-write vm-aset)))))
+
+(defun %loop-fr514-pure-core-p (core)
+  (every #'%loop-fr514-pure-inst-p core))
+
+(defun %loop-fr514-same-iteration-space-p (vec left right)
+  "Return T when LEFT and RIGHT have equal init/limit/step values.
+
+The IV registers may differ; fusion rewrites RIGHT's IV uses to LEFT's IV."
+  (and (not (eq (opt-loop-iv-reg left) (opt-loop-iv-reg right)))
+       (equal (opt-loop-limit-reg left) (opt-loop-limit-reg right))
+       (equal (opt-loop-step-reg left) (opt-loop-step-reg right))
+       (equal (%loop-fr514-constant-init vec left)
+              (%loop-fr514-constant-init vec right))))
+
+(defun %loop-fr514-inst-depends-on-p (producer consumer)
+  (let ((dst (opt-inst-dst producer)))
+    (and dst (member dst (opt-inst-read-regs consumer) :test #'eq))))
+
+(defun %loop-fr514-register-dependencies-p (left-core right-core)
+  (or (some (lambda (a)
+              (some (lambda (b) (%loop-fr514-inst-depends-on-p a b)) right-core))
+            left-core)
+      (some (lambda (b)
+              (some (lambda (a) (%loop-fr514-inst-depends-on-p b a)) left-core))
+            right-core)))
+
+(define-inst-type-predicate %loop-fr514-memory-inst-p (or vm-aref vm-aset vm-slot-read vm-slot-write vm-get-global vm-set-global))
+
+(defun %loop-fr514-affine-add (def iv const-env def-env)
+  "Return (values stride offset ok) for a VM-ADD index definition DEF."
+  (multiple-value-bind (s1 o1 ok1) (%loop-fr514-affine-of (vm-lhs def) iv const-env def-env)
+    (multiple-value-bind (s2 o2 ok2) (%loop-fr514-affine-of (vm-rhs def) iv const-env def-env)
+      (when (and ok1 ok2)
+        (values (+ s1 s2) (+ o1 o2) t)))))
+
+(defun %loop-fr514-affine-mul (def iv const-env)
+  "Return (values stride offset ok) for a VM-MUL index definition DEF."
+  (cond
+    ((eq (vm-lhs def) iv)
+     (when-let ((k (gethash (vm-rhs def) const-env)))
+       (values k 0 t)))
+    ((eq (vm-rhs def) iv)
+     (when-let ((k (gethash (vm-lhs def) const-env)))
+       (values k 0 t)))))
+
+(defun %loop-fr514-affine-of (reg iv const-env def-env)
+  "Return (values stride offset ok) when REG's value is an affine function of IV."
+  (cond
+    ((eq reg iv) (values 1 0 t))
+    ((gethash reg const-env) (values 0 (gethash reg const-env) t))
+    (t
+     (let ((def (gethash reg def-env)))
+       (cond
+         ((typep def 'vm-add) (%loop-fr514-affine-add def iv const-env def-env))
+         ((typep def 'vm-mul) (%loop-fr514-affine-mul def iv const-env)))))))
+
+(defun %loop-fr514-affine-access (inst iv const-env def-env)
+  "Return (:array A :write-p P :stride S :offset O) for simple affine accesses.
+
+Recognizes (aref/aset A i) and indexes computed as (+ (* i stride) offset)
+when STRIDE/OFFSET are known constants."
+  (when (typep inst '(or vm-aref vm-aset))
+    (let ((array-reg (vm-array-reg inst))
+          (index-reg (vm-index-reg inst)))
+      (multiple-value-bind (stride offset ok) (%loop-fr514-affine-of index-reg iv const-env def-env)
+        (when ok
+          (list :array array-reg
+                :write-p (typep inst 'vm-aset)
+                :stride stride
+                :offset offset))))))
+
+(defun %loop-fr514-build-envs (instructions end-index)
+  "Build constant and local definition environments before END-INDEX."
+  (let ((const-env (make-hash-table :test #'eq))
+        (def-env (make-hash-table :test #'eq)))
+    (loop for inst in instructions
+          for i from 0 below end-index
+          do (when-let ((dst (opt-inst-dst inst)))
+               (setf (gethash dst def-env) inst)
+               (if (and (typep inst 'vm-const) (integerp (vm-value inst)))
+                   (setf (gethash dst const-env) (vm-value inst))
+                   (remhash dst const-env))))
+    (values const-env def-env)))
+
+(defun %loop-fr514-gcd-test-safe-p (a b)
+  "Return T when the GCD test proves no integer solution for equal subscripts."
+  (let* ((sa (abs (getf a :stride 0)))
+         (sb (abs (getf b :stride 0)))
+         (g (gcd sa sb))
+         (delta (- (getf b :offset 0) (getf a :offset 0))))
+    (or (zerop g) (not (zerop (mod delta g))))))
+
+(defun %loop-fr514-banerjee-safe-p (a b trip-count)
+  "Return T when a simple Banerjee bound excludes cross-iteration overlap."
+  (let* ((n (max 0 (or trip-count 0)))
+         (sa (getf a :stride 0))
+         (sb (getf b :stride 0))
+         (delta (- (getf b :offset 0) (getf a :offset 0)))
+         (lo (+ (min 0 (* sa (1- n))) (min 0 (* (- sb) (1- n)))))
+         (hi (+ (max 0 (* sa (1- n))) (max 0 (* (- sb) (1- n))))))
+    (or (< delta lo) (> delta hi))))
+
+(defun %loop-fr514-trip-count (vec lp)
+  (let ((init (%loop-fr514-constant-init vec lp)))
+    (multiple-value-bind (const-env _def-env)
+        (%loop-fr514-build-envs (coerce vec 'list) (opt-loop-head-index lp))
+      (declare (ignore _def-env))
+      (let ((limit (gethash (opt-loop-limit-reg lp) const-env))
+            (step (gethash (opt-loop-step-reg lp) const-env)))
+        (and init limit step (plusp step)
+             (ceiling (max 0 (- limit init)) step))))))
+
+(defun %loop-fr514-loop-accesses (lp core const-env def-env)
+  "Return (values MEM ACC) where MEM is CORE's memory instructions and ACC is
+their affine-access facts relative to LP's induction register (NIL entries
+from unrecognized accesses are dropped, so a length mismatch signals one)."
+  (let* ((mem (remove-if-not #'%loop-fr514-memory-inst-p core))
+         (acc (remove nil (mapcar (lambda (inst)
+                                     (%loop-fr514-affine-access inst (opt-loop-iv-reg lp)
+                                                                 const-env def-env))
+                                   mem))))
+    (values mem acc)))
+
+(defun %loop-fr514-accesses-conflict-p (a b trip)
+  "Return T when accesses A and B (plists from %loop-fr514-affine-access)
+touch the same array, at least one writes, and neither the GCD nor the
+Banerjee test can disprove cross-iteration overlap within TRIP iterations."
+  (and (eql (getf a :array) (getf b :array))
+       (or (getf a :write-p) (getf b :write-p))
+       (not (or (%loop-fr514-gcd-test-safe-p a b)
+                (and trip (%loop-fr514-banerjee-safe-p a b trip))))))
+
+(defun %loop-fr514-any-access-conflict-p (acc-a acc-b trip)
+  "Return T when any pairing across ACC-A x ACC-B conflicts, per TRIP-bounded
+GCD/Banerjee analysis."
+  (some (lambda (a)
+          (some (lambda (b) (%loop-fr514-accesses-conflict-p a b trip)) acc-b))
+        acc-a))
+
+(defun %loop-fr514-memory-dependencies-p (instructions lp-a core-a lp-b core-b)
+  "Return T when memory dependence cannot be disproved by GCD/Banerjee tests."
+  (multiple-value-bind (const-env def-env)
+      (%loop-fr514-build-envs instructions (min (opt-loop-head-index lp-a)
+                                                (opt-loop-head-index lp-b)))
+    (let ((trip (or (%loop-fr514-trip-count (coerce instructions 'vector) lp-a)
+                     (%loop-fr514-trip-count (coerce instructions 'vector) lp-b))))
+      (multiple-value-bind (mem-a acc-a)
+          (%loop-fr514-loop-accesses lp-a core-a const-env def-env)
+        (multiple-value-bind (mem-b acc-b)
+            (%loop-fr514-loop-accesses lp-b core-b const-env def-env)
+          (or (/= (length mem-a) (length acc-a))
+              (/= (length mem-b) (length acc-b))
+              (%loop-fr514-any-access-conflict-p acc-a acc-b trip)))))))
+
+(defun %loop-fr514-fusion-legal-p (instructions vec left right)
+  (multiple-value-bind (core-a _step-a) (%loop-fr514-core-and-step left)
+    (declare (ignore _step-a))
+    (multiple-value-bind (core-b _step-b) (%loop-fr514-core-and-step right)
+      (declare (ignore _step-b))
+      (and (%loop-fr514-same-iteration-space-p vec left right)
+           (%loop-fr514-pure-core-p core-a)
+           (%loop-fr514-pure-core-p core-b)
+           (not (%loop-fr514-register-dependencies-p core-a core-b))
+           (not (%loop-fr514-memory-dependencies-p instructions left core-a right core-b))))))
+
+(defun %loop-fr514-emit-fused-pair (vec lp lp2 emit)
+  "Fuse canonical loops LP and LP2, which share an iteration space, into one
+loop whose body is LP's core followed by LP2's core copy (with LP2's
+induction register renamed to LP's). Emit the fused loop via EMIT and
+return the index just past LP2's exit."
+  (multiple-value-bind (core-a step-a) (%loop-fr514-core-and-step lp)
+    (multiple-value-bind (core-b step-b) (%loop-fr514-core-and-step lp2)
+      (declare (ignore step-b))
+      (let ((copies (make-hash-table :test #'eq)))
+        (setf (gethash (opt-loop-iv-reg lp2) copies) (opt-loop-iv-reg lp))
+        (funcall emit (aref vec (opt-loop-head-index lp)))
+        (funcall emit (aref vec (opt-loop-cmp-index lp)))
+        (funcall emit (aref vec (opt-loop-jz-index lp)))
+        (dolist (inst core-a) (funcall emit inst))
+        (dolist (inst core-b)
+          (funcall emit (opt-rewrite-inst-regs
+                         (%loop-fr514-copy-inst inst) copies)))
+        (funcall emit step-a)
+        (funcall emit (aref vec (opt-loop-back-index lp)))
+        (funcall emit (make-vm-label :name (opt-loop-exit-label lp2)))
+        (1+ (opt-loop-exit-index lp2))))))
+
+(defun %loop-fr514-emit-single-loop (vec lp emit)
+  "Emit LP's canonical loop unchanged via EMIT. Return the index just past
+LP's exit."
+  (dolist (inst (%loop-fr514-loop-seq vec lp)) (funcall emit inst))
+  (1+ (opt-loop-exit-index lp)))
+
+(defun %loop-fr514-advance-at (instructions vec n i emit)
+  "Advance past position I in VEC: when I begins a canonical loop with a
+successor loop and fusion is legal, fuse them via EMIT; when I begins a
+canonical loop without a legal fusion, emit it unchanged; otherwise emit
+VEC[I] unchanged. Return (values NEXT-I FUSED-P)."
+  (let ((lp (%loop-fr514-parse-canonical-loop-at vec i)))
+    (if (not lp)
+        (progn (funcall emit (aref vec i)) (values (1+ i) nil))
+        (let* ((next-i (1+ (opt-loop-exit-index lp)))
+               (lp2 (and (< next-i n)
+                         (%loop-fr514-parse-canonical-loop-at vec next-i))))
+          (if (and lp2 (%loop-fr514-fusion-legal-p instructions vec lp lp2))
+              (values (%loop-fr514-emit-fused-pair vec lp lp2 emit) t)
+              (values (%loop-fr514-emit-single-loop vec lp emit) nil))))))
+
+(defun opt-pass-loop-fusion (instructions)
+  "FR-514: fuse adjacent canonical loops with identical iteration spaces.
+
+Fusion is applied only when both loop bodies are side-effect-free and dependency
+legality is proven by register checks plus conservative GCD/Banerjee memory tests."
+  (let* ((vec (coerce instructions 'vector))
+         (n (length vec))
+         (out nil)
+         (changed nil)
+         (i 0))
+    (labels ((emit (x) (push x out)))
+      (loop while (< i n)
+            do (multiple-value-bind (next-i fused-p)
+                   (%loop-fr514-advance-at instructions vec n i #'emit)
+                 (setf i next-i)
+                 (when fused-p (setf changed t))))
+      (if changed (nreverse out) instructions))))
+
+(defun %loop-fr514-independent-split-index (core)
+  "Return a dependency-safe split point in CORE, or NIL."
+  (loop for split from 1 below (length core)
+        for left = (subseq core 0 split)
+        for right = (subseq core split)
+        unless (%loop-fr514-register-dependencies-p left right)
+          do (return split)))
+
+(defun %loop-fr514-emit-loop (vec lp core suffix init-value result)
+  "Emit a cloned loop over CORE into RESULT and return updated reversed result."
+  (let* ((head-name (%loop-fr514-label-name (opt-loop-head-label lp) suffix))
+         (exit-name (%loop-fr514-label-name (opt-loop-exit-label lp) suffix))
+         (cmp (%loop-fr514-copy-inst (aref vec (opt-loop-cmp-index lp))))
+         (jz (%loop-fr514-copy-inst (aref vec (opt-loop-jz-index lp))))
+         (step (%loop-fr514-copy-inst (car (last (opt-loop-body lp))))))
+    (when init-value
+      (push (make-vm-const :dst (opt-loop-iv-reg lp) :value init-value) result))
+    (push (make-vm-label :name head-name) result)
+    (push cmp result)
+    (push (make-vm-jump-zero :reg (vm-reg jz) :label exit-name) result)
+    (dolist (inst core)
+      (push (%loop-fr514-copy-inst inst) result))
+    (push step result)
+    (push (make-vm-jump :label head-name) result)
+    (push (make-vm-label :name exit-name) result)
+    result))
+
+(defun %loop-fr514-fission-candidate-p (vec lp core split)
+  (and split
+       (>= (length core) *opt-loop-fission-min-core-size*)
+       (%loop-fr514-pure-core-p core)
+       (%loop-fr514-constant-init vec lp)
+       (not (some #'%loop-fr514-memory-inst-p core))))
+
+(defun %opt-loop-fission-process-loop (vec lp out)
+  "Attempt FR-514 fission on the canonical loop LP found in VEC. On
+success, emit two independent loops (FISSION_A/FISSION_B) onto OUT;
+otherwise emit LP's instructions unchanged. Return (values NEW-OUT NEXT-I
+CHANGED-P), where NEXT-I is the index just past LP."
+  (multiple-value-bind (core _step) (%loop-fr514-core-and-step lp)
+    (declare (ignore _step))
+    (let* ((split (%loop-fr514-independent-split-index core))
+           (init (%loop-fr514-constant-init vec lp))
+           (next-i (1+ (opt-loop-exit-index lp))))
+      (if (%loop-fr514-fission-candidate-p vec lp core split)
+          (let* ((left (subseq core 0 split))
+                 (right (subseq core split))
+                 (out (%loop-fr514-emit-loop vec lp left "FISSION_A" nil out))
+                 (out (%loop-fr514-emit-loop vec lp right "FISSION_B" init out)))
+            (values out next-i t))
+          (values (dolist (inst (%loop-fr514-loop-seq vec lp) out)
+                    (push inst out))
+                  next-i nil)))))
+
+(defun opt-pass-loop-fission (instructions)
+  "FR-514: split large independent loop bodies into separate loops.
+
+The pass only fissions side-effect-free canonical loops whose core can be split
+into two register-independent regions and whose IV can be reset to a known
+constant initializer before the second loop.  This creates vectorization-friendly
+single-purpose loops without changing loops with unknown state or memory effects."
+  (let* ((vec (coerce instructions 'vector))
+         (n (length vec))
+         (out nil)
+         (changed nil)
+         (i 0))
+    (labels ((emit (x) (push x out)))
+      (loop while (< i n)
+            do (let ((lp (%loop-fr514-parse-canonical-loop-at vec i)))
+                 (if lp
+                     (multiple-value-bind (new-out new-i fissioned-p)
+                         (%opt-loop-fission-process-loop vec lp out)
+                       (setf out new-out
+                             i new-i)
+                       (when fissioned-p (setf changed t)))
+                     (progn (emit (aref vec i)) (incf i)))))
+      (if changed (nreverse out) instructions))))

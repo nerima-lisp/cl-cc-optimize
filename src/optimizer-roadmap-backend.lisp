@@ -1,4 +1,4 @@
-(in-package :cl-cc/optimize)
+(in-package #:cl-cc/optimize)
 
 (defun %opt-backend-roadmap-evidence-profile (feature-id)
   "Return audit-evidence anchors for a docs/notes/optimize-backend.md FR.
@@ -85,10 +85,3 @@ are tracked as planned evidence, not completed implementation."
 (defun optimize-backend-roadmap-implementation-evidence-complete-p (evidence)
   "Return T only when optimize-backend EVIDENCE is marked implemented and its anchors resolve."
   (optimize-roadmap-implementation-evidence-complete-p evidence))
-
-(defstruct (opt-ic-site (:conc-name opt-ic-site-)) "Polymorphic inline-cache state for one call site."
-  (state :uninitialized :type keyword)
-  (entries nil :type list)
-  (max-polymorphic-entries 4 :type integer)
-  (misses 0 :type integer)
-  (megamorphic-fallback nil))
