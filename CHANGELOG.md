@@ -13,9 +13,18 @@ The `optimizer-roadmap-*` files are test support and now load only with
 `cl-cc-optimize/test`. Six helpers with no direct symbol references or
 unqualified uses in the umbrella or child repositories are no longer exported
 from `cl-cc/optimize` or `cl-cc/optimize/reporting`, and their API reference
-entries are removed. The 14 helpers referenced by other repositories remain
-exported for review in phase ④. Removed exports: `opt-roadmap-evidence-summary`,
+entries are removed. The 14 helpers remain exported because
+`packages/optimize/tests/optimizer-roadmap-backend-tests.lisp` and
+`packages/optimize/tests/optimizer-roadmap-tests.lisp` remain in the umbrella
+test suite. Removed exports: `opt-roadmap-evidence-summary`,
 `optimize-backend-roadmap-all-fr-complete-p`,
 `optimize-backend-roadmap-implementation-evidence-complete-p`,
 `optimize-roadmap-doc-fr-ids`, `optimize-roadmap-evidence-well-formed-p`, and
 `optimize-roadmap-register-doc-evidence`.
+
+### Cross-repository optimizer API exports
+
+Export `opt-collect-function-defs` from the root facade for ThinLTO consumers.
+Export `make-vm-branch-weighted-jump-zero` and `opt-vm-path-profile-record` for
+pipeline and native backend consumers. Each symbol is also exported by its
+owning feature package.

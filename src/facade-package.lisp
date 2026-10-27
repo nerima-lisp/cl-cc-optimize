@@ -2,12 +2,15 @@
   (:use #:cl)
   (:import-from #:cl-cc/optimize/scalar #:OPT-BINARY-LHS-RHS-P #:OPT-FOLDABLE-UNARY-ARITH-P #:OPT-UNARY-SRC-P)
   (:import-from #:cl-cc/optimize/reporting #:OPT-VM-PATH-PROFILE-RECORD-P)
+  (:import-from #:cl-cc/optimize/reporting #:OPT-VM-PATH-PROFILE-RECORD)
   (:import-from #:cl-cc/optimize/rewriting #:OPT-DELIMITED-CONTINUATIONS-FORM #:RESET)
   (:import-from #:cl-cc/optimize/speculation #:OPT-CFI-PLAN-INSERT-ENDBR64-P #:OPT-HTM-PLAN-USES-HTM-P #:OPT-CONC-GC-PLAN-CONCURRENT-MARK-P #:OPT-IC-PATCH-PATCH-KIND #:OPT-WASM-GC-KIND #:OPT-TLS-PLAN-USES-INLINE-TLS-P #:*OPT-LAST-AFFINE-LOOP-SUMMARIES* #:OPT-CFI-PLAN-INSERT-BTI-P #:OPT-HTM-PLAN-ABORT-OPCODE #:OPT-HTM-PLAN-BEGIN-OPCODE #:OPT-HTM-PLAN-END-OPCODE #:OPT-HTM-PLAN-FALLBACK-LOCK-P #:OPT-CONC-GC-PLAN-MUTATOR-ASSIST-P #:OPT-CONC-GC-PLAN-STW-PHASES #:OPT-CONC-GC-PLAN-WRITE-BARRIER #:OPT-WASM-GC-FIELDS #:OPT-WASM-GC-NULLABLE-P)
   (:import-from #:cl-cc/optimize/loops #:OPT-TRMC-TRANSFORM-DEFUN-FORM)
   (:import-from #:cl-cc/optimize/inlining #:OPT-MAKE-PURE-FUNCTION-MEMO-TABLE #:*OPT-OUTLINED-LABEL-PREFIX* #:OPT-INLINE-ELIGIBLE-P #:*OPT-ENABLE-ML-INLINE-SCORE* #:*OPT-INLINE-ML-MODEL-VERSION* #:*OPT-LEARNED-COST-TARGET*)
   (:import-from #:cl-cc/optimize/control-flow #:*OPT-JUMP-THREAD-TABLE* #:OPT-BUILD-LABEL-INDEX #:%TYPE-CHECK-ELIM-FORGET-DEF #:%OPT-THREAD-JUMP #:%OPT-THREAD-JUMP-ZERO #:OPT-THREAD-LABEL)
+  (:import-from #:cl-cc/optimize/control-flow #:MAKE-VM-BRANCH-WEIGHTED-JUMP-ZERO)
   (:import-from #:cl-cc/optimize/analysis #:*OPT-BINARY-CMP-FOLD-TABLE* #:*OPT-BINARY-NO-FOLD-TYPES* #:*OPT-BINARY-ZERO-GUARD-TYPES* #:*OPT-HEAP-ROOT-KIND-TABLE* #:*OPT-INTERVAL-BINOP-TABLE* #:+OPT-RANGE-POSITIVE-INFINITY+ #:OPT-FUNCTION-BODY-TRANSITIVELY-PURE-P #:OPT-INTERVAL-MUL #:%OPT-UPDATE-INTERVAL-BINOP)
+  (:import-from #:cl-cc/optimize/analysis #:OPT-COLLECT-FUNCTION-DEFS)
   (:import-from #:cl-prolog-kit #:unify #:logic-substitute)
   (:import-from #:cl-cc/bootstrap
     #:cmp #:const #:var)
@@ -827,7 +830,7 @@
      #:opt-demand-summary-function #:opt-demand-summary-params
      #:opt-demand-summary-demands #:opt-demand-summary-strict-params
      #:opt-demand-summary-absent-params #:*opt-demand-summary-table*
-     #:opt-analyze-function-demand #:opt-analyze-program-demand
+     #:opt-analyze-function-demand #:opt-analyze-program-demand #:opt-collect-function-defs
      #:opt-pass-demand-analysis
 
      ;; ─── optimizer-recognition.lisp ─────────────────────────────────────
@@ -844,6 +847,7 @@
       #:opt-modulo-schedule-loop-body
       #:opt-analyze-branch-weights
       #:opt-branch-weight
+      #:make-vm-branch-weighted-jump-zero
 
      ;; ─── optimizer-flow-core.lisp ───────────────────────────────────────────
     #:opt-pass-dominated-type-check-elim
@@ -869,6 +873,7 @@
       #:opt-pass-defunctionalize
       #:opt-pass-delimited-continuations
        #:opt-pass-escape-analysis
+        #:opt-vm-path-profile-record
         #:opt-path-profile-block #:make-opt-path-profile-block #:opt-path-profile-block-p
         #:opt-path-profile-block-block-id #:opt-path-profile-block-label
         #:opt-path-profile-block-path-id #:opt-path-profile-block-successor-count
