@@ -245,6 +245,7 @@
           sourceInclude = [
             ./t/export-surface.txt
             ./CHANGELOG.md
+            ./cl-cc-optimize.asd
           ]
           ++ pkgs.lib.optional (builtins.pathExists ./nix/feature-dependencies.sexp) ./nix/feature-dependencies.sexp;
           featureLintSource = pkgs.lib.fileset.toSource {
