@@ -174,7 +174,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
             (let ((facade-package
                     (find-package (string-upcase facade-name))))
               (case policy
-                (:keep
+                ((:keep :add)
                  (let* ((feature-package
                           (find-package (string-upcase feature-name)))
                         (home-package
@@ -186,7 +186,18 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                        (multiple-value-bind (home-symbol home-status)
                            (find-symbol symbol-name home-package)
                          (expect kind :to-be :symbol)
-                         (expect policy :to-be :keep)
+                         (progn
+                           (expect (member policy (quote (:keep :add))) :to-be-truthy)
+                           (when (eq policy :add)
+                             (expect changelog-reference
+                                     :to-equal "CHANGELOG.md#cross-repository-optimizer-api-exports")
+                             (let ((changelog
+                                    (uiop:read-file-string
+                                     (asdf:system-relative-pathname :cl-cc-optimize "CHANGELOG.md"))))
+                               (expect (search "### Cross-repository optimizer API exports" changelog)
+                                       :to-be-truthy)
+                               (expect (search (string-downcase symbol-name) changelog)
+                                       :to-be-truthy))))
                          (expect facade-status :to-be :external)
                          (expect feature-status :to-be :external)
                          (expect home-status :to-be :external)
@@ -214,9 +225,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                  (let ((changelog
                          (uiop:read-file-string
                           (asdf:system-relative-pathname :cl-cc-optimize "CHANGELOG.md"))))
-                   (expect (search (if (string= symbol-name "OPT-PASS-ML-REGALLOC")
-                                      "### Removal of the ML register allocation hint pass"
-                                      "### Removal of unreferenced roadmap evidence helpers from the public API")
+                   (expect (search (if (string= symbol-name "OPT-PASS-ML-REGALLOC") "### Removal of the ML register allocation hint pass" "### Removal of unreferenced roadmap evidence helpers from the public API")
                                    changelog)
                            :to-be-truthy)
                    (expect (search (if (string= symbol-name "OPT-PASS-ML-REGALLOC")
@@ -226,7 +235,7 @@ inspect its slots\" shape used across the optimizer-pass tests below."
                 (otherwise
                  (expect policy :to-be nil)))))))
       (progn
-        (expect count :to-be 572)
+        (expect count :to-be 575)
         (dolist
             (entry
              (quote

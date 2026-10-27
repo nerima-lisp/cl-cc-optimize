@@ -1536,6 +1536,21 @@ implementation; same-code-body-with-different-environments requires VM-level
 support for separate code-pointer + environment-record (FR-079 extension).
 
 
+## function-collection.lisp — VM function discovery
+
+### `opt-collect-function-defs`
+
+```lisp
+(cl-cc/optimize:opt-collect-function-defs (instructions))
+```
+
+Return a hash table keyed by function label. Each value is a property list with
+`:closure` (the closure instruction), `:params` (parameter registers), and
+`:body` (body instructions). A function is included only when it is registered
+with known parameters, has a linear body with no internal jumps, and ends with
+exactly one `vm-ret`.
+
+
 ## optimizer-demand.lisp — VM parameter demand analysis
 
 ### `opt-demand-summary`
@@ -1759,6 +1774,16 @@ and branches directly targeting return/exit blocks as not-taken.
 ```
 
 Return branch prediction metadata for INST, or NIL when it is unannotated.
+
+### `make-vm-branch-weighted-jump-zero`
+
+```lisp
+(cl-cc/optimize:make-vm-branch-weighted-jump-zero (&key reg label branch-weight))
+```
+
+Construct a `vm-jump-zero` subtype. `:reg` and `:label` populate its inherited
+jump fields; `:branch-weight` stores optimizer-only prediction metadata and
+defaults to `nil`.
 
 
 ## optimizer-flow-type-check-elim.lisp
@@ -2016,6 +2041,14 @@ Non-escaping allocations are annotated for downstream lowering as
 `:replacement-op :vm-stack-alloc'.  The pass leaves bytecode unchanged unless a
 future VM stack-allocation instruction is present, preserving correctness for
 all unproven or potentially escaping objects.
+
+## optimizer-path-profile.lisp — Ball-Larus path profiling
+
+### `opt-vm-path-profile-record`
+
+This is the VM instruction type emitted by Ball-Larus path instrumentation, not
+a callable function. Executing an instance increments the VM-global table entry
+keyed by `(function-id path-sum)` by its delta.
 
 ### `opt-path-profile-block`
 
