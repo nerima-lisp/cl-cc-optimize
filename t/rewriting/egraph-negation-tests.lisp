@@ -10,7 +10,7 @@
 ;;; eg-rule-registered-p) are defined in egraph-rules-tests.lisp which loads
 ;;; first; both files share the :cl-cc/test package.
 
-(in-package :cl-cc/test)
+(in-package :cl-cc/optimize/rewriting/test)
 
 ;;; ─── Negation: mul-neg1 ──────────────────────────────────────────────────
 ;;; mul-neg1-r: (mul ?x (const -1)) → (neg ?x)
@@ -23,8 +23,8 @@
          (x   (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (cn1 (make-eg-const eg -1))
          (mul (if (eq side :rhs)
-                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::mul x cn1)
-                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::mul cn1 x)))
+                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize/rewriting::mul x cn1)
+                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize/rewriting::mul cn1 x)))
          (neg (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::neg x)))
     (eg-saturate eg)
     (expect (eg-merged-p eg mul neg) :to-be-truthy))))
@@ -35,8 +35,8 @@
          (x   (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (cn1 (make-eg-const eg -1))
          (mul (if (eq side :rhs)
-                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::mul x cn1)
-                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::mul cn1 x)))
+                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize/rewriting::mul x cn1)
+                  (cl-cc/optimize:egraph-add eg 'cl-cc/optimize/rewriting::mul cn1 x)))
          (neg (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::neg x)))
     (eg-saturate eg)
     (expect (eg-merged-p eg mul neg) :to-be-truthy))))
@@ -53,7 +53,7 @@
     (expect (eg-merged-p eg op2 x) :to-be-truthy))))
 
 (it-sequential "egraph-rule-double-negation-fires not-not"
-  (destructuring-bind (op) (list 'cl-cc/optimize::not)
+  (destructuring-bind (op) (list 'cl:not)
     (let* ((eg   (cl-cc/optimize:make-e-graph))
          (x    (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (op1  (cl-cc/optimize:egraph-add eg op x))
@@ -62,7 +62,7 @@
     (expect (eg-merged-p eg op2 x) :to-be-truthy))))
 
 (it-sequential "egraph-rule-negated-comparison-fires not-lt"
-  (destructuring-bind (not-op cmp-op dual-op) (list 'cl-cc/optimize::not 'cl-cc/optimize::lt 'cl-cc/optimize::ge)
+  (destructuring-bind (not-op cmp-op dual-op) (list 'cl:not 'cl-cc/optimize/rewriting::lt 'cl-cc/optimize/rewriting::ge)
     (let* ((eg  (cl-cc/optimize:make-e-graph))
          (x   (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (y   (make-eg-const eg 7))
@@ -73,7 +73,7 @@
     (expect (eg-merged-p eg not dual) :to-be-truthy))))
 
 (it-sequential "egraph-rule-negated-comparison-fires not-gt"
-  (destructuring-bind (not-op cmp-op dual-op) (list 'cl-cc/optimize::not 'cl-cc/optimize::gt 'cl-cc/optimize::le)
+  (destructuring-bind (not-op cmp-op dual-op) (list 'cl:not 'cl-cc/optimize/rewriting::gt 'cl-cc/optimize/rewriting::le)
     (let* ((eg  (cl-cc/optimize:make-e-graph))
          (x   (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (y   (make-eg-const eg 7))
@@ -84,7 +84,7 @@
     (expect (eg-merged-p eg not dual) :to-be-truthy))))
 
 (it-sequential "egraph-rule-negated-comparison-fires not-le"
-  (destructuring-bind (not-op cmp-op dual-op) (list 'cl-cc/optimize::not 'cl-cc/optimize::le 'cl-cc/optimize::gt)
+  (destructuring-bind (not-op cmp-op dual-op) (list 'cl:not 'cl-cc/optimize/rewriting::le 'cl-cc/optimize/rewriting::gt)
     (let* ((eg  (cl-cc/optimize:make-e-graph))
          (x   (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (y   (make-eg-const eg 7))
@@ -95,7 +95,7 @@
     (expect (eg-merged-p eg not dual) :to-be-truthy))))
 
 (it-sequential "egraph-rule-negated-comparison-fires not-ge"
-  (destructuring-bind (not-op cmp-op dual-op) (list 'cl-cc/optimize::not 'cl-cc/optimize::ge 'cl-cc/optimize::lt)
+  (destructuring-bind (not-op cmp-op dual-op) (list 'cl:not 'cl-cc/optimize/rewriting::ge 'cl-cc/optimize/rewriting::lt)
     (let* ((eg  (cl-cc/optimize:make-e-graph))
          (x   (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (y   (make-eg-const eg 7))
@@ -111,7 +111,7 @@
 ;;; Use var for x and a const for y so x ≠ y (different memo keys).
 
 (it-sequential "egraph-rule-neg-rewrites add-neg"
-  (destructuring-bind (const-val outer-op inverse-op) (list 7 'cl-cc/optimize::add 'cl-cc/optimize::sub)
+  (destructuring-bind (const-val outer-op inverse-op) (list 7 'cl-cc/optimize/rewriting::add 'cl-cc/optimize/rewriting::sub)
     (let* ((eg   (cl-cc/optimize:make-e-graph))
          (x    (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (y    (make-eg-const eg const-val))
@@ -122,7 +122,7 @@
     (expect (eg-merged-p eg expr dual) :to-be-truthy))))
 
 (it-sequential "egraph-rule-neg-rewrites sub-neg"
-  (destructuring-bind (const-val outer-op inverse-op) (list 5 'cl-cc/optimize::sub 'cl-cc/optimize::add)
+  (destructuring-bind (const-val outer-op inverse-op) (list 5 'cl-cc/optimize/rewriting::sub 'cl-cc/optimize/rewriting::add)
     (let* ((eg   (cl-cc/optimize:make-e-graph))
          (x    (cl-cc/optimize:egraph-add eg 'cl-cc/optimize::var))
          (y    (make-eg-const eg const-val))

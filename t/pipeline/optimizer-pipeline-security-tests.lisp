@@ -3,17 +3,13 @@
 ;;;;
 ;;;; Covers: CFI, retpoline, stack canary, shadow stack, HTM.
 
-(progn
-  (cl:in-package :cl-cc/test)
-  (cl-cc/test::defsuite cl-cc/test::cl-cc-optimizer-pipeline-security-tests-suite
-    :parent cl-cc/test::cl-cc-integration-suite)
-  (cl-cc/test::in-suite cl-cc/test::cl-cc-optimizer-pipeline-security-tests-suite))
+(cl:in-package :cl-cc/optimize/pipeline/test)
 
 ;;; ─── Control Flow Integrity (CFI) ───────────────────────────────────────────
 
 (it-sequential "optimize-build-cfi-plan-selects-target-specific-guards"
-  (let ((x86 (cl-cc/optimize::opt-build-cfi-plan :target :x86-64 :has-indirect-calls-p t))
-        (arm (cl-cc/optimize::opt-build-cfi-plan :target :aarch64 :has-indirect-calls-p t)))
+  (let ((x86 (cl-cc/optimize/speculation:opt-build-cfi-plan :target :x86-64 :has-indirect-calls-p t))
+        (arm (cl-cc/optimize/speculation:opt-build-cfi-plan :target :aarch64 :has-indirect-calls-p t)))
     (expect (cl-cc/optimize::opt-cfi-plan-insert-endbr64-p x86) :to-be-truthy)
     (expect (cl-cc/optimize::opt-cfi-plan-insert-bti-p x86) :to-be-falsy)
     (expect (cl-cc/optimize::opt-cfi-plan-insert-bti-p arm) :to-be-truthy)
@@ -41,17 +37,17 @@
 
 (it-sequential "optimize-should-use-retpoline-p-cases x86-no-ibrs"
   (destructuring-bind (target supports-ibrs-p expected) (list :x86-64 nil t)
-    (expect (cl-cc/optimize::opt-should-use-retpoline-p
+    (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                  :target target :has-indirect-branch-p t :supports-ibrs-p supports-ibrs-p) :to-equal expected)))
 
 (it-sequential "optimize-should-use-retpoline-p-cases x86-with-ibrs"
   (destructuring-bind (target supports-ibrs-p expected) (list :x86-64 t nil)
-    (expect (cl-cc/optimize::opt-should-use-retpoline-p
+    (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                  :target target :has-indirect-branch-p t :supports-ibrs-p supports-ibrs-p) :to-equal expected)))
 
 (it-sequential "optimize-should-use-retpoline-p-cases aarch64"
   (destructuring-bind (target supports-ibrs-p expected) (list :aarch64 nil nil)
-    (expect (cl-cc/optimize::opt-should-use-retpoline-p
+    (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                  :target target :has-indirect-branch-p t :supports-ibrs-p supports-ibrs-p) :to-equal expected)))
 
 (it-sequential "optimize-retpoline-thunk-names-are-register-specific r11"
@@ -66,12 +62,12 @@
 
 (it-sequential "optimize-needs-stack-canary-p-cases with-buffer"
   (destructuring-bind (has-stack-buffer-p expected) (list t t)
-    (expect (cl-cc/optimize::opt-needs-stack-canary-p
+    (expect (cl-cc/optimize/speculation:opt-needs-stack-canary-p
                  :has-stack-buffer-p has-stack-buffer-p) :to-equal expected)))
 
 (it-sequential "optimize-needs-stack-canary-p-cases without-buffer"
   (destructuring-bind (has-stack-buffer-p expected) (list nil nil)
-    (expect (cl-cc/optimize::opt-needs-stack-canary-p
+    (expect (cl-cc/optimize/speculation:opt-needs-stack-canary-p
                  :has-stack-buffer-p has-stack-buffer-p) :to-equal expected)))
 
 (it-sequential "optimize-stack-canary-emit-plan-describes-prologue-and-epilogue"
@@ -136,11 +132,11 @@
 ;;; ─── Hardware Transactional Memory (HTM) ─────────────────────────────────────
 
 (it-sequential "optimize-build-htm-plan-enables-lock-elision-only-when-supported-and-low-contention"
-  (let ((enabled (cl-cc/optimize::opt-build-htm-plan
+  (let ((enabled (cl-cc/optimize/speculation:opt-build-htm-plan
                   :target :x86-64
                   :supports-htm-p t
                   :low-contention-p t))
-        (disabled (cl-cc/optimize::opt-build-htm-plan
+        (disabled (cl-cc/optimize/speculation:opt-build-htm-plan
                    :target :x86-64
                    :supports-htm-p t
                    :low-contention-p nil)))

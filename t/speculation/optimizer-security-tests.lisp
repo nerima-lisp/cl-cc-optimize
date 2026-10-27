@@ -2,21 +2,17 @@
 ;;;; Unit tests for security hardening helpers in the optimizer:
 ;;;; CFI (control-flow integrity), retpoline, stack canary, shadow stack.
 
-(progn
-  (cl:in-package :cl-cc/test)
-  (cl-cc/test::defsuite cl-cc/test::cl-cc-optimizer-security-tests-suite
-    :parent cl-cc/test::cl-cc-integration-suite)
-  (cl-cc/test::in-suite cl-cc/test::cl-cc-optimizer-security-tests-suite))
+(cl:in-package :cl-cc/optimize/speculation/test)
 
 ;;; ─── CFI ─────────────────────────────────────────────────────────────────────
 
 (it-sequential "optimize-build-cfi-plan-selects-target-specific-guards"
-  (let ((x86 (cl-cc/optimize::opt-build-cfi-plan :target :x86-64 :has-indirect-calls-p t))
-        (arm (cl-cc/optimize::opt-build-cfi-plan :target :aarch64 :has-indirect-calls-p t)))
-    (expect (cl-cc/optimize::opt-cfi-plan-insert-endbr64-p x86) :to-be-truthy)
-    (expect (cl-cc/optimize::opt-cfi-plan-insert-bti-p x86) :to-be-falsy)
-    (expect (cl-cc/optimize::opt-cfi-plan-insert-bti-p arm) :to-be-truthy)
-    (expect (cl-cc/optimize::opt-cfi-plan-insert-endbr64-p arm) :to-be-falsy)))
+  (let ((x86 (cl-cc/optimize/speculation:opt-build-cfi-plan :target :x86-64 :has-indirect-calls-p t))
+        (arm (cl-cc/optimize/speculation:opt-build-cfi-plan :target :aarch64 :has-indirect-calls-p t)))
+    (expect (cl-cc/optimize/speculation::opt-cfi-plan-insert-endbr64-p x86) :to-be-truthy)
+    (expect (cl-cc/optimize/speculation::opt-cfi-plan-insert-bti-p x86) :to-be-falsy)
+    (expect (cl-cc/optimize/speculation::opt-cfi-plan-insert-bti-p arm) :to-be-truthy)
+    (expect (cl-cc/optimize/speculation::opt-cfi-plan-insert-endbr64-p arm) :to-be-falsy)))
 
 (it-sequential "cfi-entry-opcode-cases x86-64-indirect"
   (destructuring-bind (target indirect-p expected) (list :x86-64 t :endbr64)
@@ -41,25 +37,25 @@
 (it-sequential "retpoline-cases x86-indirect-no-ibrs"
   (destructuring-bind (target indirect-p ibrs-p expected) (list :x86-64 t nil t)
     (if expected
-      (expect (cl-cc/optimize::opt-should-use-retpoline-p
+      (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                     :target target :has-indirect-branch-p indirect-p :supports-ibrs-p ibrs-p) :to-be-truthy)
-      (expect (cl-cc/optimize::opt-should-use-retpoline-p
+      (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                      :target target :has-indirect-branch-p indirect-p :supports-ibrs-p ibrs-p) :to-be-falsy))))
 
 (it-sequential "retpoline-cases x86-indirect-ibrs"
   (destructuring-bind (target indirect-p ibrs-p expected) (list :x86-64 t t nil)
     (if expected
-      (expect (cl-cc/optimize::opt-should-use-retpoline-p
+      (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                     :target target :has-indirect-branch-p indirect-p :supports-ibrs-p ibrs-p) :to-be-truthy)
-      (expect (cl-cc/optimize::opt-should-use-retpoline-p
+      (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                      :target target :has-indirect-branch-p indirect-p :supports-ibrs-p ibrs-p) :to-be-falsy))))
 
 (it-sequential "retpoline-cases aarch64"
   (destructuring-bind (target indirect-p ibrs-p expected) (list :aarch64 t nil nil)
     (if expected
-      (expect (cl-cc/optimize::opt-should-use-retpoline-p
+      (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                     :target target :has-indirect-branch-p indirect-p :supports-ibrs-p ibrs-p) :to-be-truthy)
-      (expect (cl-cc/optimize::opt-should-use-retpoline-p
+      (expect (cl-cc/optimize/speculation:opt-should-use-retpoline-p
                      :target target :has-indirect-branch-p indirect-p :supports-ibrs-p ibrs-p) :to-be-falsy))))
 
 (it-sequential "optimize-retpoline-thunk-name-is-target-register-specific"
@@ -69,8 +65,8 @@
 ;;; ─── Stack canary ────────────────────────────────────────────────────────────
 
 (it-sequential "optimize-needs-stack-canary-p-follows-stack-buffer-presence"
-  (expect (cl-cc/optimize::opt-needs-stack-canary-p :has-stack-buffer-p t) :to-be-truthy)
-  (expect (cl-cc/optimize::opt-needs-stack-canary-p :has-stack-buffer-p nil) :to-be-falsy))
+  (expect (cl-cc/optimize/speculation:opt-needs-stack-canary-p :has-stack-buffer-p t) :to-be-truthy)
+  (expect (cl-cc/optimize/speculation:opt-needs-stack-canary-p :has-stack-buffer-p nil) :to-be-falsy))
 
 (it-sequential "optimize-stack-canary-emit-plan-describes-prologue-and-epilogue"
   (let ((enabled (cl-cc/optimize:opt-stack-canary-emit-plan

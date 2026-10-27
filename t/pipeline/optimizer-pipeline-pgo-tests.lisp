@@ -4,11 +4,7 @@
 ;;;; Covers: PGO counter plans, profile templates, ThinLTO import, tiered JIT
 ;;;;   compilation thresholds, deoptimization materialization, and OSR triggers.
 
-(progn
-  (cl:in-package :cl-cc/test)
-  (cl-cc/test::defsuite cl-cc/test::cl-cc-optimizer-pipeline-pgo-tests-suite
-    :parent cl-cc/test::cl-cc-integration-suite)
-  (cl-cc/test::in-suite cl-cc/test::cl-cc-optimizer-pipeline-pgo-tests-suite))
+(cl:in-package :cl-cc/optimize/pipeline/test)
 
 ;;; ─── PGO: hot chain / loop rotation ─────────────────────────────────────────
 
@@ -33,11 +29,11 @@
 ;;; ─── ThinLTO module summaries ────────────────────────────────────────────────
 
 (it-sequential "optimize-merge-module-summaries-aggregates-exports-and-counts"
-  (let* ((a (cl-cc/optimize::make-opt-module-summary
+  (let* ((a (cl-cc/optimize/speculation:make-opt-module-summary
              :module :a :exports '(fa fb) :function-count 2 :type-summaries nil))
-         (b (cl-cc/optimize::make-opt-module-summary
+         (b (cl-cc/optimize/speculation:make-opt-module-summary
              :module :b :exports '(fb fc) :function-count 3 :type-summaries nil))
-         (merged (cl-cc/optimize::opt-merge-module-summaries (list a b))))
+         (merged (cl-cc/optimize/speculation:opt-merge-module-summaries (list a b))))
     (expect (getf merged :modules) :to-equal '(:a :b))
     (expect (member 'fa (getf merged :exports)) :to-be-truthy)
     (expect (member 'fb (getf merged :exports)) :to-be-truthy)
@@ -63,10 +59,10 @@
 ;;; ─── Tiered JIT compilation thresholds ──────────────────────────────────────
 
 (it-sequential "optimize-adaptive-compilation-threshold-reacts-to-warmup-pressure-and-failures"
-  (expect (= 300 (cl-cc/optimize::opt-adaptive-compilation-threshold :base 900 :warmup-p t)) :to-be-truthy)
-  (expect (= 1800 (cl-cc/optimize::opt-adaptive-compilation-threshold :base 900 :cache-pressure 0.8)) :to-be-truthy)
-  (expect (= 2700 (cl-cc/optimize::opt-adaptive-compilation-threshold :base 900 :failures 2)) :to-be-truthy)
-  (expect (= 1800 (cl-cc/optimize::opt-adaptive-compilation-threshold
+  (expect (= 300 (cl-cc/optimize/speculation:opt-adaptive-compilation-threshold :base 900 :warmup-p t)) :to-be-truthy)
+  (expect (= 1800 (cl-cc/optimize/speculation:opt-adaptive-compilation-threshold :base 900 :cache-pressure 0.8)) :to-be-truthy)
+  (expect (= 2700 (cl-cc/optimize/speculation:opt-adaptive-compilation-threshold :base 900 :failures 2)) :to-be-truthy)
+  (expect (= 1800 (cl-cc/optimize/speculation:opt-adaptive-compilation-threshold
                   :base 900 :warmup-p t :cache-pressure 0.8 :failures 2)) :to-be-truthy))
 
 (it-sequential "optimize-tier-transition-cases interpreter-below-threshold"
@@ -88,36 +84,36 @@
 ;;; ─── Deoptimization ──────────────────────────────────────────────────────────
 
 (it-sequential "optimize-materialize-deopt-state-maps-machine-registers-to-vm-registers"
-  (let* ((frame (cl-cc/optimize::make-opt-deopt-frame
+  (let* ((frame (cl-cc/optimize/speculation:make-opt-deopt-frame
                  :vm-pc 42
                  :register-map '((:rax . :r0) (:rbx . :r1))
                  :inlined-frames nil))
          (machine '((:rax . 11) (:rbx . 22) (:rcx . 33)))
-         (state (cl-cc/optimize::opt-materialize-deopt-state frame machine)))
+         (state (cl-cc/optimize/speculation:opt-materialize-deopt-state frame machine)))
     (expect state :to-equal '((:r0 . 11) (:r1 . 22)))))
 
 ;;; ─── On-Stack Replacement (OSR) ──────────────────────────────────────────────
 
 (it-sequential "optimize-osr-trigger-p-threshold-cases fires-at-lower-threshold"
   (destructuring-bind (threshold expected) (list 1000 t)
-    (let ((osr (cl-cc/optimize::make-opt-osr-point
+    (let ((osr (cl-cc/optimize/speculation:make-opt-osr-point
               :loop-id :L1 :vm-pc 77 :live-registers nil :hotness 1200)))
-    (expect (not (null (cl-cc/optimize::opt-osr-trigger-p osr :threshold threshold))) :to-equal expected))))
+    (expect (not (null (cl-cc/optimize/speculation:opt-osr-trigger-p osr :threshold threshold))) :to-equal expected))))
 
 (it-sequential "optimize-osr-trigger-p-threshold-cases silent-at-higher-threshold"
   (destructuring-bind (threshold expected) (list 2000 nil)
-    (let ((osr (cl-cc/optimize::make-opt-osr-point
+    (let ((osr (cl-cc/optimize/speculation:make-opt-osr-point
               :loop-id :L1 :vm-pc 77 :live-registers nil :hotness 1200)))
-    (expect (not (null (cl-cc/optimize::opt-osr-trigger-p osr :threshold threshold))) :to-equal expected))))
+    (expect (not (null (cl-cc/optimize/speculation:opt-osr-trigger-p osr :threshold threshold))) :to-equal expected))))
 
 (it-sequential "optimize-osr-materialize-entry-maps-machine-to-vm-registers"
-  (let* ((osr (cl-cc/optimize::make-opt-osr-point
+  (let* ((osr (cl-cc/optimize/speculation:make-opt-osr-point
                :loop-id :L2
                :vm-pc 88
                :live-registers '((:rax . :r0) (:r10 . :r7))
                :hotness 1500))
          (machine '((:rax . 3) (:r10 . 9) (:rbx . 99)))
-         (state (cl-cc/optimize::opt-osr-materialize-entry osr machine)))
+         (state (cl-cc/optimize/speculation:opt-osr-materialize-entry osr machine)))
     (expect state :to-equal '((:r0 . 3) (:r7 . 9)))))
 
 ;;; ─── PGO counter plan and profile template (FR-295) ─────────────────────────

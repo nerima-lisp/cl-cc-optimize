@@ -7,7 +7,7 @@
 ;;;; - FR-091: Safepoint Hoisting to Loop Back-Edges
 ;;;; - FR-309: Memory Access Pattern Analysis
 
-(in-package :cl-cc/test)
+(in-package :cl-cc/optimize/pipeline/test)
 
 
 
@@ -55,7 +55,7 @@
 ;;; ------------------------------------------------------------
 
 (it-sequential "fr-017-licm-exists"
-  (expect (fboundp 'cl-cc/optimize::opt-pass-licm) :to-be-truthy))
+  (expect (fboundp 'cl-cc/optimize/loops:opt-pass-licm) :to-be-truthy))
 
 ;;; ------------------------------------------------------------
 ;;; Behavioral: optimizer pipeline loads and converges

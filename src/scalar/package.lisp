@@ -1,5 +1,6 @@
 (defpackage #:cl-cc/optimize/scalar
   (:use #:cl)
+  (:intern #:OPT-BINARY-LHS-RHS-P #:OPT-FOLDABLE-UNARY-ARITH-P #:OPT-UNARY-SRC-P)
   (:import-from #:cl-cc/vm
       #:DIV #:INSTRUCTION->SEXP #:MAKE-VM-ADD #:MAKE-VM-ASH #:MAKE-VM-BSWAP
       #:MAKE-VM-CONCATENATE #:MAKE-VM-CONST #:MAKE-VM-EVENP #:MAKE-VM-FMA

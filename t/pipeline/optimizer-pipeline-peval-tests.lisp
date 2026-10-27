@@ -5,11 +5,7 @@
 ;;;;   analysis, FR-211 specialization plan caching, program-level partial
 ;;;;   evaluation, and opt-pass-specialize-known-args.
 
-(progn
-  (cl:in-package :cl-cc/test)
-  (cl-cc/test::defsuite cl-cc/test::cl-cc-optimizer-pipeline-peval-tests-suite
-    :parent cl-cc/test::cl-cc-integration-suite)
-  (cl-cc/test::in-suite cl-cc/test::cl-cc-optimizer-pipeline-peval-tests-suite))
+(cl:in-package :cl-cc/optimize/pipeline/test)
 
 ;;; ─── FR-209 opt-specialize-constant-args ────────────────────────────────────
 
@@ -114,7 +110,7 @@
          (result (cl-cc/optimize:opt-partial-evaluate-program
                   defs
                   :constant-bindings-by-function '((caller . ((:a . 3))))))
-         (reports (cl-cc/optimize::opt-partial-program-function-results result))
+         (reports (cl-cc/optimize/partial-evaluation:opt-partial-program-function-results result))
          (callee-report (cdr (assoc 'callee reports :test #'equal))))
     (expect callee-report :to-be-truthy)
     (expect (assoc :y (cl-cc/optimize:opt-partial-eval-signature callee-report) :test #'equal) :to-be-truthy)
@@ -136,12 +132,12 @@
 
 (it-sequential "opt-pass-specialize-known-args-emits-specialized-clone-and-redirects-call"
   (let* ((func-label "add2")
-         (closure (make-vm-closure :dst :r1 :label func-label :params '(:x :y) :captured nil))
-         (body (list (make-vm-label :name func-label)
-                     (make-vm-add :dst :r9 :lhs :x :rhs :y)
-                     (make-vm-ret :reg :r9)))
-         (caller (list (make-vm-const :dst :r2 :value 5)
-                       (make-vm-call :dst :r3 :func :r1 :args '(:r2 :r4))))
+         (closure (cl-cc/vm:make-vm-closure :dst :r1 :label func-label :params '(:x :y) :captured nil))
+         (body (list (cl-cc/vm:make-vm-label :name func-label)
+                     (cl-cc/vm:make-vm-add :dst :r9 :lhs :x :rhs :y)
+                     (cl-cc/vm:make-vm-ret :reg :r9)))
+         (caller (list (cl-cc/vm:make-vm-const :dst :r2 :value 5)
+                       (cl-cc/vm:make-vm-call :dst :r3 :func :r1 :args '(:r2 :r4))))
          (optimized (cl-cc/optimize:opt-pass-specialize-known-args
                      (append (list closure) body caller)))
          (has-specialized-label

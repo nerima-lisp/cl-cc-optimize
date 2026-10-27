@@ -1,5 +1,6 @@
 (defpackage #:cl-cc/optimize/control-flow
   (:use #:cl)
+  (:intern #:*OPT-JUMP-THREAD-TABLE* #:OPT-BUILD-LABEL-INDEX #:%TYPE-CHECK-ELIM-FORGET-DEF #:%OPT-THREAD-JUMP #:%OPT-THREAD-JUMP-ZERO #:OPT-THREAD-LABEL)
   (:import-from #:cl-cc/vm
       #:INSTRUCTION->SEXP #:MAKE-VM-CONST #:MAKE-VM-JUMP #:MAKE-VM-JUMP-ZERO
       #:MAKE-VM-LABEL #:MAKE-VM-MOVE #:MAKE-VM-SELECT #:SEXP->INSTRUCTION #:VM-ADD

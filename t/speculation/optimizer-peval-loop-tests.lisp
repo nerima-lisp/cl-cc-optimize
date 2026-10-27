@@ -8,11 +8,7 @@
 ;;;;   scheduling, FR-526 loop fusion/fission, FR-527 MLGO scoring,
 ;;;;   FR-528 learned codegen cost.
 
-(progn
-  (cl:in-package :cl-cc/test)
-  (cl-cc/test::defsuite cl-cc/test::cl-cc-optimizer-peval-loop-tests-suite
-    :parent cl-cc/test::cl-cc-integration-suite)
-  (cl-cc/test::in-suite cl-cc/test::cl-cc-optimizer-peval-loop-tests-suite))
+(cl:in-package :cl-cc/optimize/speculation/test)
 
 ;;; ─── FR-209/210/211 Partial Evaluation Helper Layer ────────────────────────
 
@@ -140,7 +136,7 @@
          (result (cl-cc/optimize:opt-partial-evaluate-program
                   defs
                   :constant-bindings-by-function '((caller . ((:a . 3))))))
-         (reports (cl-cc/optimize::opt-partial-program-function-results result))
+         (reports (cl-cc/optimize/partial-evaluation:opt-partial-program-function-results result))
          (callee-report (cdr (assoc 'callee reports :test #'equal))))
     (expect callee-report :to-be-truthy)
     (expect (assoc :y (cl-cc/optimize:opt-partial-eval-signature callee-report) :test #'equal) :to-be-truthy)
@@ -160,12 +156,12 @@
 
 (it-sequential "opt-pass-specialize-known-args-emits-specialized-clone-and-redirects-call"
   (let* ((func-label "add2")
-         (closure (make-vm-closure :dst :r1 :label func-label :params '(:x :y) :captured nil))
-         (body (list (make-vm-label :name func-label)
-                     (make-vm-add :dst :r9 :lhs :x :rhs :y)
-                     (make-vm-ret :reg :r9)))
-         (caller (list (make-vm-const :dst :r2 :value 5)
-                       (make-vm-call :dst :r3 :func :r1 :args '(:r2 :r4))))
+         (closure (cl-cc/vm:make-vm-closure :dst :r1 :label func-label :params '(:x :y) :captured nil))
+         (body (list (cl-cc/vm:make-vm-label :name func-label)
+                     (cl-cc/vm:make-vm-add :dst :r9 :lhs :x :rhs :y)
+                     (cl-cc/vm:make-vm-ret :reg :r9)))
+         (caller (list (cl-cc/vm:make-vm-const :dst :r2 :value 5)
+                       (cl-cc/vm:make-vm-call :dst :r3 :func :r1 :args '(:r2 :r4))))
          (optimized (cl-cc/optimize:opt-pass-specialize-known-args
                      (append (list closure) body caller)))
          (has-specialized-label
@@ -184,7 +180,7 @@
 ;;; ─── FR-523/524/525/526/527/528 Affine/Polyhedral/Loop/ML passes ──────────
 
 (it-sequential "optimize-affine-loop-summary-builds-descriptor"
-  (let ((summary (cl-cc/optimize::opt-build-affine-loop-summary
+  (let ((summary (cl-cc/optimize/speculation:opt-build-affine-loop-summary
                   :induction-vars '(:i)
                   :bounds '((:i 0 100))
                   :accesses '((:a :i)))))
@@ -194,7 +190,7 @@
 
 (it-sequential "optimize-loop-interchange-plan-safety-gate safe-applies"
   (destructuring-bind (dependence-safe-p expected-applied) (list t t)
-    (let ((plan (cl-cc/optimize::opt-loop-interchange-plan
+    (let ((plan (cl-cc/optimize/speculation:opt-loop-interchange-plan
                :loops '(:i :j)
                :cache-locality-score 3
                :dependence-safe-p dependence-safe-p)))
@@ -202,46 +198,46 @@
 
 (it-sequential "optimize-loop-interchange-plan-safety-gate unsafe-blocked"
   (destructuring-bind (dependence-safe-p expected-applied) (list nil nil)
-    (let ((plan (cl-cc/optimize::opt-loop-interchange-plan
+    (let ((plan (cl-cc/optimize/speculation:opt-loop-interchange-plan
                :loops '(:i :j)
                :cache-locality-score 3
                :dependence-safe-p dependence-safe-p)))
     (expect (not (null (getf plan :applied-p))) :to-equal expected-applied))))
 
 (it-sequential "optimize-pass-loop-interchange-handles-nested-canonical-loop"
-  (let* ((program (list (make-vm-const :dst :ri :value 0)
-                        (make-vm-const :dst :rlim :value 8)
-                        (make-vm-const :dst :rstep :value 1)
-                        (make-vm-label :name :l0)
+  (let* ((program (list (cl-cc/vm:make-vm-const :dst :ri :value 0)
+                        (cl-cc/vm:make-vm-const :dst :rlim :value 8)
+                        (cl-cc/vm:make-vm-const :dst :rstep :value 1)
+                        (cl-cc/vm:make-vm-label :name :l0)
                         (make-vm-lt :dst :rc :lhs :ri :rhs :rlim)
-                        (make-vm-jump-zero :reg :rc :label :l1)
+                        (cl-cc/vm:make-vm-jump-zero :reg :rc :label :l1)
                         (make-vm-mul :dst :r7 :lhs :r3 :rhs :r4)
-                        (make-vm-move :dst :r8 :src :r5)
-                        (make-vm-add :dst :ri :lhs :ri :rhs :rstep)
-                        (make-vm-jump :label :l0)
-                        (make-vm-label :name :l1)))
-         (optimized (cl-cc/optimize::opt-pass-loop-interchange program)))
+                        (cl-cc/vm:make-vm-move :dst :r8 :src :r5)
+                        (cl-cc/vm:make-vm-add :dst :ri :lhs :ri :rhs :rstep)
+                        (cl-cc/vm:make-vm-jump :label :l0)
+                        (cl-cc/vm:make-vm-label :name :l1)))
+         (optimized (cl-cc/optimize/speculation:opt-pass-loop-interchange program)))
     (expect (equal (mapcar #'instruction->sexp optimized)
                          (mapcar #'instruction->sexp program)) :to-be-falsy)
     (expect (typep (nth 6 optimized) 'vm-move) :to-be-truthy)
     (expect (typep (nth 7 optimized) 'vm-mul) :to-be-truthy)))
 
 (it-sequential "optimize-pass-loop-interchange-skips-side-effecting-loop"
-  (let* ((program (list (make-vm-const :dst :ri :value 0)
-                        (make-vm-const :dst :rlim :value 8)
-                        (make-vm-const :dst :rstep :value 1)
-                        (make-vm-label :name :l0)
+  (let* ((program (list (cl-cc/vm:make-vm-const :dst :ri :value 0)
+                        (cl-cc/vm:make-vm-const :dst :rlim :value 8)
+                        (cl-cc/vm:make-vm-const :dst :rstep :value 1)
+                        (cl-cc/vm:make-vm-label :name :l0)
                         (make-vm-lt :dst :rc :lhs :ri :rhs :rlim)
-                        (make-vm-jump-zero :reg :rc :label :l1)
-                        (make-vm-set-global :src :r2 :name 'g)
-                        (make-vm-add :dst :ri :lhs :ri :rhs :rstep)
-                        (make-vm-jump :label :l0)
-                        (make-vm-label :name :l1)))
-         (optimized (cl-cc/optimize::opt-pass-loop-interchange program)))
+                        (cl-cc/vm:make-vm-jump-zero :reg :rc :label :l1)
+                        (cl-cc/vm:make-vm-set-global :src :r2 :name 'g)
+                        (cl-cc/vm:make-vm-add :dst :ri :lhs :ri :rhs :rstep)
+                        (cl-cc/vm:make-vm-jump :label :l0)
+                        (cl-cc/vm:make-vm-label :name :l1)))
+         (optimized (cl-cc/optimize/speculation:opt-pass-loop-interchange program)))
     (expect (mapcar #'instruction->sexp program) :to-equal (mapcar #'instruction->sexp optimized))))
 
 (it-sequential "optimize-polyhedral-schedule-plan-preserves-objective"
-  (let ((plan (cl-cc/optimize::opt-polyhedral-schedule-plan
+  (let ((plan (cl-cc/optimize/speculation:opt-polyhedral-schedule-plan
                :statements '(:s0 :s1)
                :constraints '((:s0-before :s1))
                :objective :throughput-max)))
@@ -251,7 +247,7 @@
 
 (it-sequential "optimize-loop-fusion-fission-strategy-selection fusion-low-pressure"
   (destructuring-bind (register-pressure expected-strategy) (list 16 :fusion)
-    (let ((plan (cl-cc/optimize::opt-loop-fusion-fission-plan
+    (let ((plan (cl-cc/optimize/speculation:opt-loop-fusion-fission-plan
                :loops '(:l0 :l1)
                :register-pressure register-pressure
                :instruction-budget 20)))
@@ -259,17 +255,17 @@
 
 (it-sequential "optimize-loop-fusion-fission-strategy-selection fission-high-pressure"
   (destructuring-bind (register-pressure expected-strategy) (list 64 :fission)
-    (let ((plan (cl-cc/optimize::opt-loop-fusion-fission-plan
+    (let ((plan (cl-cc/optimize/speculation:opt-loop-fusion-fission-plan
                :loops '(:l0 :l1)
                :register-pressure register-pressure
                :instruction-budget 20)))
     (expect (getf plan :strategy) :to-be expected-strategy))))
 
 (it-sequential "optimize-ml-inline-score-plan-is-deterministic"
-  (let ((a (cl-cc/optimize::opt-ml-inline-score-plan
+  (let ((a (cl-cc/optimize/inlining:opt-ml-inline-score-plan
             :features '(:hot-loop :small-body)
             :model-version "mlgo-v2"))
-        (b (cl-cc/optimize::opt-ml-inline-score-plan
+        (b (cl-cc/optimize/inlining:opt-ml-inline-score-plan
             :features '(:hot-loop :small-body)
             :model-version "mlgo-v2")))
     (expect (getf a :kind) :to-be :ml-inline-score)
@@ -277,10 +273,10 @@
     (expect (= 2 (getf a :feature-count)) :to-be-truthy)))
 
 (it-sequential "optimize-learned-codegen-cost-plan-is-target-aware"
-  (let ((x86 (cl-cc/optimize::opt-learned-codegen-cost-plan
+  (let ((x86 (cl-cc/optimize/inlining:opt-learned-codegen-cost-plan
               :opcode-features '(:mul :add)
               :target :x86-64))
-        (arm (cl-cc/optimize::opt-learned-codegen-cost-plan
+        (arm (cl-cc/optimize/inlining:opt-learned-codegen-cost-plan
               :opcode-features '(:mul :add)
               :target :aarch64)))
     (expect (getf x86 :kind) :to-be :learned-codegen-cost)
@@ -290,18 +286,18 @@
                      (getf arm :predicted-cost)) :to-be-truthy)))
 
 (it-sequential "optimize-pass-affine-loop-analysis-captures-real-loop-summary"
-  (let* ((program (list (make-vm-const :dst :ri :value 0)
-                        (make-vm-const :dst :rlim :value 8)
-                        (make-vm-const :dst :rstep :value 1)
-                        (make-vm-label :name :l0)
+  (let* ((program (list (cl-cc/vm:make-vm-const :dst :ri :value 0)
+                        (cl-cc/vm:make-vm-const :dst :rlim :value 8)
+                        (cl-cc/vm:make-vm-const :dst :rstep :value 1)
+                        (cl-cc/vm:make-vm-label :name :l0)
                         (make-vm-lt :dst :rc :lhs :ri :rhs :rlim)
-                        (make-vm-jump-zero :reg :rc :label :l1)
-                        (make-vm-get-global :dst :r2 :name 'g)
-                        (make-vm-add :dst :ri :lhs :ri :rhs :rstep)
-                        (make-vm-jump :label :l0)
-                        (make-vm-label :name :l1)))
-         (_ (cl-cc/optimize::opt-pass-affine-loop-analysis program))
-         (summaries cl-cc/optimize::*opt-last-affine-loop-summaries*)
+                        (cl-cc/vm:make-vm-jump-zero :reg :rc :label :l1)
+                        (cl-cc/vm:make-vm-get-global :dst :r2 :name 'g)
+                        (cl-cc/vm:make-vm-add :dst :ri :lhs :ri :rhs :rstep)
+                        (cl-cc/vm:make-vm-jump :label :l0)
+                        (cl-cc/vm:make-vm-label :name :l1)))
+         (_ (cl-cc/optimize/speculation:opt-pass-affine-loop-analysis program))
+         (summaries cl-cc/optimize/speculation::*opt-last-affine-loop-summaries*)
          (summary (first summaries)))
     (expect (listp summaries) :to-be-truthy)
     (expect summary :to-be-truthy)
@@ -312,18 +308,18 @@
                        (getf summary :accesses)) :to-be-truthy)))
 
 (it-sequential "optimize-pass-polyhedral-schedule-reorders-loop-body"
-  (let* ((program (list (make-vm-const :dst :ri :value 0)
-                        (make-vm-const :dst :rlim :value 8)
-                        (make-vm-const :dst :rstep :value 1)
-                        (make-vm-label :name :l0)
+  (let* ((program (list (cl-cc/vm:make-vm-const :dst :ri :value 0)
+                        (cl-cc/vm:make-vm-const :dst :rlim :value 8)
+                        (cl-cc/vm:make-vm-const :dst :rstep :value 1)
+                        (cl-cc/vm:make-vm-label :name :l0)
                         (make-vm-lt :dst :rc :lhs :ri :rhs :rlim)
-                        (make-vm-jump-zero :reg :rc :label :l1)
+                        (cl-cc/vm:make-vm-jump-zero :reg :rc :label :l1)
                         (make-vm-mul :dst :r7 :lhs :r3 :rhs :r4)
-                        (make-vm-move :dst :r8 :src :r5)
-                        (make-vm-add :dst :ri :lhs :ri :rhs :rstep)
-                        (make-vm-jump :label :l0)
-                        (make-vm-label :name :l1)))
-         (optimized (cl-cc/optimize::opt-pass-polyhedral-schedule program)))
+                        (cl-cc/vm:make-vm-move :dst :r8 :src :r5)
+                        (cl-cc/vm:make-vm-add :dst :ri :lhs :ri :rhs :rstep)
+                        (cl-cc/vm:make-vm-jump :label :l0)
+                        (cl-cc/vm:make-vm-label :name :l1)))
+         (optimized (cl-cc/optimize/speculation:opt-pass-polyhedral-schedule program)))
     (expect (equal (mapcar #'instruction->sexp optimized)
                          (mapcar #'instruction->sexp program)) :to-be-falsy)
     (expect (typep (nth 6 optimized) 'vm-move) :to-be-truthy)
@@ -331,27 +327,27 @@
 
 (it-sequential "optimize-pass-loop-fusion-fission-fuses-adjacent-loops"
   (let* ((program
-           (list (make-vm-const :dst :ri :value 0)
-                 (make-vm-const :dst :rj :value 0)
-                 (make-vm-const :dst :rlim :value 4)
-                 (make-vm-const :dst :rstep :value 1)
+           (list (cl-cc/vm:make-vm-const :dst :ri :value 0)
+                 (cl-cc/vm:make-vm-const :dst :rj :value 0)
+                 (cl-cc/vm:make-vm-const :dst :rlim :value 4)
+                 (cl-cc/vm:make-vm-const :dst :rstep :value 1)
                   ;; loop A
-                  (make-vm-label :name :la)
+                  (cl-cc/vm:make-vm-label :name :la)
                   (make-vm-lt :dst :rc :lhs :ri :rhs :rlim)
-                  (make-vm-jump-zero :reg :rc :label :lax)
-                  (make-vm-move :dst :r10 :src :r11)
-                  (make-vm-add :dst :ri :lhs :ri :rhs :rstep)
-                  (make-vm-jump :label :la)
-                  (make-vm-label :name :lax)
+                  (cl-cc/vm:make-vm-jump-zero :reg :rc :label :lax)
+                  (cl-cc/vm:make-vm-move :dst :r10 :src :r11)
+                  (cl-cc/vm:make-vm-add :dst :ri :lhs :ri :rhs :rstep)
+                  (cl-cc/vm:make-vm-jump :label :la)
+                  (cl-cc/vm:make-vm-label :name :lax)
                   ;; loop B
-                  (make-vm-label :name :lb)
+                  (cl-cc/vm:make-vm-label :name :lb)
                   (make-vm-lt :dst :rc :lhs :rj :rhs :rlim)
-                  (make-vm-jump-zero :reg :rc :label :lbx)
-                  (make-vm-move :dst :r12 :src :r13)
-                  (make-vm-add :dst :rj :lhs :rj :rhs :rstep)
-                  (make-vm-jump :label :lb)
-                  (make-vm-label :name :lbx)))
-         (optimized (cl-cc/optimize::opt-pass-loop-fusion-fission program)))
+                  (cl-cc/vm:make-vm-jump-zero :reg :rc :label :lbx)
+                  (cl-cc/vm:make-vm-move :dst :r12 :src :r13)
+                  (cl-cc/vm:make-vm-add :dst :rj :lhs :rj :rhs :rstep)
+                  (cl-cc/vm:make-vm-jump :label :lb)
+                  (cl-cc/vm:make-vm-label :name :lbx)))
+         (optimized (cl-cc/optimize/speculation:opt-pass-loop-fusion-fission program)))
     (expect (equal (mapcar #'instruction->sexp optimized)
                          (mapcar #'instruction->sexp program)) :to-be-falsy)
     (expect (= 1 (count-if (lambda (inst)
@@ -364,41 +360,41 @@
                           optimized)) :to-be-truthy)))
 
 (it-sequential "optimize-pass-loop-fusion-fission-skips-unsafe-fusion"
-  (let* ((program (list (make-vm-const :dst :ri :value 0)
-                        (make-vm-const :dst :rj :value 1) ;; different init
-                        (make-vm-const :dst :rlim :value 4)
-                        (make-vm-const :dst :rstep :value 1)
-                        (make-vm-label :name :la)
+  (let* ((program (list (cl-cc/vm:make-vm-const :dst :ri :value 0)
+                        (cl-cc/vm:make-vm-const :dst :rj :value 1) ;; different init
+                        (cl-cc/vm:make-vm-const :dst :rlim :value 4)
+                        (cl-cc/vm:make-vm-const :dst :rstep :value 1)
+                        (cl-cc/vm:make-vm-label :name :la)
                         (make-vm-lt :dst :rc :lhs :ri :rhs :rlim)
-                        (make-vm-jump-zero :reg :rc :label :lax)
-                        (make-vm-move :dst :r10 :src :r11)
-                        (make-vm-add :dst :ri :lhs :ri :rhs :rstep)
-                        (make-vm-jump :label :la)
-                        (make-vm-label :name :lax)
-                        (make-vm-label :name :lb)
+                        (cl-cc/vm:make-vm-jump-zero :reg :rc :label :lax)
+                        (cl-cc/vm:make-vm-move :dst :r10 :src :r11)
+                        (cl-cc/vm:make-vm-add :dst :ri :lhs :ri :rhs :rstep)
+                        (cl-cc/vm:make-vm-jump :label :la)
+                        (cl-cc/vm:make-vm-label :name :lax)
+                        (cl-cc/vm:make-vm-label :name :lb)
                         (make-vm-lt :dst :rc2 :lhs :rj :rhs :rlim)
-                        (make-vm-jump-zero :reg :rc2 :label :lbx)
-                        (make-vm-move :dst :r12 :src :r13)
-                        (make-vm-add :dst :rj :lhs :rj :rhs :rstep)
-                        (make-vm-jump :label :lb)
-                        (make-vm-label :name :lbx)))
-         (optimized (cl-cc/optimize::opt-pass-loop-fusion-fission program)))
+                        (cl-cc/vm:make-vm-jump-zero :reg :rc2 :label :lbx)
+                        (cl-cc/vm:make-vm-move :dst :r12 :src :r13)
+                        (cl-cc/vm:make-vm-add :dst :rj :lhs :rj :rhs :rstep)
+                        (cl-cc/vm:make-vm-jump :label :lb)
+                        (cl-cc/vm:make-vm-label :name :lbx)))
+         (optimized (cl-cc/optimize/speculation:opt-pass-loop-fusion-fission program)))
     (expect (mapcar #'instruction->sexp program) :to-equal (mapcar #'instruction->sexp optimized))))
 
 (it-sequential "optimize-pass-loop-fusion-fission-splits-oversized-loop"
   (let* ((core (loop for idx from 0 below 36
-                     collect (make-vm-move :dst :r8 :src :r5)))
-         (program (append (list (make-vm-const :dst :ri :value 0)
-                                (make-vm-const :dst :rlim :value 8)
-                                (make-vm-const :dst :rstep :value 1)
-                                (make-vm-label :name :l0)
+                     collect (cl-cc/vm:make-vm-move :dst :r8 :src :r5)))
+         (program (append (list (cl-cc/vm:make-vm-const :dst :ri :value 0)
+                                (cl-cc/vm:make-vm-const :dst :rlim :value 8)
+                                (cl-cc/vm:make-vm-const :dst :rstep :value 1)
+                                (cl-cc/vm:make-vm-label :name :l0)
                                 (make-vm-lt :dst :rc :lhs :ri :rhs :rlim)
-                                (make-vm-jump-zero :reg :rc :label :l1))
+                                (cl-cc/vm:make-vm-jump-zero :reg :rc :label :l1))
                           core
-                          (list (make-vm-add :dst :ri :lhs :ri :rhs :rstep)
-                                (make-vm-jump :label :l0)
-                                (make-vm-label :name :l1))))
-         (optimized (cl-cc/optimize::opt-pass-loop-fusion-fission program)))
+                          (list (cl-cc/vm:make-vm-add :dst :ri :lhs :ri :rhs :rstep)
+                                (cl-cc/vm:make-vm-jump :label :l0)
+                                (cl-cc/vm:make-vm-label :name :l1))))
+         (optimized (cl-cc/optimize/speculation:opt-pass-loop-fusion-fission program)))
     (expect (equal (mapcar #'instruction->sexp optimized)
                          (mapcar #'instruction->sexp program)) :to-be-falsy)
     (expect (some (lambda (inst)

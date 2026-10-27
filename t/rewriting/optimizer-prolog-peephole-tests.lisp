@@ -10,7 +10,7 @@
 ;;;; from the original file exercised packages/prolog's dead (no production
 ;;;; caller) declarative type-inference rules and were dropped, not ported.
 
-(in-package :cl-cc/test)
+(in-package :cl-cc/optimize/rewriting/test)
 
 
 (it-sequential "prolog-peephole-equality-cases const-move-preserves-source"
@@ -176,22 +176,23 @@
 
 (it-sequential "peephole-walk-direct-cases nil"
   (destructuring-bind (input expected) (list nil nil)
-    (expect (cl-cc/optimize::%peephole-walk input nil) :to-equal expected)))
+    (expect (cl-cc/optimize/rewriting::%peephole-walk input nil) :to-equal expected)))
 
 (it-sequential "peephole-walk-direct-cases singleton"
   (destructuring-bind (input expected) (list '((:const :r0 1)) '((:const :r0 1)))
-    (expect (cl-cc/optimize::%peephole-walk input nil) :to-equal expected)))
+    (expect (cl-cc/optimize/rewriting::%peephole-walk input nil) :to-equal expected)))
 
 (it-sequential "peephole-walk-direct-cases no-match"
   (destructuring-bind (input expected) (list '((:add :r1 :r0 :r0) (:sub :r2 :r1 :r1)) '((:add :r1 :r0 :r0) (:sub :r2 :r1 :r1)))
-    (expect (cl-cc/optimize::%peephole-walk input nil) :to-equal expected)))
+    (expect (cl-cc/optimize/rewriting::%peephole-walk input nil) :to-equal expected)))
 
 (it-sequential "peephole-walk-const-move-preserves-source"
-  (expect (cl-cc/optimize::%peephole-walk
+  (expect (cl-cc/optimize/rewriting::%peephole-walk
                  '((:const :r0 99) (:move :r1 :r0))
                  nil) :to-equal '((:const :r0 99) (:const :r1 99))))
 
 (it-sequential "peephole-walk-out-accumulator-is-prepended"
-  (expect (cl-cc/optimize::%peephole-walk
+  (expect (cl-cc/optimize/rewriting::%peephole-walk
                  '((:const :r0 1))
                  '((:add :r2 :r1 :r1))) :to-equal '((:add :r2 :r1 :r1) (:const :r0 1))))
+

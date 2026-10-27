@@ -290,46 +290,119 @@
   :components (
    (:file "package")
    (:file "optimize-boundary-test")
+   (:module "test-support"
+    :pathname "test-support"
+    :serial t
+    :components ((:file "package")
+                 (:file "helpers")))
    (:module "analysis"
     :pathname "analysis"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "cfg-tests")
+                 (:file "optimizer-dataflow-tests")
+                 (:file "ssa-tests")
+                 (:file "optimizer-legacy-analysis-tests")
+                 (:file "optimizer-fixed-point-tests")))
    (:module "scalar"
     :pathname "scalar"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-copyprop-tests")
+                 (:file "optimizer-cse-gvn-tests")
+                 (:file "optimizer-div-const-tests")
+                 (:file "optimizer-idiom-tests")
+                 (:file "optimizer-lowlevel-tests")
+                 (:file "optimizer-strength-ext-tests")
+                 (:file "optimizer-tables-tests")
+                 (:file "optimizer-tests-lowlevel2")
+                 (:file "optimizer-tests")))
    (:module "control-flow"
     :pathname "control-flow"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-flow-block-tests")
+                 (:file "optimizer-jump-threading-tests")
+                 (:file "optimizer-lowlevel-dce-tests")
+                 (:file "optimizer-branch-correlation-tests")))
    (:module "loops"
     :pathname "loops"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-dead-loop-tests")
+                 (:file "optimizer-licm-tests")
+                 (:file "optimizer-loop-peel-tests")
+                 (:file "optimizer-loop-rotate-tests")
+                 (:file "optimizer-loop-transforms-tests")
+                 (:file "optimizer-loop-unroll-tests")
+                 (:file "optimizer-loop-unswitch-tests")
+                 (:file "optimizer-scheduler-tests")
+                 (:file "optimizer-strength-tests")
+                 (:file "optimizer-strength-reduce-tests")
+                 (:file "optimizer-op-kind-tests")))
    (:module "memory"
     :pathname "memory"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-closure-tests")
+                 (:file "optimizer-memory-pass-tests")
+                 (:file "optimizer-memory-tests")
+                 (:file "optimizer-dead-store-elim-tests")))
    (:module "inlining"
     :pathname "inlining"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-dae-tests")
+                 (:file "optimizer-inline-pass-ext-tests")
+                 (:file "optimizer-inline-pass-tests-2")
+                 (:file "optimizer-inline-pass-tests")
+                 (:file "optimizer-inline-tests")
+                 (:file "optimizer-inlining-tests")
+                 (:file "optimizer-purity-tests")))
    (:module "partial-evaluation"
     :pathname "partial-evaluation"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-lattice-tests")))
    (:module "speculation"
     :pathname "speculation"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-concurrency-tests")
+                 (:file "optimizer-peval-loop-tests")
+                 (:file "optimizer-security-tests")
+                 (:file "optimizer-speculative-jit-tests")
+                 (:file "optimizer-roadmap-helper-tests")))
    (:module "rewriting"
     :pathname "rewriting"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "egraph-extraction-tests")
+                 (:file "egraph-negation-tests")
+                 (:file "egraph-rules-bitwise-tests")
+                 (:file "egraph-rules-tests")
+                 (:file "egraph-tests")
+                 (:file "optimizer-prolog-peephole-tests")
+                 (:file "optimizer-superopt-tests")))
    (:module "pipeline"
     :pathname "pipeline"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "effects-tests")
+                 (:file "optimizer-dataflow-passes-tests")
+                 (:file "native-advanced-optimizer-tests")
+                 (:file "optimizer-cfg-inline-tests")
+                 (:file "optimizer-flow-tests")
+                 (:file "optimizer-fr-tests")
+                 (:file "optimizer-pipeline-core-tests")
+                 (:file "optimizer-pipeline-loop-transform-tests")
+                 (:file "optimizer-pipeline-peval-tests")
+                 (:file "optimizer-pipeline-pgo-tests")
+                 (:file "optimizer-pipeline-security-tests")
+                 (:file "optimizer-pipeline-tests")
+                 (:file "optimizer-sinking-layout-tests")
+                 (:file "optimizer-store-analysis-tests")
+                 (:file "optimizer-strength-inline-tests")))
    (:module "reporting"
     :pathname "reporting"
     :serial t
@@ -337,7 +410,8 @@
    (:module "verification"
     :pathname "verification"
     :serial t
-    :components ((:file "package")))
+    :components ((:file "package")
+                 (:file "optimizer-translation-validation-tests")))
    (:file "optimizer-roadmap-evidence-data")
    (:file "optimizer-roadmap-doc-parse")
    (:file "optimizer-roadmap-query")

@@ -3,7 +3,7 @@
 ;;; Tests for Phase 2: e-graph data structures, union-find, saturation,
 ;;; extraction, and rewrite rules.
 
-(in-package :cl-cc/test)
+(in-package :cl-cc/optimize/rewriting/test)
 
 
 
@@ -119,19 +119,19 @@
 ;;; ─── Rule Application ────────────────────────────────────────────────────
 
 (it-sequential "egraph-rule-registered add-zero-r"
-  (destructuring-bind (rule-name) (list 'cl-cc/optimize::add-zero-r)
+  (destructuring-bind (rule-name) (list 'cl-cc/optimize/rewriting::add-zero-r)
     (let ((rules (cl-cc/optimize:egraph-builtin-rules)))
     (expect (find rule-name rules
                         :key (lambda (r) (getf r :name))) :to-be-truthy))))
 
 (it-sequential "egraph-rule-registered fold-add"
-  (destructuring-bind (rule-name) (list 'cl-cc/optimize::fold-add)
+  (destructuring-bind (rule-name) (list 'cl-cc/optimize/rewriting::fold-add)
     (let ((rules (cl-cc/optimize:egraph-builtin-rules)))
     (expect (find rule-name rules
                         :key (lambda (r) (getf r :name))) :to-be-truthy))))
 
 (it-sequential "egraph-rule-registered mul-pow2"
-  (destructuring-bind (rule-name) (list 'cl-cc/optimize::mul-pow2)
+  (destructuring-bind (rule-name) (list 'cl-cc/optimize/rewriting::mul-pow2)
     (let ((rules (cl-cc/optimize:egraph-builtin-rules)))
     (expect (find rule-name rules
                         :key (lambda (r) (getf r :name))) :to-be-truthy))))
@@ -143,12 +143,12 @@
                              (lambda (rulebase goal)
                                (declare (ignore rulebase))
                                (setf called goal)
-                               (list (list (cons 'cl-cc/optimize::?name 'cl-cc/optimize::fold-add)
-                                           (cons 'cl-cc/optimize::?lhs '(add (const ?a) (const ?b)))
-                                           (cons 'cl-cc/optimize::?rhs '(const))))))
+                               (list (list (cons 'cl-cc/optimize/rewriting::?name 'cl-cc/optimize/rewriting::fold-add)
+                                           (cons 'cl-cc/optimize/rewriting::?lhs '(add (const ?a) (const ?b)))
+                                           (cons 'cl-cc/optimize/rewriting::?rhs '(const))))))
       (let ((rules (cl-cc/optimize:egraph-builtin-rules)))
         (expect called :to-be-truthy)
-        (let ((rule (find 'cl-cc/optimize::fold-add rules
+        (let ((rule (find 'cl-cc/optimize/rewriting::fold-add rules
                           :key (lambda (r) (getf r :name)))))
           (expect rule :to-be-truthy)
           (expect (getf rule :lhs) :to-equal '(add (const ?a) (const ?b)))
