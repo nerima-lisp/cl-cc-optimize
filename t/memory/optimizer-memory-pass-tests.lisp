@@ -83,6 +83,16 @@
       (expect (cl-cc/vm::vm-dst inst) :to-be :r2)
       (expect (cl-cc/vm::vm-lhs inst) :to-be :r5))))
 
+(it-sequential "rewrite-inst-regs-resolves-feature-package-slots"
+  (let ((copies (make-hash-table :test #'eq)))
+    (setf (gethash :r0 copies) :r5)
+    (let ((inst (cl-cc/optimize/analysis:opt-rewrite-inst-regs
+                 (cl-cc/vm:make-vm-float-add :dst :r2 :lhs :r0 :rhs :r1)
+                 copies)))
+      (expect (cl-cc/vm::vm-dst inst) :to-be :r2)
+      (expect (cl-cc/vm::vm-lhs inst) :to-be :r5)
+      (expect (cl-cc/vm::vm-rhs inst) :to-be :r1))))
+
 (it-sequential "rewrite-inst-regs-substitutes-ssa-keyword-registers"
   (let ((copies (make-hash-table :test #'eq)))
     (setf (gethash :i copies) :i.1

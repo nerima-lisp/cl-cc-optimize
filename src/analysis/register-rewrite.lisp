@@ -12,8 +12,36 @@ allocation in the hot optimization loop.")
 
 (defmacro defopt-register-slots (instruction-type slots)
   "Declare which SLOTS of INSTRUCTION-TYPE may contain VM register references."
-  `(setf (gethash ',instruction-type *opt-register-slot-table*)
-         ',(mapcar (lambda (slot) (intern (symbol-name slot) :cl-cc/vm)) slots)))
+  `(let* ((class (%opt-vm-instruction-class ',instruction-type))
+          (slot-names
+            (mapcar (lambda (slot-name)
+                      (let ((slot (find (symbol-name slot-name)
+                                        (sb-mop:class-slots class)
+                                        :key (lambda (definition)
+                                               (symbol-name (sb-mop:slot-definition-name definition)))
+                                        :test #'string=)))
+                        (unless slot
+                          (error "No slot named ~S on instruction type ~S" slot-name ',instruction-type))
+                        (sb-mop:slot-definition-name slot)))
+                    ',slots)))
+     (setf (gethash ',instruction-type *opt-register-slot-table*) slot-names)))
+(defun %opt-vm-instruction-class (instruction-type)
+  "Resolve an optimizer instruction name to its VM class symbol."
+  (or (find-class instruction-type nil)
+      (let* ((vm-package (find-package :cl-cc/vm))
+             (constructor-name
+               (concatenate 'string "MAKE-" (symbol-name instruction-type)))
+             (constructor
+               (and vm-package (find-symbol constructor-name vm-package)))
+             (instruction-package
+               (and constructor (symbol-package constructor)))
+             (instruction-symbol
+               (and instruction-package
+                    (find-symbol (symbol-name instruction-type)
+                                 instruction-package))))
+        (and instruction-symbol
+             (find-class instruction-symbol nil)))
+      (error "No VM instruction class found for ~S" instruction-type)))
 
 (defun %opt-rewrite-register-tree! (value copies)
   "Destructively rewrite register leaves in VALUE using COPIES.
@@ -40,11 +68,8 @@ Single destination slots are preserved to match the historical sexp rewrite."
   (let ((changed-p nil)
         (dst (opt-inst-dst inst)))
     (dolist (slot slots)
-      ;; By name, not by a package-qualified literal. DEFOPT-REGISTER-SLOTS
-      ;; already interns these slot symbols from their names, and spelling one
-      ;; out as a cl-cc/vm internal here was the last place this pass reached
-      ;; into another package's internals -- the thing §5-2 has to be free of
-      ;; before optimize can move to its own repository.
+      ;; Registered slot symbols come from the effective class slots, including
+      ;; slots defined in VM feature packages.
       (unless (and dst (string= (symbol-name slot) "DST"))
         (let ((value (slot-value inst slot)))
           (multiple-value-bind (new-value slot-changed-p)
